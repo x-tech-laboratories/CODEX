@@ -1,5 +1,5 @@
 // The checking step of a task: check a result against its evidence, and revise it once when it falls short.
-import { actionReportProblems, asksForCoverage, asksForSubfolders, calculationProblems, coverage, coverageProblems, insideFolder, unbackedClaims, uncitedUrls, unsupportedValues, type Coverage } from '../checks.js';
+import { actionReportProblems, asksForCoverage, asksForSubfolders, calculationProblems, coverage, coverageProblems, insideFolder, textToolCallProblems, unbackedClaims, uncitedUrls, unsupportedValues, type Coverage } from '../checks.js';
 import { type Section } from '../contextBudget.js';
 import { type Recalled } from '../knowledge.js';
 import { CHECK_MAX_TOKENS, CHECK_PROMPT, CHECK_SCHEMA, REVISE_NOTE, TaskNode, errorMessage, parseCheck, type TaskTreeRun } from '../taskTree.js';
@@ -63,6 +63,7 @@ export async function check(run: TaskTreeRun, node: TaskNode, result: string, ev
             ),
         );
     }
+    problems.push(...textToolCallProblems(result));
     problems.push(...calculationProblems(result));
     problems.push(...coverageProblems(taskCoverage(run, node, result)));
     const actions = run.taskActions.get(node.id);

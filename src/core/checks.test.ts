@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type ActionRecord, actionReportProblems, asksForCoverage, asksForSubfolders, calculationProblems, coverage, coverageProblems, normalFolder, parseListing, unbackedClaims, uncitedUrls, unsupportedValues } from './checks.js';
+import { type ActionRecord, actionReportProblems, asksForCoverage, asksForSubfolders, calculationProblems, coverage, coverageProblems, normalFolder, parseListing, textToolCallProblems, unbackedClaims, uncitedUrls, unsupportedValues } from './checks.js';
 
 // ============================================================================
 // Evidence
@@ -74,6 +74,21 @@ describe('action reports', () => {
 // ============================================================================
 // Calculations
 // ============================================================================
+
+describe('text tool calls', () => {
+    it('rejects a result that trails off into a tool call written as text', () => {
+        const result =
+            'Let me verify the Storage path.<tool_call>list_directory<arg_key>params</arg_key><arg_value>{"path": "/Storage"}</arg_value></tool_call>';
+
+        expect(textToolCallProblems(result)).toHaveLength(1);
+        expect(textToolCallProblems('<tool_call>\n<function=read_file>\n<parameter=path>a.txt</parameter>\n</function>\n</tool_call>')).toHaveLength(1);
+    });
+
+    it('passes prose and code that only mention tools', () => {
+        expect(textToolCallProblems('The Documents folder could not be read, so list it with list_directory after widening the root.')).toEqual([]);
+        expect(textToolCallProblems('Example:\n```xml\n<tool_call>read_file</tool_call>\n```')).toEqual([]);
+    });
+});
 
 describe('calculations', () => {
     it('finds a wrong sum in the working with its true value', () => {

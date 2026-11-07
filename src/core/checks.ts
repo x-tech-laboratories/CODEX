@@ -402,6 +402,16 @@ function grouped(digits: string): string {
 }
 
 // List the written-out sums whose stated result is wrong, and the dates given the wrong weekday.
+// A tool call the model wrote as text, in Qwen's XML form, Spark's arg_key form or a bare call tag.
+const TEXT_TOOL_CALL = /<tool_call>|<function=[^>\s]+>|<arg_key>/;
+
+// A result that holds a tool call written as text was cut short by a model that wanted another tool when none was offered.
+export function textToolCallProblems(text: string): string[] {
+    return TEXT_TOOL_CALL.test(text.replace(CODE_BLOCK, ' '))
+        ? ['The result contains a tool call written as text; no tool runs while writing, so state what the gathered evidence shows and say plainly what could not be checked.']
+        : [];
+}
+
 export function calculationProblems(text: string): string[] {
     const prose = normalizedArithmetic(text.replace(CODE_BLOCK, ' '));
     const problems: string[] = [];

@@ -673,12 +673,20 @@ export class Toolbox {
         return resolved;
     }
 
+    // A path that does not exist is named in full with the root, so a model given a folder that lies elsewhere learns that it cannot reach it, rather than retrying variants.
+    private missingPathMessage(resolved: string, kind: string): string {
+        if (statOrNull(resolved) === null) {
+            return `${resolved} does not exist under the filesystem root ${this.root}; only paths inside the root can be read, so a folder elsewhere needs the user to widen the root in the settings.`;
+        }
+        return `path is not ${kind}.`;
+    }
+
     private listDirectory(argumentsGiven: Record<string, unknown>): string {
         checkArguments(argumentsGiven, [], ['path']);
         const directory = this.resolveInsideRoot(argumentsGiven.path ?? '.');
         rejectSensitivePath(directory);
         if (!statOrNull(directory)?.isDirectory()) {
-            throw new ValueError('path is not a directory.');
+            throw new ValueError(this.missingPathMessage(directory, 'a directory'));
         }
         const entries: Array<{ name: string; type: string }> = [];
         for (const name of readdirSync(directory).sort().slice(0, MAX_DIRECTORY_ENTRIES)) {
@@ -711,7 +719,7 @@ export class Toolbox {
             throw new ValueError('path is a directory; use list_directory to see its entries.');
         }
         if (!stats?.isFile()) {
-            throw new ValueError('path is not a file.');
+            throw new ValueError(this.missingPathMessage(path, 'a file'));
         }
         if (stats.size > MAX_FILE_BYTES) {
             throw new ValueError(`file exceeds the ${MAX_FILE_BYTES}-byte read limit.`);

@@ -124,6 +124,11 @@ describe('file tools', () => {
         expect(await toolbox.call('read_file', { path: join(root, 'readme.txt') })).toBe('hi');
         expect(await toolbox.call('read_file', { path: '.' })).toContain('list_directory');
         expect(await toolbox.call('read_file', { path: '/etc/hostname' })).toContain('escapes');
+        // A missing folder is named in full with the root, so the model learns the folder lies elsewhere.
+        const missing = await toolbox.call('list_directory', { path: 'Storage/Files/Documents' });
+        expect(missing).toContain(join(root, 'Storage/Files/Documents'));
+        expect(missing).toContain(`filesystem root ${root}`);
+        expect(await toolbox.call('read_file', { path: 'readme.txt/x' })).toContain('does not exist');
     });
 
     it('refuse paths outside the root, through links too, and secret files', async () => {
