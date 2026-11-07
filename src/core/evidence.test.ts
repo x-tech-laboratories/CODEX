@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isSelfContained, requiresWebResearch, searchQuery, summarizeWebPage } from './evidence.js';
+import { isResearchableTopic, isSelfContained, requiresWebResearch, searchQuery, summarizeWebPage } from './evidence.js';
 import type { ChatCompletion, ChatCompletionRequest, ChatModel } from './model.js';
 
 // Answers every call with the given reply and records what it was asked.
@@ -16,6 +16,17 @@ function recordingModel(reply: (callNumber: number) => ChatCompletion): ChatMode
 }
 
 describe('request shapes', () => {
+    it('researches subjects but not questions or remarks about the user or the assistant', () => {
+        expect(isResearchableTopic('PinePhone hardware specifications')).toBe(true);
+        expect(isResearchableTopic('Linux Mint')).toBe(true);
+        expect(isResearchableTopic('latest rust release')).toBe(true);
+        expect(isResearchableTopic('can you access the local filesystem')).toBe(false);
+        expect(isResearchableTopic('Which is greater: the square root of 16 or the cube root of 27?')).toBe(false);
+        expect(isResearchableTopic('i had a pet dog but they died')).toBe(false);
+        expect(isResearchableTopic('PinePhone screen size?')).toBe(false);
+        expect(isResearchableTopic('   ')).toBe(false);
+    });
+
     it('ignores ordinary code words when deciding on research', () => {
         expect(requiresWebResearch('Explain this source file and the current directory')).toBe(false);
         expect(requiresWebResearch('Add an API docstring to this function')).toBe(false);

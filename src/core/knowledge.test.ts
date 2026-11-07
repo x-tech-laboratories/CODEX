@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { KnowledgeStore, MAX_RECALLED_MEMORIES, MIGRATIONS } from './knowledge.js';
+import { KnowledgeStore, MAX_RECALLED_MEMORIES, MAX_RESEARCH_FAILURES, MIGRATIONS } from './knowledge.js';
 
 
 // ============================================================================
@@ -130,6 +130,59 @@ describe('KnowledgeStore', () => {
 
         expect(queued).toBe(1);
         expect(store.queueStatus()[0].status).toBe('pending');
+    });
+
+    it('waits a full interval after a failed refresh and gives up after repeated failures', () => {
+        store.storeSearchResults('flaky', [{ title: 'Flaky', url: 'https://example.test/flaky', snippet: 'Research source.' }], {
+            topic: 'Flaky',
+        });
+        for (let attempt = 0; attempt < MAX_RESEARCH_FAILURES; attempt += 1) {
+            shiftClock(7200);
+            expect(store.enqueueDueTopics(1)).toBe(1);
+            store.finishJob(store.claimJob()!.id, 'Web search failed');
+            // Right after a failure the topic is not queued again, however old its research is.
+            expect(store.enqueueDueTopics(1)).toBe(0);
+        }
+
+        shiftClock(7200);
+
+        expect(store.enqueueDueTopics(1)).toBe(0);
+        expect(store.queueStatus().filter((job) => job.status === 'failed')).toHaveLength(MAX_RESEARCH_FAILURES);
+    });
+
+    it('keeps only the newest failed rows per topic when tidying', () => {
+        for (let attempt = 0; attempt < MAX_RESEARCH_FAILURES + 2; attempt += 1) {
+            store.finishJob(store.enqueueTopic('Flaky'), `failure ${attempt}`);
+            shiftClock(1);
+        }
+        store.finishJob(store.enqueueTopic('Other'), 'failure');
+
+        expect(store.tidy(90)).toEqual({ 'old failed research rows removed': 2 });
+        const kept = store.queueStatus().filter((job) => job.topic === 'Flaky');
+        expect(kept).toHaveLength(MAX_RESEARCH_FAILURES);
+        expect(kept.map((job) => job.error)).not.toContain('failure 0');
+    });
+
+    it('forgets a topic with its facts, sources, queue rows and graph nodes, lifting its subtopics', () => {
+        store.storeSearchResults('can you access the local filesystem', [{ title: 'Privacy', url: 'https://example.test/privacy', snippet: 'Settings.' }], {
+            topic: 'can you access the local filesystem',
+        });
+        const topicId = store.topics().find((topic) => topic.name === 'can you access the local filesystem')!.id as number;
+        store.addFact('can you access the local filesystem', 'Applications can access the local filesystem.', 'https://example.test/privacy');
+        store.addRelationship('Windows', 'controls', 'file access', 'https://example.test/privacy');
+        store.enqueueTopic('can you access the local filesystem');
+        const childId = store.addTopic('Child', { parent: 'can you access the local filesystem' });
+
+        expect(store.forgetTopic(topicId)).toBe(true);
+        expect(store.forgetTopic(topicId)).toBe(false);
+
+        expect(store.topics().map((topic) => topic.name)).toEqual(['Child']);
+        expect(store.topics()[0].parent_id).toBeNull();
+        expect(store.search('privacy')).toEqual([]);
+        expect(store.queueStatus()).toEqual([]);
+        expect(store.graph()).toEqual([]);
+        expect(store.removeOrphans()).toEqual({ sources: 0, nodes: 2 });
+        expect(store.topics()[0].id).toBe(childId);
     });
 
     it('refreshes often used topics in half the time', async () => {

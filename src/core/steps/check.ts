@@ -1,7 +1,6 @@
 // The checking step of a task: check a result against its evidence, and revise it once when it falls short.
 import { actionReportProblems, asksForCoverage, asksForSubfolders, calculationProblems, coverage, coverageProblems, insideFolder, unbackedClaims, uncitedUrls, unsupportedValues, type Coverage } from '../checks.js';
 import { type Section } from '../contextBudget.js';
-import { queueUnsupportedClaims } from '../evidence.js';
 import { type Recalled } from '../knowledge.js';
 import { CHECK_MAX_TOKENS, CHECK_PROMPT, CHECK_SCHEMA, REVISE_NOTE, TaskNode, errorMessage, parseCheck, type TaskTreeRun } from '../taskTree.js';
 
@@ -58,7 +57,6 @@ export async function check(run: TaskTreeRun, node: TaskNode, result: string, ev
     const usedTools = run.toolbox.usedTools;
     if (run.localKnowledgeUsed || usedTools.has('web_search') || usedTools.has('web_fetch')) {
         const unsupported = unsupportedValues(result, `${run.userPrompt}\n${known}`);
-        queueUnsupportedClaims(run.knowledgeStore, result, unsupported, run.maxPendingResearchJobs, run.userPrompt);
         problems.push(
             ...unsupported.map(
                 (value) => `The result states ${value}, which appears in no gathered evidence; remove it or say it could not be verified.`,

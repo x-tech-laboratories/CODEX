@@ -356,6 +356,15 @@ export const SIMILAR_OVERLAP = 0.5;
 
 // Facts this weak are pruned once they have gone unused for the configured number of days.
 export const PRUNE_BELOW_CONFIDENCE = 0.5;
+
+// Failed research attempts since a topic's last success after which the worker stops requeueing it on its own; a new request still can.
+export const MAX_RESEARCH_FAILURES = 3;
+
+// Excludes topics (alias t) that failed since their last success this many times, or failed more recently than the cutoff bound.
+const NOT_FAILING_TOPIC =
+    "AND NOT EXISTS (SELECT 1 FROM research_queue q WHERE q.topic_id = t.id AND q.status = 'failed' AND q.finished_at > ?) " +
+    "AND (SELECT COUNT(*) FROM research_queue q WHERE q.topic_id = t.id AND q.status = 'failed' " +
+    'AND q.finished_at > COALESCE(t.last_researched_at, 0)) < ? ';
 // Eviction stops below this share of the size cap, so the next few runs do not each evict again.
 export const EVICT_TO_SHARE_OF_CAP = 0.9;
 export const EVICT_BATCH_SIZE = 100;
@@ -707,7 +716,7 @@ export class KnowledgeStore {
         }, 'BEGIN IMMEDIATE');
     }
 
-    // Queues topics whose research is old, refreshing often-used ones sooner and ahead of the rest.
+    // Queues topics whose research is old, refreshing often-used ones sooner and ahead of the rest; a failed topic waits a full interval and gives up after MAX_RESEARCH_FAILURES.
     enqueueDueTopics(refreshIntervalHours: number, maxPending = 100): number {
         const cutoff = now() - refreshIntervalHours * 3600;
         const oftenUsedCutoff = now() - refreshIntervalHours * 1800;
@@ -724,9 +733,10 @@ export class KnowledgeStore {
                     'OR (t.use_count >= ? AND t.last_used_at > t.last_researched_at AND t.last_researched_at <= ?)) ' +
                     'AND NOT EXISTS (SELECT 1 FROM research_queue q WHERE q.topic_id = t.id ' +
                     "AND q.status = 'pending') " +
+                    NOT_FAILING_TOPIC +
                     'ORDER BY t.priority DESC, COALESCE(t.last_used_at > t.last_researched_at, 0) DESC, ' +
                     't.use_count DESC, t.name LIMIT ?',
-                cutoff, OFTEN_USED_TOPIC_COUNT, oftenUsedCutoff, availableSlots,
+                cutoff, OFTEN_USED_TOPIC_COUNT, oftenUsedCutoff, cutoff, MAX_RESEARCH_FAILURES, availableSlots,
             );
             connection.runMany(
                 'INSERT OR IGNORE INTO research_queue(topic_id, requested_at) VALUES (?, ?)',
@@ -1330,7 +1340,7 @@ export class KnowledgeStore {
     // Consolidation
     // ==========================================================================
 
-    // Makes every change that needs no model: break loops, merge exact duplicates, research empty topics, prune and evict.
+    // Makes every change that needs no model: break loops, merge exact duplicates, research empty topics, trim failed research rows, prune and evict.
     tidy(pruneAfterDays: number, maxPending = 100, maxMegabytes: number | null = null): Record<string, number> {
         return this.withConnection((connection) => {
             const changes: Record<string, number> = {
@@ -1338,6 +1348,7 @@ export class KnowledgeStore {
                 'topics merged': this.mergeSameNamedTopics(connection),
                 'facts merged': this.mergeSameWordedFacts(connection),
                 'empty topics queued for research': queueEmptyTopics(connection, maxPending),
+                'old failed research rows removed': trimFailedJobs(connection),
             };
             changes['facts pruned'] = connection.run(
                 "UPDATE facts SET status = 'pruned' WHERE status = 'active' AND use_count = 0 " +
@@ -1666,6 +1677,46 @@ export class KnowledgeStore {
             }
             deleteTopic(connection, topicId, row.name);
             return true;
+        });
+    }
+
+    // Deletes a topic the user never wanted with everything under it: facts, sources and their search entries, queue rows, vectors and graph nodes; subtopics move up a level.
+    forgetTopic(topicId: number): boolean {
+        return this.withConnection((connection) => {
+            const row = connection.get('SELECT name, parent_id FROM topics WHERE id = ?', topicId);
+            if (!row) {
+                return false;
+            }
+            for (const child of connection.all('SELECT id FROM topics WHERE parent_id = ?', topicId)) {
+                this.setParent(connection, child.id, row.parent_id);
+                connection.run('UPDATE topics SET placed_at = NULL WHERE id = ?', child.id);
+            }
+            for (const fact of connection.all('SELECT id FROM facts WHERE topic_id = ?', topicId)) {
+                deleteItem(connection, 'fact', fact.id);
+            }
+            for (const source of connection.all('SELECT id FROM sources WHERE topic_id = ?', topicId)) {
+                deleteItem(connection, 'source', source.id);
+            }
+            connection.run('DELETE FROM research_queue WHERE topic_id = ?', topicId);
+            deleteTopic(connection, topicId, row.name);
+            return true;
+        });
+    }
+
+    // Deletes sources left behind by removed topics that no fact cites, and graph nodes no edge touches.
+    removeOrphans(): { sources: number; nodes: number } {
+        return this.withConnection((connection) => {
+            const sources = connection.all(
+                'SELECT id FROM sources WHERE topic_id IS NULL AND id NOT IN (SELECT source_id FROM facts WHERE source_id IS NOT NULL)',
+            );
+            for (const source of sources) {
+                deleteItem(connection, 'source', source.id);
+            }
+            const nodes = connection.run(
+                "DELETE FROM graph_nodes WHERE kind != 'topic' AND id NOT IN (SELECT source_node_id FROM graph_edges) " +
+                    'AND id NOT IN (SELECT target_node_id FROM graph_edges)',
+            ).changes;
+            return { sources: sources.length, nodes };
         });
     }
 
@@ -2347,6 +2398,16 @@ function queueEmptyTopics(connection: Connection, maxPending: number): number {
         rows.map((row) => [row.id, now()]),
     );
     return rows.length;
+}
+
+// Keeps only the newest MAX_RESEARCH_FAILURES failed rows per topic, enough to decide whether to give up on it.
+function trimFailedJobs(connection: Connection): number {
+    return connection.run(
+        "DELETE FROM research_queue WHERE status = 'failed' AND id NOT IN (SELECT id FROM (" +
+            "SELECT id, ROW_NUMBER() OVER (PARTITION BY topic_id ORDER BY finished_at DESC, id DESC) AS newest " +
+            "FROM research_queue WHERE status = 'failed') WHERE newest <= ?)",
+        MAX_RESEARCH_FAILURES,
+    ).changes;
 }
 
 function deleteTopic(connection: Connection, topicId: number, name: string): void {

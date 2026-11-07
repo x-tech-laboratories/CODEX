@@ -135,7 +135,8 @@ Today: mail arrives → automatic mail dropped without the model → rest summar
 
 - Stop the task tree applying a recalled fact about a similarly named thing: it gives the ingest service's port for the query service in about half the seeded recall-not-stored runs. A one-call subject check in the check step caught it in every probe.
 - Let the user mark a recalled fact wrong, lowering its confidence and queueing a recheck.
-- Back up, export and reset the knowledge store, and delete a single fact or memory from the interfaces.
+- Back up, export and reset the knowledge store, and delete a single fact or memory from the interfaces. The store methods `forgetTopic` and `removeOrphans` (2026-11-07) exist for this but are reachable only from code; the window and CLI should offer them.
+- **Consolidation eval (not started, agreed 2026-11-07 to hold):** consolidation has never been measured. Seed a store with duplicate topics, a contradicting fact pair, a "broader than" pair, facts that should and should not be pruned, and question-shaped and self-referential topics, then run the tidy and pair-comparison steps under Spark and the 35B-A3B MoE and count wrong verdicts, wrong merges and wrong prunes. Doc 2's conversation-archive section describes the prune and contradiction cases; the irrelevant-topic cases come from the user's store (doc 2, "Irrelevant topics"). This also decides whether the MoE earns its load cost for background upkeep, which the 2026-11-07 trials did not test.
 - Rate-limit background fetches per domain, honour robots.txt, and cap fetches per day.
 - Show background job metrics, and how often recalled facts are cited in answers.
 

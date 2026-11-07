@@ -406,7 +406,15 @@ with the ongoing work the requests show, and each one with no facts yet is
 queued for research. It also re-queues topics whose research is older than
 `background_refresh_interval_hours`, or half that for a topic recalled at least
 five times and used since it was last researched; topics used since their last
-research, and the most used, go first.
+research, and the most used, go first. A topic whose last attempt failed waits
+a full interval, and one that has failed three times since its last success is
+left alone until a request or the learning step asks for it again.
+
+Not everything becomes a research topic. A query that is a question or a
+remark rather than a subject, such as "can you access the local filesystem" or
+"i had a pet dog", is never queued, and neither is a sentence of the model's own
+answer that a check rejected: looking up a guessed value only finds pages that
+agree with the guess.
 
 The worker yields to foreground work. It takes the shared model lock for one
 model call at a time, checks before every step and every generated token
@@ -499,6 +507,7 @@ Changes that need no model come first:
   subtopics were filed elsewhere, are queued for research, unless their
   research is still unfinished or has failed. A full queue leaves them for a
   later pass.
+- Of a topic's failed research attempts, only the newest three are kept.
 - Low-confidence facts that have never been recalled are pruned once they are
   `background_prune_after_days` old. A pruned fact stays in the store and comes
   back if research finds it again.

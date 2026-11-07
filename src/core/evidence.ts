@@ -285,20 +285,36 @@ export function pageSummarizer(
 // Research queue
 // ============================================================================
 
-// Rejected claims queued for research per check, so one bad answer cannot flood the queue.
-export const MAX_QUEUED_CLAIMS = 3;
+// Words that open a question or a remark to the assistant rather than name a subject.
+const QUESTION_OPENERS: ReadonlySet<string> = new Set([
+    'can', 'could', 'do', 'does', 'did', 'is', 'are', 'was', 'were', 'will', 'would', 'should', 'shall', 'may', 'might',
+    'what', 'which', 'who', 'whom', 'whose', 'how', 'why', 'when', 'where', 'please', 'tell', 'explain', 'help',
+]);
 
-// Characters of the request put before a queued claim, enough to name what the claim is about.
-export const MAX_CLAIM_SUBJECT_CHARS = 80;
+// Words that make a sentence about the speaker or the assistant, which no web page is about.
+const PERSON_WORDS: ReadonlySet<string> = new Set(['i', 'me', 'my', 'mine', 'we', 'us', 'our', 'you', 'your', 'yours']);
+
+// Say whether a topic names a subject the background worker can look up: not a question, not a sentence about the user or the assistant.
+export function isResearchableTopic(topic: string): boolean {
+    const words = topic
+        .toLowerCase()
+        .split(/\s+/)
+        .map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+        .filter(Boolean);
+    if (words.length === 0 || topic.trim().endsWith('?')) {
+        return false;
+    }
+    return !QUESTION_OPENERS.has(words[0]) && !words.some((word) => PERSON_WORDS.has(word));
+}
 
 // Say whether an error came from SQLite itself rather than from a check in the store.
 export function isSqliteError(error: unknown): boolean {
     return error instanceof Error && (error as { code?: unknown }).code === 'ERR_SQLITE_ERROR';
 }
 
-// Queue a topic for background research, ignoring a full queue.
+// Queue a topic for background research, ignoring a full queue and skipping topics that are questions or remarks rather than subjects.
 export function queueResearchTopic(knowledgeStore: KnowledgeStore | null, topic: string, maxPending: number): void {
-    if (knowledgeStore === null) {
+    if (knowledgeStore === null || !isResearchableTopic(topic)) {
         return;
     }
     try {
@@ -307,25 +323,6 @@ export function queueResearchTopic(knowledgeStore: KnowledgeStore | null, topic:
         if (!(error instanceof Error) || error.constructor !== Error || isSqliteError(error)) {
             throw error;
         }
-    }
-}
-
-// Queue each sentence stating a value no evidence holds, led by the request it answers, so the background worker looks it up.
-export function queueUnsupportedClaims(
-    knowledgeStore: KnowledgeStore | null,
-    text: string,
-    unsupportedValues: string[],
-    maxPending: number,
-    userPrompt: string,
-): void {
-    const sentences = text.replace(CODE_BLOCK, ' ').split(/(?<=[.!?])\s+/);
-    const claims = sentences.filter((sentence) => unsupportedValues.some((value) => sentence.includes(value)));
-    let subject = searchQuery(userPrompt);
-    if (subject.length > MAX_CLAIM_SUBJECT_CHARS) {
-        subject = beforeLastSpace(subject.slice(0, MAX_CLAIM_SUBJECT_CHARS));
-    }
-    for (const claim of claims.slice(0, MAX_QUEUED_CLAIMS)) {
-        queueResearchTopic(knowledgeStore, searchQuery(subject ? `${subject}: ${claim}` : claim), maxPending);
     }
 }
 

@@ -1074,7 +1074,7 @@ describe('recall', () => {
         expect(store.queueStatus().filter((job) => job.status === 'pending').map((job) => job.topic)).toContain('Zig');
     });
 
-    it('queues a claim stating an unfound version for research', async () => {
+    it('does not research a claim the check rejected, since that only finds pages agreeing with a guess', async () => {
         mocks.searchWithMemory.mockResolvedValue(['Local knowledge result', '[{"summary": "Rust 1.80.0 shipped on 2024-07-25."}]', true]);
         const model = new ScriptedModel({
             'decide 1': decision('research', { queries: ['latest rust'] }),
@@ -1084,7 +1084,7 @@ describe('recall', () => {
 
         await executeTaskTree('What is the latest Rust?', runOptions(model, { maxTaskDepth: 0, knowledgeDbPath: databasePath }));
 
-        expect(store.queueStatus().map((job) => job.topic)).toEqual(['What is the latest Rust?: Rust 1.85.0 is the newest release.']);
+        expect(store.queueStatus()).toEqual([]);
     });
 });
 
