@@ -1,5 +1,5 @@
 // The subtask steps of a task: plan subtasks, run them in order, re-plan the rest after a failure, combine, and follow a delegation with a second agent.
-import { asksForCoverage, asksForSubfolders, coverage, joinFolder } from '../checks.js';
+import { asksForCoverage, asksForSubfolders, coverage, evidenceHandover, joinFolder, textToolCallProblems } from '../checks.js';
 import { type Section } from '../contextBudget.js';
 import { AGENT_RESULT_LABEL, COMBINE_PROMPT, DECISION_MAX_TOKENS, MAX_HANDED_RESULT_CHARS, MAX_REPLANS_PER_TASK, MAX_SUBTASKS, MIN_SUBTASKS, REPLAN_PROMPT, REROUTE_NOTE, ROOT_COMBINE_PROMPT, ROUTING_PROMPT, SubtaskSpec, TaskNode, errorMessage, isRecord, parseSubtasks, routedParts, subtasksSchema, type Decision, type TaskTreeRun, type TaskUnit } from '../taskTree.js';
 
@@ -84,7 +84,8 @@ export async function runSubtasks(run: TaskTreeRun, node: TaskNode, fromSplit: b
         return;
     }
     const [result, problem] = await run.checkAndRevise(node, systemPrompt, combined, [], results);
-    node.result = result;
+    // Twice the model wanted a tool instead of merging, so the subtask results are handed over as they are.
+    node.result = textToolCallProblems(result).length > 0 ? evidenceHandover(result, results) : result;
     node.note = problem;
     node.status = problem ? 'unverified' : 'done';
 }

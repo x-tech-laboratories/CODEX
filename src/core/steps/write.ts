@@ -1,5 +1,5 @@
 // The writing step of a task worked directly: gather, write, check, and split it when one step could not finish.
-import { coverageProblems } from '../checks.js';
+import { coverageProblems, evidenceHandover, textToolCallProblems } from '../checks.js';
 import { taskCoverage } from './check.js';
 import { listingUnits, overflowReason, splitAlongListing } from './subtasks.js';
 import { Decision, MIN_SUBTASKS, ROOT_WRITE_PROMPT, SEARCH_LABELS, SPLIT_PROMPT, TaskNode, WRITE_PROMPT, errorMessage, type TaskTreeRun } from '../taskTree.js';
@@ -20,6 +20,7 @@ export async function workDirectly(run: TaskTreeRun, node: TaskNode, decision: D
     let result = '';
     let problem = '';
     let written: string | null = null;
+    let handedOver = false;
     try {
         written = await run.call(node, 'Writing', systemPrompt, await run.sections(node, evidence));
     } catch (error) {
@@ -31,6 +32,11 @@ export async function workDirectly(run: TaskTreeRun, node: TaskNode, decision: D
     }
     if (written !== null) {
         [result, problem] = await run.checkAndRevise(node, systemPrompt, written, evidence, []);
+        if (textToolCallProblems(result).length > 0) {
+            // Twice the model wanted a tool instead of writing, so the gathered material is the result, in code; a split would only ask the same model for the same tool.
+            result = evidenceHandover(result, evidence);
+            handedOver = true;
+        }
     }
     const found = problem ? taskCoverage(run, node, result) : null;
     if (found !== null && (found.missing.length > 0 || found.unentered.length > 0)) {
@@ -41,7 +47,7 @@ export async function workDirectly(run: TaskTreeRun, node: TaskNode, decision: D
         }
     }
     // A specialist's failed part goes back to the run that handed it over, which re-plans around it.
-    if (problem && !node.fromSplit && !run.specialist && run.tree.roomFor(node) >= MIN_SUBTASKS) {
+    if (problem && !handedOver && !node.fromSplit && !run.specialist && run.tree.roomFor(node) >= MIN_SUBTASKS) {
         // A task one step could not finish is split into smaller ones and tried again.
         const subtasks = await run.planSubtasks(node, SPLIT_PROMPT, MIN_SUBTASKS, [
             ['Failed attempt', result],

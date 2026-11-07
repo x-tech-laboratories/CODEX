@@ -405,6 +405,36 @@ function grouped(digits: string): string {
 // A tool call the model wrote as text, in Qwen's XML form, Spark's arg_key form or a bare call tag.
 const TEXT_TOOL_CALL = /<tool_call>|<function=[^>\s]+>|<arg_key>/;
 
+// Remove tool calls written as text, closed or running to the end, leaving the prose around them.
+export function stripTextToolCalls(text: string): string {
+    return text
+        .replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/g, ' ')
+        .replace(/<function=[^>\s]+>[\s\S]*?(?:<\/function>|$)/g, ' ')
+        .replace(/<arg_key>[\s\S]*$/g, ' ')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/ {2,}/g, ' ')
+        .trim();
+}
+
+// Characters of gathered material handed over when the model cannot write a result, enough to be useful without flooding the reply.
+export const HANDOVER_CHARS = 6000;
+
+// The result for a task whose writer twice wanted a tool instead of writing: its own words without the calls, then what was gathered, so the work done is not lost.
+export function evidenceHandover(result: string, gathered: Array<[string, string]>): string {
+    const prose = stripTextToolCalls(result);
+    const material = gathered
+        .filter(([, text]) => text.trim())
+        .map(([label, text]) => `${label}\n${text.trim()}`)
+        .join('\n\n')
+        .slice(0, HANDOVER_CHARS);
+    const parts = [
+        'The task could not be completed: the model asked for a tool instead of writing its result.',
+        prose && `Its words: ${prose}`,
+        material && `What was gathered for it:\n${material}`,
+    ];
+    return parts.filter(Boolean).join('\n\n');
+}
+
 // A result that holds a tool call written as text was cut short by a model that wanted another tool when none was offered.
 export function textToolCallProblems(text: string): string[] {
     return TEXT_TOOL_CALL.test(text.replace(CODE_BLOCK, ' '))

@@ -843,6 +843,23 @@ describe('coverage', () => {
         expect(model.call('revise', '1').input).toContain('the result leaves out 1: notes.txt');
     });
 
+    it('hands over the listing when the writer twice asks for a tool instead of writing', async () => {
+        listFolders({ '1': { '.': [['tax_return.pdf', 'beach.jpg'], []] } });
+        const call = '<tool_call>exec<arg_key>command</arg_key><arg_value>list_directory "." --recursive</arg_value></tool_call>';
+
+        const { result, model, trees } = await runTree(
+            { 'decide 1': decision('files'), 'write 1': `I need to list the folder first.${call}`, 'revise 1': `Listing needed.${call}` },
+            { prompt: 'Is there a tax return here?' },
+        );
+
+        expect(model.call('revise', '1').input).toContain('tool call written as text');
+        expect(result).not.toContain('<tool_call>');
+        expect(result).toContain('Its words: Listing needed.');
+        expect(result).toContain('tax_return.pdf');
+        expect(model.steps()).toEqual(['decide 1', 'write 1', 'check 1', 'revise 1', 'check 1']);
+        expect(trees.at(-1)![0].status).toBe('unverified');
+    });
+
     it('does not hold a request that does not ask for every item to the listing', async () => {
         listFolders({ '1': { '.': [['tax_return.pdf', 'beach.jpg'], []] } });
 

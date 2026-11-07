@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type ActionRecord, actionReportProblems, asksForCoverage, asksForSubfolders, calculationProblems, coverage, coverageProblems, normalFolder, parseListing, textToolCallProblems, unbackedClaims, uncitedUrls, unsupportedValues } from './checks.js';
+import { type ActionRecord, actionReportProblems, asksForCoverage, asksForSubfolders, calculationProblems, coverage, coverageProblems, normalFolder, parseListing, evidenceHandover, stripTextToolCalls, textToolCallProblems, unbackedClaims, uncitedUrls, unsupportedValues } from './checks.js';
 
 // ============================================================================
 // Evidence
@@ -87,6 +87,27 @@ describe('text tool calls', () => {
     it('passes prose and code that only mention tools', () => {
         expect(textToolCallProblems('The Documents folder could not be read, so list it with list_directory after widening the root.')).toEqual([]);
         expect(textToolCallProblems('Example:\n```xml\n<tool_call>read_file</tool_call>\n```')).toEqual([]);
+    });
+});
+
+describe('evidence handover', () => {
+    it('strips closed and unclosed text tool calls and keeps the prose', () => {
+        expect(stripTextToolCalls('Listing first.<tool_call>exec<arg_key>command</arg_key><arg_value>ls</arg_value></tool_call> Then more.')).toBe('Listing first. Then more.');
+        expect(stripTextToolCalls('I need to re-run the listing.<tool_call>')).toBe('I need to re-run the listing.');
+        expect(stripTextToolCalls('<function=read_file>\n<parameter=path>a</parameter>')).toBe('');
+    });
+
+    it('hands over the gathered material with the model words, without the calls', () => {
+        const handover = evidenceHandover('I need to list again.<tool_call>exec<arg_key>command</arg_key></tool_call>', [
+            ['Tool call results:', 'list_directory of ".": [{"name":"a.txt","type":"file"}]'],
+            ['Empty', '   '],
+        ]);
+
+        expect(handover).toContain('could not be completed');
+        expect(handover).toContain('Its words: I need to list again.');
+        expect(handover).toContain('a.txt');
+        expect(handover).not.toContain('<tool_call>');
+        expect(handover).not.toContain('Empty');
     });
 });
 

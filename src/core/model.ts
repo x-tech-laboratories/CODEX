@@ -14,6 +14,9 @@ import { deflateRawSync } from 'node:zlib';
 import { GPU_LOCK } from './gpuLock.js';
 import { MAX_TOKENS, TEMPERATURE } from './settings.js';
 
+// How a tool call written as text begins, in Qwen's XML form and the form of Spark models.
+export const TEXT_TOOL_CALL_OPENINGS: readonly string[] = ['<tool_call>', '<function='];
+
 // ============================================================================
 // Request and reply shapes
 // ============================================================================
@@ -240,6 +243,8 @@ export class LocalModel implements ChatModel {
                 temperature: request.temperature ?? TEMPERATURE,
                 grammar: grammar as never,
                 functions: toolsOffered ? functionDefinitions(request.tools!) : undefined,
+                // With no tools offered, a call the model starts writing as text stops the reply at its opening tag.
+                customStopTriggers: toolsOffered || grammar ? undefined : TEXT_TOOL_CALL_OPENINGS,
                 onTextChunk,
                 signal: abort.signal,
             } as never);
@@ -249,8 +254,10 @@ export class LocalModel implements ChatModel {
                 function: { name: call.functionName, arguments: JSON.stringify(call.params ?? {}) },
             }));
             const stopReason = response.metadata.stopReason;
+            // The opening tag is kept so the checks see that the model wanted a tool it did not have.
+            const content = stopReason === 'customStopTrigger' ? response.response + TEXT_TOOL_CALL_OPENINGS[0] : response.response;
             return {
-                content: response.response,
+                content,
                 tool_calls: toolCalls,
                 finish_reason: toolCalls.length > 0 ? 'tool_calls' : stopReason === 'maxTokens' ? 'length' : 'stop',
             };
