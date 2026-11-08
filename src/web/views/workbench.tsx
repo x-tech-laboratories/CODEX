@@ -7,13 +7,13 @@ import { useEffect, useRef } from 'react';
 import {
     cancel_run, clear_run, copy_answer, discard_run, form, load_user_commands, pending_step, prompt, resume_run, start_run,
 } from '../lib/controller.ts';
-import { use_store } from '../lib/store.ts';
+import { use_store } from '@x-tech-laboratories/x-libs/web/react/store';
 import { dispatch, use_workbench } from '../lib/workbench.ts';
 import { choose_final_answer, choose_task, chosen_task, chosen_task_steps, set_graph_shown, unfinished_run_text } from '../run_state.ts';
 import { MODE_CHOICES, MODE_NAMES } from '../settings_form.ts';
 import type { TaskGraph } from '../task_graph.ts';
 import { task_output_markdown, task_summary_markdown } from '../task_view.ts';
-import { Markdown } from '../widgets/markdown.tsx';
+import { Markdown } from '@x-tech-laboratories/x-libs/web/react/markdown';
 import { TaskGraphView } from '../widgets/graph_views.tsx';
 import { PromptBox } from '../widgets/prompt_box.tsx';
 import { StepList } from '../widgets/step_list.tsx';
@@ -115,10 +115,10 @@ export function Workbench() {
                             <Markdown text={task === null ? `### Task ${state.chosen_task_id ?? ''}` : task_summary_markdown(task)} />
                             <StepList task_id={state.chosen_task_id ?? ''} steps={chosen_task_steps(state)} pending={pending} on_revealed={() => pending_step.set(null)} />
                             <h3 className="detail-heading">Output</h3>
-                            <Markdown text={task === null ? '_No output yet._' : task_output_markdown(task)} />
+                            <Markdown text={task === null ? '_No output yet._' : task_output_markdown(task)} follow />
                         </div>
                     ) : (
-                        <Markdown text={state.final_text} class_name="output final-answer" />
+                        <Markdown text={state.final_text} class_name="output final-answer" follow />
                     )}
                     {state.nodes.length === 0 && state.graph_shown && <Empty title={NO_TASKS_TEXT} />}
                 </Section>

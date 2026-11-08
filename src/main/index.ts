@@ -1,5 +1,5 @@
 // The Electron main process: opens the window and the tray icon, connects them to the daemon, and passes requests and events on.
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, nativeTheme, screen, shell, Tray, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, nativeTheme, screen, shell, Tray } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bring_to_front, hold_single_instance } from '@x-tech-laboratories/x-libs/electron/app';
@@ -11,7 +11,8 @@ import * as autostart from './autostart.js';
 import { DISCONNECTED_EVENT, type DaemonClient } from './daemonBridge.js';
 import { connectToDaemon } from './daemonLifecycle.js';
 import { freshActions, notificationBody, summarizeActions } from './inbox.js';
-import { AUTOSTART_CHANGED_EVENT, forwardEvent, registerIpc, SHOW_INBOX_EVENT } from './ipc.js';
+import { codex_bridge } from '../shared/ipc.js';
+import { AUTOSTART_CHANGED_EVENT, forwardEvent, ipcAnswers, SHOW_INBOX_EVENT } from './ipc.js';
 import { launchOptions } from './paths.js';
 import { menuTemplate, TRAY_HOST_POLL_SECONDS, TRAY_WAIT_SECONDS, trayHostRunning, trayItems, trayTooltip } from './tray.js';
 
@@ -127,10 +128,6 @@ async function readInbox(connected: DaemonClient): Promise<void> {
 // ============================================================================
 // Window
 // ============================================================================
-
-function isTrustedSender(event: IpcMainInvokeEvent): boolean {
-    return is_app_page(event.senderFrame?.url ?? '', { dev_url: devUrl, file: rendererPage });
-}
 
 function createWindow(showWhenReady = true): BrowserWindow {
     const area = screen.getPrimaryDisplay().workAreaSize;
@@ -323,8 +320,8 @@ function startTray(): void {
 
 nativeTheme.themeSource = 'system';
 
-registerIpc({
-    ipcMain,
+// Only the app's own page may call the bridge; every reply travels in an envelope the preload opens.
+codex_bridge.handle(ipcMain, ipcAnswers({
     window: () => mainWindow,
     caller: () => client,
     connection: connectOnce,
@@ -336,8 +333,7 @@ registerIpc({
         setEnabled: setLaunchAtLogin,
     },
     restartDaemon,
-    isTrustedSender,
-});
+}), { trusted: (event) => is_app_page(event.senderFrame?.url ?? '', { dev_url: devUrl, file: rendererPage }), envelopes: true });
 
 if (hold_single_instance(app, showWindow)) {
     void app.whenReady().then(() => {

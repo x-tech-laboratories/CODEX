@@ -1,11 +1,11 @@
 // The Inbox: the actions the assistant proposes, each a card with Done and Dismiss.
-import { Card, Cards } from '@x-tech-laboratories/x-libs/web/react/layout';
+import { Card, Cards, PageHeading } from '@x-tech-laboratories/x-libs/web/react/layout';
 import { Empty } from '@x-tech-laboratories/x-libs/web/react/states';
 import { useEffect } from 'react';
 
 import { action_cards, NO_ACTIONS_TEXT } from '../inbox_view.ts';
 import { inbox, refresh_inbox, resolve_action } from '../lib/controller.ts';
-import { use_store } from '../lib/store.ts';
+import { use_store } from '@x-tech-laboratories/x-libs/web/react/store';
 
 export function Inbox() {
     const actions = use_store(inbox);
@@ -14,7 +14,7 @@ export function Inbox() {
 
     return (
         <div className="page">
-            <h2>Proposed by the assistant</h2>
+            <PageHeading level={2} title="Proposed by the assistant" />
             {cards.length === 0 ? <Empty title={NO_ACTIONS_TEXT} /> : (
                 <Cards>
                     {cards.map((card) => (

@@ -1,11 +1,11 @@
 // The CODEX window: X-Libs' shell with the pages in its sidebar, the mascot at its foot, and the daemon's state in the top bar.
-import { StateBadge } from '@x-tech-laboratories/x-libs/web/react/badges';
+import { StateBadge, StatusPill, type Tone } from '@x-tech-laboratories/x-libs/web/react/badges';
 import { Shell, use_route } from '@x-tech-laboratories/x-libs/web/react/shell';
 import { theme_choice } from '@x-tech-laboratories/x-libs/web/theme';
 import { useEffect } from 'react';
 
 import { answer_clarification, inbox, inbox_label, set_background_enabled, start } from './lib/controller.ts';
-import { use_store } from './lib/store.ts';
+import { use_store } from '@x-tech-laboratories/x-libs/web/react/store';
 import { use_workbench } from './lib/workbench.ts';
 import { background_state, type Connection } from './run_state.ts';
 import { Background } from './views/background.tsx';
@@ -24,6 +24,14 @@ const CONNECTION_LABELS: Record<Connection, [string, 'none' | 'good' | 'bad']> =
     unavailable: ['Daemon unavailable', 'bad'],
 };
 
+// The dot's tone for each background state; working pulses while research runs.
+const BACKGROUND_TONES: Record<ReturnType<typeof background_state>, Tone> = {
+    idle: 'none',
+    working: 'info',
+    paused: 'warn',
+    error: 'bad',
+};
+
 const PAGES = {
     '': Workbench,
     inbox: Inbox,
@@ -38,12 +46,15 @@ type Page = keyof typeof PAGES;
 function BackgroundPill() {
     const state = use_workbench();
     const enabled = Boolean(state.settings?.background_research_enabled);
+    const background = background_state(state.background_status);
     return (
-        <span className="background-pill" title="Background research">
-            <span className="dot" data-state={background_state(state.background_status)} aria-hidden="true" />
-            <span className="small">{state.background_status}</span>
-            <button className="small" disabled={state.settings === null} onClick={() => void set_background_enabled(!enabled)}>{enabled ? 'Pause' : 'Resume'}</button>
-        </span>
+        <StatusPill
+            title="Background research"
+            tone={BACKGROUND_TONES[background]}
+            busy={background === 'working'}
+            label={state.background_status}
+            action={<button className="small" disabled={state.settings === null} onClick={() => void set_background_enabled(!enabled)}>{enabled ? 'Pause' : 'Resume'}</button>}
+        />
     );
 }
 

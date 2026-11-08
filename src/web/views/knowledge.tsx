@@ -1,13 +1,14 @@
 // The Knowledge page: the store as a graph, with the chosen node's sources, facts and relationships beside it.
+import { SearchBox } from '@x-tech-laboratories/x-libs/web/react/controls';
 import { Section, Toolbar } from '@x-tech-laboratories/x-libs/web/react/layout';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
 import type { KnowledgeGraph } from '../knowledge_graph.ts';
 import { choice_key, chosen_knowledge, facts_markdown, graph_markdown, knowledge_tree, sources_markdown } from '../knowledge_view.ts';
 import { choose_knowledge, knowledge, knowledge_choice, knowledge_query, refresh_knowledge, search_knowledge } from '../lib/controller.ts';
-import { use_store } from '../lib/store.ts';
+import { use_store } from '@x-tech-laboratories/x-libs/web/react/store';
 import { KnowledgeGraphView } from '../widgets/graph_views.tsx';
-import { Markdown } from '../widgets/markdown.tsx';
+import { Markdown } from '@x-tech-laboratories/x-libs/web/react/markdown';
 
 export const CHOOSE_TEXT = 'Select a topic or search stored evidence.';
 
@@ -15,10 +16,8 @@ export function Knowledge() {
     const store = use_store(knowledge);
     const query = use_store(knowledge_query);
     const choice = use_store(knowledge_choice);
-    const [typed, set_typed] = useState(query);
     const graph = useRef<KnowledgeGraph | null>(null);
     useEffect(() => void refresh_knowledge(), []);
-    useEffect(() => set_typed(query), [query]);
 
     const tree = useMemo(() => knowledge_tree(store.topics, store.sources, store.facts), [store]);
     const chosen = query
@@ -28,16 +27,7 @@ export function Knowledge() {
     return (
         <div className="page knowledge">
             <Toolbar>
-                <input
-                    type="search"
-                    className="grow"
-                    aria-label="Search stored evidence"
-                    placeholder="Search stored evidence, then press Enter"
-                    value={typed}
-                    onChange={(event) => set_typed(event.currentTarget.value)}
-                    onKeyDown={(event) => { if (event.key === 'Enter') search_knowledge(typed); }}
-                />
-                <button onClick={() => search_knowledge(typed)}>Search</button>
+                <SearchBox label="Search stored evidence" value={query} on_submit={search_knowledge} submit_label="Search" />
                 <button onClick={() => void refresh_knowledge()}>Refresh</button>
             </Toolbar>
             <div className="knowledge-browser">

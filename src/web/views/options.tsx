@@ -1,11 +1,11 @@
 // The Options page: the daemon's settings as a form, sized for this machine on request, and this computer's launch at login.
-import { Switch } from '@x-tech-laboratories/x-libs/web/react/controls';
+import { PathInput, Switch } from '@x-tech-laboratories/x-libs/web/react/controls';
 import { SettingRow, SettingsGroup } from '@x-tech-laboratories/x-libs/web/react/layout';
 
 import {
     apply_settings, auto_size, browse_for_path, form, launch_at_login, restart_daemon, save_settings, set_launch_at_login,
 } from '../lib/controller.ts';
-import { use_store } from '../lib/store.ts';
+import { use_store } from '@x-tech-laboratories/x-libs/web/react/store';
 import { use_workbench } from '../lib/workbench.ts';
 import { FIELD_GROUPS, MCP_SERVERS_HINT, type FormValues, type NumberField, type PathField, type SwitchField } from '../settings_form.ts';
 
@@ -27,15 +27,11 @@ function NumberInput({ field, values, change }: { field: NumberField; values: Fo
     );
 }
 
-function PathInput({ field, values, change }: { field: PathField; values: FormValues; change: Change }) {
-    const current = values.text[field.name] ?? '';
+function PathSetting({ field, values, change }: { field: PathField; values: FormValues; change: Change }) {
     const set = (next: string) => change((before) => ({ ...before, text: { ...before.text, [field.name]: next } }));
     return (
         <SettingRow label={field.label}>
-            <span className="path-row">
-                <input type="text" aria-label={field.label} spellCheck={false} value={current} onChange={(event) => set(event.currentTarget.value)} />
-                <button type="button" onClick={() => void browse_for_path(field, current).then((chosen) => { if (chosen !== null) set(chosen); })}>Browse…</button>
-            </span>
+            <PathInput label={field.label} value={values.text[field.name] ?? ''} on_change={set} pick={(current) => browse_for_path(field, current)} />
         </SettingRow>
     );
 }
@@ -67,12 +63,12 @@ export function Options() {
                         {group.heading === 'Background research' ? (
                             <>
                                 {(group.numbers ?? []).map((field) => <NumberInput key={field.name} field={field} values={shown} change={change} />)}
-                                {(group.paths ?? []).map((field) => <PathInput key={field.name} field={field} values={shown} change={change} />)}
+                                {(group.paths ?? []).map((field) => <PathSetting key={field.name} field={field} values={shown} change={change} />)}
                                 {(group.after ?? []).map((field) => <NumberInput key={field.name} field={field} values={shown} change={change} />)}
                             </>
                         ) : (
                             <>
-                                {(group.paths ?? []).map((field) => <PathInput key={field.name} field={field} values={shown} change={change} />)}
+                                {(group.paths ?? []).map((field) => <PathSetting key={field.name} field={field} values={shown} change={change} />)}
                                 {(group.numbers ?? []).map((field) => <NumberInput key={field.name} field={field} values={shown} change={change} />)}
                             </>
                         )}

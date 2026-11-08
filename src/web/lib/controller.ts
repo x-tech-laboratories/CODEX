@@ -1,4 +1,7 @@
 // What the pages ask of the daemon and the main process: runs, settings, background research, the inbox and the knowledge store.
+import { describe_error } from '@x-tech-laboratories/x-libs/web/errors';
+import { create_store } from '@x-tech-laboratories/x-libs/web/store';
+
 import { inbox_tab_text } from '../inbox_view.ts';
 import { NO_JOBS_TEXT, queue_lines, type TreeChoice } from '../knowledge_view.ts';
 import {
@@ -18,7 +21,6 @@ import {
 import { apply_size_choice, auto_size_request, collect_settings, settings_to_form, size_choice_message, type FormValues, type PathField } from '../settings_form.ts';
 import type { Knowledge, ProposedAction, ResearchJob, Settings, SizeChoice, Status, UnfinishedRun, UserCommand } from '../types.ts';
 import { call_daemon, codex, notify, on_daemon_event, request } from './api.ts';
-import { create_store } from './store.ts';
 import { dispatch, get_state, set_effect_handler } from './workbench.ts';
 
 export const RECONNECT_SECONDS = 3;
@@ -70,7 +72,7 @@ export function form_settings(): Settings | null {
     try {
         return collect_settings(state.settings, values);
     } catch (error) {
-        notify(`Invalid settings: ${(error as Error).message}`, true);
+        notify(`Invalid settings: ${describe_error(error)}`, true);
         return null;
     }
 }
@@ -106,7 +108,7 @@ export async function auto_size(): Promise<void> {
     try {
         sizing = auto_size_request(values);
     } catch (error) {
-        notify(`Invalid settings: ${(error as Error).message}`, true);
+        notify(`Invalid settings: ${describe_error(error)}`, true);
         return;
     }
     notify('Sizing the models for this machine...');
@@ -133,7 +135,7 @@ export async function browse_for_path(field: PathField, current: string): Promis
             filters: [{ name: 'GGUF model', extensions: ['gguf'] }, { name: 'All files', extensions: ['*'] }],
         });
     } catch (error) {
-        notify((error as Error).message, true);
+        notify(describe_error(error), true);
         return null;
     }
 }
@@ -145,7 +147,7 @@ export async function set_launch_at_login(enabled: boolean): Promise<boolean> {
         notify(now ? 'CODEX will start in the tray when you log in.' : 'CODEX will no longer start when you log in.');
         return now === enabled;
     } catch (error) {
-        notify((error as Error).message, true);
+        notify(describe_error(error), true);
         return false;
     }
 }
@@ -164,7 +166,7 @@ export async function restart_daemon(): Promise<void> {
         await codex.restart_daemon();
         notify('Restarting the daemon...');
     } catch (error) {
-        notify((error as Error).message, true);
+        notify(describe_error(error), true);
     }
 }
 
@@ -239,7 +241,7 @@ export async function copy_answer(): Promise<void> {
         await codex.copy_text(answer);
         notify('Copied the answer.');
     } catch (error) {
-        notify((error as Error).message, true);
+        notify(describe_error(error), true);
     }
 }
 
@@ -433,8 +435,8 @@ export function start(): () => void {
     set_effect_handler(run_effect);
     const stop = on_daemon_event(handle_event);
     void read_launch_at_login();
-    connect_to_daemon().catch((error: Error) => {
-        dispatch(connection_failed(get_state(), error.message));
+    connect_to_daemon().catch((error: unknown) => {
+        dispatch(connection_failed(get_state(), describe_error(error)));
         reconnect_soon();
     });
     return stop;

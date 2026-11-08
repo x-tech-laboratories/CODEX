@@ -1,8 +1,10 @@
 // The IPC the window may use: daemon requests from a fixed list, native dialogs, the clipboard, user commands, launch at login, and restarting the daemon.
-import type { BrowserWindow, IpcMain, IpcMainInvokeEvent, OpenDialogOptions, SaveDialogOptions } from 'electron';
+import type { BrowserWindow, OpenDialogOptions, SaveDialogOptions } from 'electron';
+
+import type { Implementation } from '@x-tech-laboratories/x-libs/electron/bridge';
 
 import { loadCommands } from '../core/commands.js';
-import { codex_bridge, codex_events, type CodexApi, type DialogRequest, type Envelope, type UserCommand } from '../shared/ipc.js';
+import { codex_events, type CodexApi, type DialogRequest, type UserCommand } from '../shared/ipc.js';
 
 // The window hears this alongside the daemon's events when launch at login changes from the tray.
 export const AUTOSTART_CHANGED_EVENT = 'autostart.changed';
@@ -33,8 +35,6 @@ export const ALLOWED_METHODS = new Set([
     'discard_run',
 ]);
 
-export type { Envelope } from '../shared/ipc.js';
-
 export type DaemonCaller = {
     call(method: string, params?: Record<string, unknown>): Promise<unknown>;
 };
@@ -43,31 +43,18 @@ export type DaemonCaller = {
 // Requests
 // ============================================================================
 
-function errorText(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
-
-export async function wrap<T>(work: () => Promise<T> | T): Promise<Envelope<T>> {
-    try {
-        return { ok: true, result: await work() };
-    } catch (error) {
-        return { ok: false, error: errorText(error) };
+// Passes one allowed request to the daemon; the bridge puts a thrown error's words in the reply's envelope.
+export async function handleRequest(caller: DaemonCaller | null, method: unknown, params: unknown): Promise<unknown> {
+    if (typeof method !== 'string' || !ALLOWED_METHODS.has(method)) {
+        throw new Error(`Unknown method: ${String(method)}`);
     }
-}
-
-export async function handleRequest(caller: DaemonCaller | null, method: unknown, params: unknown): Promise<Envelope> {
-    return wrap(async () => {
-        if (typeof method !== 'string' || !ALLOWED_METHODS.has(method)) {
-            throw new Error(`Unknown method: ${String(method)}`);
-        }
-        if (params !== undefined && (params === null || typeof params !== 'object' || Array.isArray(params))) {
-            throw new Error('params must be a JSON object.');
-        }
-        if (caller === null) {
-            throw new Error('Not connected to the daemon yet.');
-        }
-        return caller.call(method, (params as Record<string, unknown> | undefined) ?? {});
-    });
+    if (params !== undefined && (params === null || typeof params !== 'object' || Array.isArray(params))) {
+        throw new Error('params must be a JSON object.');
+    }
+    if (caller === null) {
+        throw new Error('Not connected to the daemon yet.');
+    }
+    return caller.call(method, (params as Record<string, unknown> | undefined) ?? {});
 }
 
 // Lists the commands the user defined in files for this folder, for the prompt's suggestions.
@@ -109,7 +96,6 @@ export function saveDialogOptions(request: unknown): SaveDialogOptions {
 // ============================================================================
 
 export type IpcDependencies = {
-    ipcMain: Pick<IpcMain, 'handle'>;
     window: () => BrowserWindow | null;
     caller: () => DaemonCaller | null;
     connection: () => Promise<{ socket_path: string; started: boolean }>;
@@ -118,52 +104,40 @@ export type IpcDependencies = {
     writeClipboard: (text: string) => void;
     autostart: { isEnabled: () => boolean; setEnabled: (enabled: boolean) => void };
     restartDaemon: () => void;
-    isTrustedSender: (event: IpcMainInvokeEvent) => boolean;
 };
 
-type Answer = (...args: unknown[]) => Promise<Envelope>;
-
-// Each bridge method's answer, every one wrapped in an envelope so the preload can hand the page a plain error.
-export function ipcAnswers(dependencies: IpcDependencies): Record<keyof CodexApi, Answer> {
+// Each bridge method's answer; codex_bridge.handle puts each in an envelope and refuses pages other than the app's own.
+export function ipcAnswers(dependencies: IpcDependencies): Implementation<CodexApi> {
     return {
-        connect: () => wrap(() => dependencies.connection()),
+        connect: () => dependencies.connection(),
         request: (method, params) => handleRequest(dependencies.caller(), method, params),
-        open_dialog: (request) => wrap(async () => {
+        open_dialog: async (request) => {
             const window = dependencies.window();
             if (window === null) return null;
             const answer = await dependencies.showOpenDialog(window, openDialogOptions(request));
             return answer.canceled ? null : answer.filePaths[0] ?? null;
-        }),
-        save_dialog: (request) => wrap(async () => {
+        },
+        save_dialog: async (request) => {
             const window = dependencies.window();
             if (window === null) return null;
             const answer = await dependencies.showSaveDialog(window, saveDialogOptions(request));
             return answer.canceled ? null : answer.filePath ?? null;
-        }),
-        copy_text: (text) => wrap(() => {
+        },
+        copy_text: (text) => {
             dependencies.writeClipboard(String(text ?? ''));
             return true;
-        }),
-        list_commands: (filesystemRoot) => wrap(() => listUserCommands(filesystemRoot)),
-        get_autostart: () => wrap(() => dependencies.autostart.isEnabled()),
-        set_autostart: (enabled) => wrap(() => {
+        },
+        list_commands: (filesystemRoot) => listUserCommands(filesystemRoot),
+        get_autostart: () => dependencies.autostart.isEnabled(),
+        set_autostart: (enabled) => {
             dependencies.autostart.setEnabled(Boolean(enabled));
             return dependencies.autostart.isEnabled();
-        }),
-        restart_daemon: () => wrap(() => {
+        },
+        restart_daemon: () => {
             dependencies.restartDaemon();
             return true;
-        }),
+        },
     };
-}
-
-// Answers every bridge method on its channel, refusing calls from any page but the app's own.
-export function registerIpc(dependencies: IpcDependencies): void {
-    const answers = ipcAnswers(dependencies);
-    for (const method of codex_bridge.method_names) {
-        dependencies.ipcMain.handle(codex_bridge.channel(method), (event, ...args) =>
-            dependencies.isTrustedSender(event) ? answers[method](...args) : { ok: false, error: 'Untrusted sender.' });
-    }
 }
 
 // Passes one daemon event on to the window, if it is still open.

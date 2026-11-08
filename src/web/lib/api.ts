@@ -1,4 +1,5 @@
 // The page's side of the bridge: daemon calls that report a failure as a toast, and the daemon's events by name.
+import { describe_error } from '@x-tech-laboratories/x-libs/web/errors';
 import { toast } from '@x-tech-laboratories/x-libs/web/react/toasts';
 
 import type { DaemonEvent } from '../../shared/ipc.ts';
@@ -21,7 +22,7 @@ export async function call_daemon<T>(method: string, params: Record<string, unkn
     try {
         return await request<T>(method, params);
     } catch (error) {
-        notify((error as Error).message, true);
+        notify(describe_error(error), true);
         return null;
     }
 }

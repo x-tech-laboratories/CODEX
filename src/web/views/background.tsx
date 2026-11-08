@@ -1,23 +1,13 @@
 // The Background page: whether idle research runs, a topic to queue, the queue, and the model's output as it streams.
 import { Switch } from '@x-tech-laboratories/x-libs/web/react/controls';
+import { FollowingOutput } from '@x-tech-laboratories/x-libs/web/react/following';
 import { Section, SettingRow, Toolbar } from '@x-tech-laboratories/x-libs/web/react/layout';
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 
 import { queue_text, queue_topic, refresh_queue, research_now, set_background_enabled } from '../lib/controller.ts';
-import { use_store } from '../lib/store.ts';
+import { use_store } from '@x-tech-laboratories/x-libs/web/react/store';
 import { use_workbench } from '../lib/workbench.ts';
 import { BACKGROUND_WAITING_TEXT } from '../run_state.ts';
-
-// Keeps the newest output in sight unless the reader has scrolled up.
-function FollowingOutput({ text }: { text: string }) {
-    const box = useRef<HTMLPreElement>(null);
-    const element = box.current;
-    const following = element === null || element.scrollTop >= element.scrollHeight - element.clientHeight - 4;
-    useLayoutEffect(() => {
-        if (following && box.current !== null) box.current.scrollTop = box.current.scrollHeight;
-    }, [text]);
-    return <pre ref={box} className="output background-output">{text}</pre>;
-}
 
 export function Background() {
     const state = use_workbench();

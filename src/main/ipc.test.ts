@@ -4,7 +4,15 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { codex_bridge } from '../shared/ipc.js';
-import { ALLOWED_METHODS, handleRequest, listUserCommands, openDialogOptions, registerIpc, saveDialogOptions, type IpcDependencies } from './ipc.js';
+import { ALLOWED_METHODS, handleRequest, ipcAnswers, listUserCommands, openDialogOptions, saveDialogOptions, type IpcDependencies } from './ipc.js';
+
+// Answers the bridge as the main process does, through handlers kept by channel, for a window that is trusted or not.
+function handle_bridge(dependencies: Partial<IpcDependencies>, is_trusted: () => boolean): Map<string, (...args: unknown[]) => unknown> {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const ipcMain = { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler), removeHandler: () => undefined };
+    codex_bridge.handle(ipcMain, ipcAnswers(dependencies as IpcDependencies), { trusted: is_trusted, envelopes: true });
+    return handlers;
+}
 
 const directories: string[] = [];
 
@@ -22,19 +30,18 @@ describe('daemon requests from the window', () => {
     it('passes an allowed method and its params to the daemon', async () => {
         const caller = { call: vi.fn(async () => ({ run_id: 4 })) };
 
-        const envelope = await handleRequest(caller, 'run', { prompt: 'hello' });
+        const result = await handleRequest(caller, 'run', { prompt: 'hello' });
 
-        expect(envelope).toEqual({ ok: true, result: { run_id: 4 } });
+        expect(result).toEqual({ run_id: 4 });
         expect(caller.call).toHaveBeenCalledWith('run', { prompt: 'hello' });
     });
 
     it('never lets the window shut the daemon down', async () => {
         const caller = { call: vi.fn() };
 
-        const envelope = await handleRequest(caller, 'shutdown', {});
+        await expect(handleRequest(caller, 'shutdown', {})).rejects.toThrow('Unknown method: shutdown');
 
         expect(ALLOWED_METHODS.has('shutdown')).toBe(false);
-        expect(envelope).toEqual({ ok: false, error: 'Unknown method: shutdown' });
         expect(caller.call).not.toHaveBeenCalled();
     });
 
@@ -46,19 +53,14 @@ describe('daemon requests from the window', () => {
     });
 
     it('rejects params that are not an object', async () => {
-        const envelope = await handleRequest({ call: vi.fn() }, 'status', [1]);
-
-        expect(envelope).toEqual({ ok: false, error: 'params must be a JSON object.' });
+        await expect(handleRequest({ call: vi.fn() }, 'status', [1])).rejects.toThrow('params must be a JSON object.');
     });
 
     it('reports a missing connection and daemon errors as text', async () => {
         const failing = { call: vi.fn(async () => Promise.reject(new Error('Another request is already running.'))) };
 
-        const disconnected = await handleRequest(null, 'status', {});
-        const refused = await handleRequest(failing, 'run', { prompt: 'x' });
-
-        expect(disconnected).toEqual({ ok: false, error: 'Not connected to the daemon yet.' });
-        expect(refused).toEqual({ ok: false, error: 'Another request is already running.' });
+        await expect(handleRequest(null, 'status', {})).rejects.toThrow('Not connected to the daemon yet.');
+        await expect(handleRequest(failing, 'run', { prompt: 'x' })).rejects.toThrow('Another request is already running.');
     });
 });
 
@@ -102,14 +104,9 @@ describe('user commands', () => {
 
 describe('launch at login', () => {
     it('reads and sets the autostart entry for a trusted window only', async () => {
-        const handlers = new Map<string, (...args: unknown[]) => unknown>();
         let enabled = false;
         let trusted = true;
-        registerIpc({
-            ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
-            autostart: { isEnabled: () => enabled, setEnabled: (value: boolean) => (enabled = value) },
-            isTrustedSender: () => trusted,
-        } as unknown as IpcDependencies);
+        const handlers = handle_bridge({ autostart: { isEnabled: () => enabled, setEnabled: (value: boolean) => (enabled = value) } }, () => trusted);
 
         const turnedOn = await handlers.get(codex_bridge.channel('set_autostart'))!({}, true);
         const read = await handlers.get(codex_bridge.channel('get_autostart'))!({});
@@ -125,14 +122,9 @@ describe('launch at login', () => {
 
 describe('restarting the daemon', () => {
     it('restarts it for a trusted window only', async () => {
-        const handlers = new Map<string, (...args: unknown[]) => unknown>();
         const restartDaemon = vi.fn();
         let trusted = true;
-        registerIpc({
-            ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
-            restartDaemon,
-            isTrustedSender: () => trusted,
-        } as unknown as IpcDependencies);
+        const handlers = handle_bridge({ restartDaemon }, () => trusted);
 
         const restarted = await handlers.get(codex_bridge.channel('restart_daemon'))!({});
         trusted = false;
