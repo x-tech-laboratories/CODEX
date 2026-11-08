@@ -1,7 +1,6 @@
 // The checking step of a task: check a result against its evidence, and revise it once when it falls short.
 import { actionReportProblems, asksForCoverage, asksForSubfolders, calculationProblems, coverage, coverageProblems, insideFolder, textToolCallProblems, unbackedClaims, uncitedUrls, unsupportedValues, type Coverage } from '../checks.js';
 import { type Section } from '../contextBudget.js';
-import { type Recalled } from '../knowledge.js';
 import { CHECK_MAX_TOKENS, CHECK_PROMPT, CHECK_SCHEMA, REVISE_NOTE, TaskNode, errorMessage, parseCheck, type TaskTreeRun } from '../taskTree.js';
 
 // Check a result and revise it once when it fails; return the result and any problem left.

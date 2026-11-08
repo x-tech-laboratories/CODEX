@@ -1,7 +1,0 @@
-{
-    "extends": "./tsconfig.json",
-    "compilerOptions": {
-        "types": ["node"]
-    },
-    "exclude": ["src/renderer/**", "src/**/*.test.ts", "src/daemon/daemonHarness.ts"]
-}

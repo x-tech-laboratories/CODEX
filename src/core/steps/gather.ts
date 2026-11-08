@@ -4,7 +4,7 @@ import { inputTokenBudget, type Section } from '../contextBudget.js';
 import { filesystemNote, formatRecall, isSelfContained, MAX_SEARCH_QUERIES, pageSummarizer, queueStaleTopics, searchQuery, searchWithMemory } from '../evidence.js';
 import { type RecalledFact } from '../knowledge.js';
 import { runToolStage } from '../toolStage.js';
-import { APPROACH_STEPS, Decision, GATHER_PROMPTS, MIN_ACT_TOOL_CALLS, TaskNode, declinedActionsNote, unique, type TaskTreeRun } from '../taskTree.js';
+import { APPROACH_STEPS, Decision, GATHER_PROMPTS, MIN_ACT_TOOL_CALLS, TaskNode, declinedActionsNote, type TaskTreeRun } from '../taskTree.js';
 
 // Look each query up, and say whether stored summaries answered every one of them.
 export async function search(run: TaskTreeRun, node: TaskNode, queries: string[]): Promise<[Section[], boolean]> {

@@ -1,7 +1,11 @@
 // The Electron main process: opens the window and the tray icon, connects them to the daemon, and passes requests and events on.
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, nativeTheme, screen, shell, Tray, type IpcMainInvokeEvent } from 'electron';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+import { bring_to_front, hold_single_instance } from '@x-tech-laboratories/x-libs/electron/app';
+import { is_app_page, is_external_link } from '@x-tech-laboratories/x-libs/electron/window';
+
+import trayIconPath from '../../resources/tray-icon.png?asset';
 
 import * as autostart from './autostart.js';
 import { DISCONNECTED_EVENT, type DaemonClient } from './daemonBridge.js';
@@ -11,10 +15,11 @@ import { AUTOSTART_CHANGED_EVENT, forwardEvent, registerIpc, SHOW_INBOX_EVENT } 
 import { launchOptions } from './paths.js';
 import { menuTemplate, TRAY_HOST_POLL_SECONDS, TRAY_WAIT_SECONDS, trayHostRunning, trayItems, trayTooltip } from './tray.js';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
+const here = import.meta.dirname;
 const rendererPage = path.join(here, '../renderer/index.html');
-const preloadScript = path.join(here, 'preload.cjs');
-const trayIconPath = path.join(here, '../renderer/tray-icon.png');
+// electron-vite serves the page from its dev server while developing, and emits the preload as an ES module.
+const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL;
+const preloadScript = path.join(here, '../preload/index.mjs');
 const options = launchOptions(process.argv);
 // Without codex-gui on the PATH or named by the package, launch at login runs this same Electron on this same script.
 const autostartOptions = { fallback: [process.execPath, fileURLToPath(import.meta.url)] };
@@ -124,8 +129,7 @@ async function readInbox(connected: DaemonClient): Promise<void> {
 // ============================================================================
 
 function isTrustedSender(event: IpcMainInvokeEvent): boolean {
-    const url = event.senderFrame?.url ?? '';
-    return url.split('#')[0] === pathToFileURL(rendererPage).href;
+    return is_app_page(event.senderFrame?.url ?? '', { dev_url: devUrl, file: rendererPage });
 }
 
 function createWindow(showWhenReady = true): BrowserWindow {
@@ -142,7 +146,8 @@ function createWindow(showWhenReady = true): BrowserWindow {
             preload: preloadScript,
             contextIsolation: true,
             nodeIntegration: false,
-            sandbox: true,
+            // The preload imports the shared bridge as an ES module, which needs the sandbox off.
+            sandbox: false,
             spellcheck: true,
         },
     });
@@ -160,15 +165,15 @@ function createWindow(showWhenReady = true): BrowserWindow {
     window.on('hide', refreshTray);
     // Links open in the system browser, and the window never leaves its own page.
     window.webContents.setWindowOpenHandler(({ url }) => {
-        if (/^https?:\/\//.test(url)) {
+        if (is_external_link(url)) {
             void shell.openExternal(url);
         }
         return { action: 'deny' };
     });
     window.webContents.on('will-navigate', (event, url) => {
-        if (url.split('#')[0] !== pathToFileURL(rendererPage).href) {
+        if (!is_app_page(url, { dev_url: devUrl, file: rendererPage })) {
             event.preventDefault();
-            if (/^https?:\/\//.test(url)) {
+            if (is_external_link(url)) {
                 void shell.openExternal(url);
             }
         }
@@ -179,7 +184,11 @@ function createWindow(showWhenReady = true): BrowserWindow {
         }
         refreshTray();
     });
-    void window.loadFile(rendererPage);
+    if (devUrl) {
+        void window.loadURL(devUrl);
+    } else {
+        void window.loadFile(rendererPage);
+    }
     return window;
 }
 
@@ -209,9 +218,8 @@ function showWindow(): void {
         mainWindow = createWindow();
         return;
     }
-    if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
-    mainWindow.focus();
+    bring_to_front(mainWindow);
 }
 
 // Shows the window on its Inbox page, waiting for a new window to load before it is told.
@@ -331,11 +339,7 @@ registerIpc({
     isTrustedSender,
 });
 
-if (!app.requestSingleInstanceLock()) {
-    app.quit();
-} else {
-    app.on('second-instance', showWindow);
-
+if (hold_single_instance(app, showWindow)) {
     void app.whenReady().then(() => {
         Menu.setApplicationMenu(applicationMenu());
         autostart.refresh(autostartOptions);

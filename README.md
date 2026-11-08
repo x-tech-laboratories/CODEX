@@ -585,10 +585,16 @@ To work on it, enter the dev shell, which provides Node 24 and Electron:
 ```bash
 nix develop
 npm ci
-npm run build
+npm run build        # typechecks, builds the CLI and daemon to dist/ and the window to out/
 npm test
-npm start            # open the window; uses $ELECTRON, or electron from PATH
+npm run lint
+npm run dev          # open the window on the dev server, reloading as the page changes
+npm start            # open the built window
 ```
+
+The window is a React page on the X-Libs widgets and Halon's stylesheets,
+built with electron-vite; its rendered tests live in `tests/` and start with
+`// @vitest-environment jsdom`.
 
 The one-shot CLI also runs from the dev shell after a build, with
 `npm run cli -- "your prompt"`. The `flock` command from util-linux must be
@@ -996,11 +1002,12 @@ accepts an ETAPI token from Options > ETAPI as a bearer token.
 | `src/daemon/client.ts`, `src/shared/protocol.ts` | Connecting to the daemon and the message format                                                             |
 | `src/cli/index.ts`                                 | The one-shot command line, with the `eval` and `recall-benchmark` subcommands                           |
 | `src/main/tray.ts`, `src/main/autostart.ts`      | The system tray icon and menu, and the login autostart entry                                                |
-| `src/main`, `src/renderer`                       | The Electron window: the main process that starts the daemon and relays its messages, and the page it shows |
+| `src/main`, `src/preload`, `src/shared/ipc.ts`   | The Electron main process that starts the daemon and relays its messages, and the bridge the page calls it through |
+| `src/web`                                          | The window's React page: the workbench, inbox, background, knowledge and options views on X-Libs' widgets   |
 | `evals/seed.json`, `evals/recall_tasks.json`     | The seed store's made-up facts and the tasks only recall can answer                                         |
 | `evals/reasoning_tasks.json`                       | Short reasoning and trivia questions for comparing models                                                   |
 
-Test files named `*.test.ts` sit beside the source files they cover.
+Test files named `*.test.ts` sit beside the core, daemon, CLI and main-process files they cover; the page's tests live in `tests/`.
 
 See [docs/1-architecture.md](docs/1-architecture.md) for how these parts fit together.
 

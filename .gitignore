@@ -17,3 +17,7 @@ result-*
 .venv/
 __pycache__/
 .pytest_cache/
+
+# electron-vite build
+out/
+*.tsbuildinfo

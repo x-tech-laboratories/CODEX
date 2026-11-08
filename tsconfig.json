@@ -1,18 +1,4 @@
 {
-    "compilerOptions": {
-        "target": "ES2023",
-        "module": "NodeNext",
-        "moduleResolution": "NodeNext",
-        "lib": ["ES2023"],
-        "outDir": "dist",
-        "rootDir": "src",
-        "strict": true,
-        "esModuleInterop": true,
-        "forceConsistentCasingInFileNames": true,
-        "skipLibCheck": true,
-        "types": ["node", "vitest/globals"],
-        "resolveJsonModule": true
-    },
-    "include": ["src/**/*.ts"],
-    "exclude": ["src/renderer/**"]
+    "files": [],
+    "references": [{ "path": "./tsconfig.node.json" }, { "path": "./tsconfig.web.json" }, { "path": "./tsconfig.cli.json" }]
 }

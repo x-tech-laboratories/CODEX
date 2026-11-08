@@ -2,7 +2,6 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { closeSync, mkdirSync, openSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { DaemonClient, DaemonError, type EventHandler } from './daemonBridge.js';
 import { defaultLogPath } from './paths.js';
@@ -19,7 +18,7 @@ export type SpawnFactory = (command: string, args: string[], options: SpawnOptio
 // ============================================================================
 
 export function daemonEntryScript(): string {
-    return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../daemon/index.js');
+    return path.resolve(import.meta.dirname, '../../dist/daemon/index.js');
 }
 
 export type DaemonCommand = {

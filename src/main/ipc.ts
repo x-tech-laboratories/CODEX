@@ -1,20 +1,8 @@
-// The IPC the window may use: daemon requests from a fixed list, daemon events, native dialogs, the clipboard, user commands, launch at login, and restarting the daemon.
+// The IPC the window may use: daemon requests from a fixed list, native dialogs, the clipboard, user commands, launch at login, and restarting the daemon.
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent, OpenDialogOptions, SaveDialogOptions } from 'electron';
 
 import { loadCommands } from '../core/commands.js';
-
-export const CHANNELS = {
-    connect: 'codex:connect',
-    request: 'codex:request',
-    event: 'codex:event',
-    openDialog: 'codex:open-dialog',
-    saveDialog: 'codex:save-dialog',
-    copyText: 'codex:copy-text',
-    listCommands: 'codex:list-commands',
-    getAutostart: 'codex:get-autostart',
-    setAutostart: 'codex:set-autostart',
-    restartDaemon: 'codex:restart-daemon',
-} as const;
+import { codex_bridge, codex_events, type CodexApi, type DialogRequest, type Envelope, type UserCommand } from '../shared/ipc.js';
 
 // The window hears this alongside the daemon's events when launch at login changes from the tray.
 export const AUTOSTART_CHANGED_EVENT = 'autostart.changed';
@@ -22,7 +10,7 @@ export const AUTOSTART_CHANGED_EVENT = 'autostart.changed';
 // The window hears this when the tray asks for the Inbox page.
 export const SHOW_INBOX_EVENT = 'inbox.show';
 
-// Shutdown is left out, since closing a window must never stop a daemon other interfaces share; a restart has its own channel.
+// Shutdown is left out, since closing a window must never stop a daemon other interfaces share; a restart has its own method.
 export const ALLOWED_METHODS = new Set([
     'status',
     'get_settings',
@@ -45,7 +33,7 @@ export const ALLOWED_METHODS = new Set([
     'discard_run',
 ]);
 
-export type Envelope<T = unknown> = { ok: true; result: T } | { ok: false; error: string };
+export type { Envelope } from '../shared/ipc.js';
 
 export type DaemonCaller = {
     call(method: string, params?: Record<string, unknown>): Promise<unknown>;
@@ -82,10 +70,8 @@ export async function handleRequest(caller: DaemonCaller | null, method: unknown
     });
 }
 
-export type CommandSummary = { name: string; description: string; mode: string | null };
-
 // Lists the commands the user defined in files for this folder, for the prompt's suggestions.
-export function listUserCommands(filesystemRoot: unknown): CommandSummary[] {
+export function listUserCommands(filesystemRoot: unknown): UserCommand[] {
     if (typeof filesystemRoot !== 'string' || !filesystemRoot.trim()) {
         return [];
     }
@@ -97,13 +83,6 @@ export function listUserCommands(filesystemRoot: unknown): CommandSummary[] {
 // ============================================================================
 // Dialog options
 // ============================================================================
-
-export type DialogRequest = {
-    title?: string;
-    defaultPath?: string;
-    directory?: boolean;
-    filters?: Array<{ name: string; extensions: string[] }>;
-};
 
 export function openDialogOptions(request: unknown): OpenDialogOptions {
     const given = (request && typeof request === 'object' ? request : {}) as DialogRequest;
@@ -130,7 +109,7 @@ export function saveDialogOptions(request: unknown): SaveDialogOptions {
 // ============================================================================
 
 export type IpcDependencies = {
-    ipcMain: IpcMain;
+    ipcMain: Pick<IpcMain, 'handle'>;
     window: () => BrowserWindow | null;
     caller: () => DaemonCaller | null;
     connection: () => Promise<{ socket_path: string; started: boolean }>;
@@ -142,45 +121,54 @@ export type IpcDependencies = {
     isTrustedSender: (event: IpcMainInvokeEvent) => boolean;
 };
 
-export function registerIpc(dependencies: IpcDependencies): void {
-    const { ipcMain } = dependencies;
-    const guarded = (work: (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<Envelope> | Envelope) =>
-        (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<Envelope> | Envelope =>
-            dependencies.isTrustedSender(event) ? work(event, ...args) : { ok: false, error: 'Untrusted sender.' };
+type Answer = (...args: unknown[]) => Promise<Envelope>;
 
-    ipcMain.handle(CHANNELS.connect, guarded(() => wrap(() => dependencies.connection())));
-    ipcMain.handle(CHANNELS.request, guarded((_event, method, params) => handleRequest(dependencies.caller(), method, params)));
-    ipcMain.handle(CHANNELS.openDialog, guarded((_event, request) => wrap(async () => {
-        const window = dependencies.window();
-        if (window === null) return null;
-        const answer = await dependencies.showOpenDialog(window, openDialogOptions(request));
-        return answer.canceled ? null : answer.filePaths[0] ?? null;
-    })));
-    ipcMain.handle(CHANNELS.saveDialog, guarded((_event, request) => wrap(async () => {
-        const window = dependencies.window();
-        if (window === null) return null;
-        const answer = await dependencies.showSaveDialog(window, saveDialogOptions(request));
-        return answer.canceled ? null : answer.filePath ?? null;
-    })));
-    ipcMain.handle(CHANNELS.copyText, guarded((_event, text) => wrap(() => {
-        dependencies.writeClipboard(String(text ?? ''));
-        return true;
-    })));
-    ipcMain.handle(CHANNELS.listCommands, guarded((_event, filesystemRoot) => wrap(() => listUserCommands(filesystemRoot))));
-    ipcMain.handle(CHANNELS.getAutostart, guarded(() => wrap(() => dependencies.autostart.isEnabled())));
-    ipcMain.handle(CHANNELS.setAutostart, guarded((_event, enabled) => wrap(() => {
-        dependencies.autostart.setEnabled(Boolean(enabled));
-        return dependencies.autostart.isEnabled();
-    })));
-    ipcMain.handle(CHANNELS.restartDaemon, guarded(() => wrap(() => {
-        dependencies.restartDaemon();
-        return true;
-    })));
+// Each bridge method's answer, every one wrapped in an envelope so the preload can hand the page a plain error.
+export function ipcAnswers(dependencies: IpcDependencies): Record<keyof CodexApi, Answer> {
+    return {
+        connect: () => wrap(() => dependencies.connection()),
+        request: (method, params) => handleRequest(dependencies.caller(), method, params),
+        open_dialog: (request) => wrap(async () => {
+            const window = dependencies.window();
+            if (window === null) return null;
+            const answer = await dependencies.showOpenDialog(window, openDialogOptions(request));
+            return answer.canceled ? null : answer.filePaths[0] ?? null;
+        }),
+        save_dialog: (request) => wrap(async () => {
+            const window = dependencies.window();
+            if (window === null) return null;
+            const answer = await dependencies.showSaveDialog(window, saveDialogOptions(request));
+            return answer.canceled ? null : answer.filePath ?? null;
+        }),
+        copy_text: (text) => wrap(() => {
+            dependencies.writeClipboard(String(text ?? ''));
+            return true;
+        }),
+        list_commands: (filesystemRoot) => wrap(() => listUserCommands(filesystemRoot)),
+        get_autostart: () => wrap(() => dependencies.autostart.isEnabled()),
+        set_autostart: (enabled) => wrap(() => {
+            dependencies.autostart.setEnabled(Boolean(enabled));
+            return dependencies.autostart.isEnabled();
+        }),
+        restart_daemon: () => wrap(() => {
+            dependencies.restartDaemon();
+            return true;
+        }),
+    };
+}
+
+// Answers every bridge method on its channel, refusing calls from any page but the app's own.
+export function registerIpc(dependencies: IpcDependencies): void {
+    const answers = ipcAnswers(dependencies);
+    for (const method of codex_bridge.method_names) {
+        dependencies.ipcMain.handle(codex_bridge.channel(method), (event, ...args) =>
+            dependencies.isTrustedSender(event) ? answers[method](...args) : { ok: false, error: 'Untrusted sender.' });
+    }
 }
 
 // Passes one daemon event on to the window, if it is still open.
 export function forwardEvent(window: BrowserWindow | null, event: string, data: Record<string, unknown>): void {
     if (window !== null && !window.isDestroyed()) {
-        window.webContents.send(CHANNELS.event, { event, data });
+        codex_events.emit([window], 'daemon', { event, data });
     }
 }

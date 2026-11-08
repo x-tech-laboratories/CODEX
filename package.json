@@ -2,39 +2,55 @@
     "name": "codex",
     "desktopName": "org.codex.CODEX.desktop",
     "private": true,
-    "version": "0.1.0",
+    "version": "0.2.0",
+    "description": "A task-tree harness for locally run language models",
+    "license": "GPL-3.0-or-later",
     "type": "module",
-    "main": "dist/main/index.js",
+    "main": "out/main/index.js",
+    "engines": {
+        "node": ">=24"
+    },
     "bin": {
         "codex": "dist/cli/index.js",
         "codex-daemon": "dist/daemon/index.js"
     },
     "scripts": {
-        "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json && cp -f src/renderer/index.html src/renderer/styles.css src/renderer/tray-icon.png dist/renderer/",
-        "start": "env -u ELECTRON_RUN_AS_NODE ${ELECTRON:-electron} dist/main/index.js",
-        "dev": "npm run build && npm start",
+        "dev": "electron-vite dev",
+        "build": "npm run typecheck && tsc -p tsconfig.cli.json && electron-vite build",
+        "start": "electron-vite preview",
+        "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+        "test": "vitest run",
+        "lint": "oxlint",
         "daemon": "node dist/daemon/index.js",
         "eval": "node dist/core/evaluation.js",
         "recall-benchmark": "node dist/core/recallBenchmark.js",
-        "test": "vitest run",
-        "typecheck": "tsc --noEmit -p tsconfig.json",
         "cli": "node dist/cli/index.js"
-    },
-    "devDependencies": {
-        "@types/node": "^24.19.2",
-        "electron": "^43.8.7",
-        "typescript": "^5.6.3",
-        "vite": "^8.3.5",
-        "vitest": "^5.1.0"
     },
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.32.2",
+        "@x-tech-laboratories/halon": "^0.3.0",
         "@x-tech-laboratories/robobuddy": "github:x-tech-laboratories/RoboBuddy#0ce6c01ed4116609ac78653fa9c5233906012a6c",
+        "@x-tech-laboratories/x-libs": "^0.8.0",
         "force-graph": "^1.52.0",
         "node-llama-cpp": "^3.22.2",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
         "sqlite-vec": "^0.1.9",
         "yaml": "^2.9.1"
     },
-    "description": "A task-tree harness for locally run language models",
-    "license": "GPL-3.0-or-later"
+    "devDependencies": {
+        "@testing-library/dom": "^10.4.2",
+        "@testing-library/react": "^16.3.3",
+        "@types/node": "^24.19.2",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "@vitejs/plugin-react": "^6.2.1",
+        "electron": "^43.8.7",
+        "electron-vite": "^6.0.0",
+        "jsdom": "^31.0.0",
+        "oxlint": "^1.92.0",
+        "typescript": "^7.0.2",
+        "vite": "^8.3.5",
+        "vitest": "^5.1.0"
+    }
 }

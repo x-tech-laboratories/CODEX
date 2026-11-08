@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+        "target": "ES2023",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "lib": ["ES2023"],
+        "outDir": "dist",
+        "rootDir": "src",
+        "strict": true,
+        "skipLibCheck": true,
+        "resolveJsonModule": true,
+        "types": ["node"]
+    },
+    "include": ["src/cli/**/*.ts", "src/daemon/**/*.ts", "src/core/**/*.ts", "src/shared/**/*.ts"],
+    "exclude": ["src/**/*.test.ts", "src/daemon/daemonHarness.ts"]
+}

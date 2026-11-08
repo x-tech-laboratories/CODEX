@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ALLOWED_METHODS, CHANNELS, handleRequest, listUserCommands, openDialogOptions, registerIpc, saveDialogOptions, type IpcDependencies } from './ipc.js';
+import { codex_bridge } from '../shared/ipc.js';
+import { ALLOWED_METHODS, handleRequest, listUserCommands, openDialogOptions, registerIpc, saveDialogOptions, type IpcDependencies } from './ipc.js';
 
 const directories: string[] = [];
 
@@ -110,10 +111,10 @@ describe('launch at login', () => {
             isTrustedSender: () => trusted,
         } as unknown as IpcDependencies);
 
-        const turnedOn = await handlers.get(CHANNELS.setAutostart)!({}, true);
-        const read = await handlers.get(CHANNELS.getAutostart)!({});
+        const turnedOn = await handlers.get(codex_bridge.channel('set_autostart'))!({}, true);
+        const read = await handlers.get(codex_bridge.channel('get_autostart'))!({});
         trusted = false;
-        const refused = await handlers.get(CHANNELS.setAutostart)!({}, false);
+        const refused = await handlers.get(codex_bridge.channel('set_autostart'))!({}, false);
 
         expect(turnedOn).toEqual({ ok: true, result: true });
         expect(read).toEqual({ ok: true, result: true });
@@ -133,9 +134,9 @@ describe('restarting the daemon', () => {
             isTrustedSender: () => trusted,
         } as unknown as IpcDependencies);
 
-        const restarted = await handlers.get(CHANNELS.restartDaemon)!({});
+        const restarted = await handlers.get(codex_bridge.channel('restart_daemon'))!({});
         trusted = false;
-        const refused = await handlers.get(CHANNELS.restartDaemon)!({});
+        const refused = await handlers.get(codex_bridge.channel('restart_daemon'))!({});
 
         expect(restarted).toEqual({ ok: true, result: true });
         expect(refused).toEqual({ ok: false, error: 'Untrusted sender.' });

@@ -1,0 +1,104 @@
+/* CODEX's own layout: how its pages, panes and the mascot sit. The look comes from Halon's tokens. */
+
+/* ============================================================================
+   Frame
+   ============================================================================ */
+
+.workbench-main { padding: var(--space-6); }
+
+.topbar .background-pill { display: inline-flex; align-items: center; gap: var(--space-3); margin-left: auto; }
+.topbar .background-pill + .badge { flex: none; }
+.background-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-tertiary); }
+.background-pill .dot[data-state='working'] { background: var(--accent); }
+.background-pill .dot[data-state='paused'] { background: var(--status-warning); }
+.background-pill .dot[data-state='error'] { background: var(--status-danger); }
+
+/* The mascot sits at the foot of the sidebar with the run's status under it. */
+.mascot-foot { margin-top: auto; display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-5) var(--space-4); }
+.mascot { width: 100%; max-width: 200px; }
+.mascot-body { fill: var(--accent); }
+.mascot-light { fill: var(--text-on-fill); }
+.mascot-screen { fill: #000; }
+.mascot-face { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.run-status { margin: 0; text-align: center; color: var(--accent); font-size: var(--text-control); }
+
+/* ============================================================================
+   Workbench
+   ============================================================================ */
+
+.workbench { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: var(--space-6); align-items: start; }
+.work { display: grid; gap: var(--space-6); min-width: 0; }
+.task-tree-panel { position: sticky; top: calc(var(--frame-height) + var(--space-6)); max-height: calc(100vh - var(--frame-height) - var(--space-8)); overflow: auto; }
+.task-row .task-state { font-family: var(--font-family-monospace); font-size: var(--text-caption); font-weight: 600; margin-right: var(--space-3); color: var(--text-tertiary); }
+.task-row.status-running .task-state { color: var(--accent); }
+.task-row.status-done .task-state { color: var(--status-success); }
+.task-row.status-unverified .task-state { color: var(--status-warning); }
+.task-row.status-failed .task-state { color: var(--status-danger); }
+.task-row .task-id { font-family: var(--font-family-monospace); margin-right: var(--space-3); color: var(--text-secondary); }
+.task-row .task-prompt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.prompt-wrap { position: relative; display: grid; }
+.prompt-wrap textarea { width: 100%; font-family: var(--font-family-interface); }
+.suggestions { position: absolute; top: 100%; left: 0; z-index: var(--layer-menu); min-width: 320px; max-width: 100%; margin: var(--space-2) 0 0; padding: var(--space-2); list-style: none; }
+.suggestions .menu-item { display: grid; gap: var(--space-1); cursor: pointer; }
+.suggestions .menu-item[aria-selected='true'] { background: var(--surface-navigation-hover); }
+.suggestions .usage { font-family: var(--font-family-monospace); }
+.toolbar .hint { margin-left: auto; align-self: center; }
+.resume-bar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.resume-bar span { flex: 1; }
+
+.output-panel { min-height: 60vh; }
+.task-graph { position: relative; height: 320px; overflow: hidden; border: var(--border-width) solid var(--border-default); border-radius: var(--radius-default); background: var(--surface-secondary); }
+.task-graph canvas { display: block; }
+.task-graph[data-empty='true']::after, .task-inputs[data-empty='true']::after, .step-text[data-empty='true']::after {
+    content: attr(data-empty-text); display: block; padding: var(--space-5); color: var(--text-tertiary); font-style: italic; text-align: center;
+}
+.task-graph[data-empty='true']::after { position: absolute; inset: 0; display: grid; place-items: center; }
+.output.task-detail, .output.final-answer { max-height: none; min-height: 200px; }
+.detail-heading { margin: var(--space-6) 0 var(--space-3); font-size: var(--text-caption); letter-spacing: var(--letter-spacing-caps); text-transform: uppercase; color: var(--text-secondary); }
+.input-step { margin-bottom: var(--space-3); }
+.input-step summary { cursor: pointer; }
+.input-title { margin: var(--space-3) 0 var(--space-1); font-size: var(--text-caption); color: var(--text-secondary); }
+.input-text, .step-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-family-monospace); font-size: var(--text-caption); line-height: var(--line-height-body); }
+.step-text { color: var(--text-secondary); }
+.step-heading { display: block; margin: var(--space-4) 0 var(--space-2); font-family: var(--font-family-interface); font-weight: 600; color: var(--text-body); }
+.step-text > span:first-child .step-heading { margin-top: 0; }
+
+/* ============================================================================
+   Markdown
+   ============================================================================ */
+
+.markdown { overflow-wrap: anywhere; }
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+.markdown pre { overflow: auto; padding: var(--space-4) var(--space-5); border-radius: var(--radius-small); background: var(--surface-secondary); }
+.markdown blockquote { margin: var(--space-4) 0; padding-left: var(--space-5); border-left: 3px solid var(--border-default); color: var(--text-secondary); }
+.markdown .list-item { padding-left: var(--space-5); }
+.markdown .list-item.depth-1 { padding-left: calc(var(--space-5) * 2); }
+.markdown .list-item.depth-2 { padding-left: calc(var(--space-5) * 3); }
+.markdown .list-item.depth-3 { padding-left: calc(var(--space-5) * 4); }
+.markdown .list-item.depth-4 { padding-left: calc(var(--space-5) * 5); }
+
+/* ============================================================================
+   Other pages
+   ============================================================================ */
+
+.page { max-width: none; }
+.background-grid { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr); gap: var(--space-6); }
+.background-output { min-height: 320px; }
+.accent-text { margin: 0; color: var(--accent); }
+.toolbar .grow, .toolbar input.grow { flex: 1; min-width: 240px; }
+.field.grow { flex: 1; }
+.knowledge-browser { display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); gap: var(--space-6); }
+.knowledge-map { height: 420px; overflow: hidden; border: var(--border-width) solid var(--border-default); border-radius: var(--radius-default); background: var(--surface-secondary); }
+.knowledge-map canvas { display: block; }
+.inbox-body { white-space: pre-wrap; }
+.options-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: var(--space-6); align-items: start; }
+.path-row { display: flex; gap: var(--space-3); }
+.path-row input { flex: 1; min-width: 0; }
+.options .form-actions { margin-top: var(--space-6); }
+
+@media (max-width: 900px) {
+    .workbench, .background-grid, .knowledge-browser { grid-template-columns: minmax(0, 1fr); }
+    .task-tree-panel { position: static; max-height: none; }
+}
