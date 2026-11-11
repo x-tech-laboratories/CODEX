@@ -505,4 +505,47 @@ describe('HarnessDaemon', () => {
         const jobs = await (await daemon.client()).call<Array<Record<string, unknown>>>('queue_status');
         expect(jobs.map((job) => job.status)).toEqual(['pending']);
     });
+
+    it('backs up the knowledge database beside it and restores a backup while running', async () => {
+        new KnowledgeStore(settings.knowledge_db_path).addTopic('Tides');
+        const daemon = await start();
+        const events = new EventLog();
+        const client = await daemon.client(events.handler);
+
+        const backup = await client.call<{ name: string }>('create_backup');
+        new KnowledgeStore(settings.knowledge_db_path).addTopic('Comets');
+        await client.call('restore_backup', { name: backup.name });
+        await events.waitFor('knowledge.changed');
+
+        const topics = (await client.call<{ topics: Array<{ name: string }> }>('knowledge')).topics;
+        expect(topics.map((topic) => topic.name)).toEqual(['Tides']);
+        const backups = await client.call<Array<{ name: string }>>('list_backups');
+        expect(backups).toHaveLength(2);
+        expect(existsSync(join(directory, 'backups', backup.name))).toBe(true);
+    });
+
+    it('refuses a restore while a task runs', async () => {
+        let finish!: () => void;
+        const executeTaskTree = vi.fn(() => new Promise<string>((resolveRun) => (finish = () => resolveRun('Done'))));
+        const daemon = await start({ executeTaskTree });
+        const events = new EventLog();
+        const client = await daemon.client(events.handler);
+        const backup = await client.call<{ name: string }>('create_backup');
+
+        await client.call('run', { prompt: 'Draft a plan' });
+        await events.waitFor('run.started');
+        await expect(client.call('restore_backup', { name: backup.name })).rejects.toThrow('A task is running');
+        finish();
+        await events.waitFor('run.finished');
+    });
+
+    it('keeps the backup schedule beside the database and refuses one that keeps none', async () => {
+        const client = await (await start()).client();
+
+        await expect(client.call('set_backup_schedule', { schedule: { automatic: true, to_keep: 0 } })).rejects.toThrow(DaemonError);
+        const saved = await client.call('set_backup_schedule', { schedule: { automatic: false, to_keep: 3 } });
+
+        expect(saved).toEqual({ automatic: false, to_keep: 3 });
+        expect(existsSync(join(directory, 'backup-schedule.json'))).toBe(true);
+    });
 });

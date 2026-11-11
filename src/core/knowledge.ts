@@ -615,7 +615,8 @@ export class KnowledgeStore {
         this.embedder = sqliteVecLoads ? embedder : null;
     }
 
-    private open(): DatabaseSync {
+    // Opens a connection of its own, with sqlite-vec loaded when it loads; the caller closes it.
+    open(): DatabaseSync {
         const database = new DatabaseSync(this.path, { allowExtension: true });
         database.exec('PRAGMA busy_timeout = 10000');
         database.exec('PRAGMA foreign_keys = ON');

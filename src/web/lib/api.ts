@@ -1,4 +1,5 @@
 // The page's side of the bridge: daemon calls that report a failure as a toast, and the daemon's events by name.
+import type { BackupClient } from '@x-tech-laboratories/x-libs/backup_protocol';
 import { describe_error } from '@x-tech-laboratories/x-libs/web/errors';
 import { toast } from '@x-tech-laboratories/x-libs/web/react/toasts';
 
@@ -26,6 +27,16 @@ export async function call_daemon<T>(method: string, params: Record<string, unkn
         return null;
     }
 }
+
+// The knowledge database's backups, which the daemon keeps.
+export const knowledge_backups: BackupClient = {
+    list_backups: () => request('list_backups'),
+    create_backup: () => request('create_backup'),
+    restore_backup: (name) => request('restore_backup', { name }),
+    remove_backup: (name) => request('remove_backup', { name }),
+    get_backup_schedule: () => request('get_backup_schedule'),
+    set_backup_schedule: async (schedule) => void (await request('set_backup_schedule', { schedule })),
+};
 
 export function on_daemon_event(handler: (event: string, data: Record<string, unknown>) => void): () => void {
     return window.codexEvents.on('daemon', (message: DaemonEvent) => handler(message.event, message.data));

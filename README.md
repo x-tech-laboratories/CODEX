@@ -57,7 +57,7 @@ back; the daemon also sends `{"event", "data"}` lines at any time. Methods are
 `set_background_enabled`, `run`, `cancel`, `answer_clarification`,
 `queue_topic`, `research_now`, `queue_status`, `knowledge`, `unfinished_runs`,
 `resume_run`, `discard_run`, `suspend`, `resume`, and `shutdown`, plus the mail
-methods under "Mail".
+methods under "Mail" and the backup methods under "Backups".
 Events are `run.started`, `run.progress`, `run.input` (the full system prompt
 and input of each step), `run.token`, `run.tree` (every task's state, with
 its step records, sent whenever one changes), `run.clarification`,
@@ -335,6 +335,20 @@ source was retrieved; once that source has expired, the fact is marked as
 possibly out of date, no longer lets a task skip its web research, and its
 topic is queued for fresh research. When the run ends, it is recorded as an
 episode.
+
+### Backups
+
+The daemon backs up the knowledge database once a day into `backups` beside it
+(`~/.local/share/codex/backups` by default), keeping the last 14, and checks
+again every hour while it runs. Options → Backups backs up by hand, changes how
+many are kept or turns daily backups off, and restores a backup. A restore
+backs up the current database first, then puts the backup in place while the
+daemon keeps running; it is refused while a task or a background job is
+running, since either may still write what it read before. The daemon methods
+are `list_backups`, `create_backup`, `restore_backup` (`name`),
+`remove_backup` (`name`), `get_backup_schedule` and `set_backup_schedule`
+(`schedule`: `{"automatic", "to_keep"}`), and the schedule is kept in
+`backup-schedule.json` beside the database.
 
 ### Search by meaning
 
@@ -999,6 +1013,7 @@ accepts an ETAPI token from Options > ETAPI as a bearer token.
 | `src/core/evaluation.ts`, `evals/tasks.json`     | The eval harness and its fixed task set                                                                     |
 | `src/core/taskView.ts`                             | Task tree lines and task details                                                                            |
 | `src/daemon/daemon.ts`                             | The daemon: model, runs, background worker, and socket server                                               |
+| `src/daemon/backups.ts`                            | Daily backups of the knowledge database, and restoring one                                                 |
 | `src/daemon/client.ts`, `src/shared/protocol.ts` | Connecting to the daemon and the message format                                                             |
 | `src/cli/index.ts`                                 | The one-shot command line, with the `eval` and `recall-benchmark` subcommands                           |
 | `src/main/tray.ts`, `src/main/autostart.ts`      | The system tray icon and menu, and the login autostart entry                                                |
