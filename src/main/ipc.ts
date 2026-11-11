@@ -33,6 +33,12 @@ export const ALLOWED_METHODS = new Set([
     'unfinished_runs',
     'resume_run',
     'discard_run',
+    'list_backups',
+    'create_backup',
+    'restore_backup',
+    'remove_backup',
+    'get_backup_schedule',
+    'set_backup_schedule',
 ]);
 
 export type DaemonCaller = {

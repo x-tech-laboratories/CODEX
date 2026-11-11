@@ -1,4 +1,6 @@
-// The Options page: the daemon's settings as a form, sized for this machine on request, and this computer's launch at login.
+// The Options page: the daemon's settings as a form, sized for this machine on request, the knowledge database's backups,
+// and this computer's launch at login.
+import { BackupSettings } from '@x-tech-laboratories/x-libs/web/react/backup_settings';
 import { PathInput, Switch } from '@x-tech-laboratories/x-libs/web/react/controls';
 import { SettingRow, SettingsGroup } from '@x-tech-laboratories/x-libs/web/react/layout';
 
@@ -6,6 +8,7 @@ import {
     apply_settings, auto_size, browse_for_path, form, launch_at_login, restart_daemon, save_settings, set_launch_at_login,
 } from '../lib/controller.ts';
 import { use_store } from '@x-tech-laboratories/x-libs/web/react/store';
+import { knowledge_backups } from '../lib/api.ts';
 import { use_workbench } from '../lib/workbench.ts';
 import { FIELD_GROUPS, MCP_SERVERS_HINT, type FormValues, type NumberField, type PathField, type SwitchField } from '../settings_form.ts';
 
@@ -77,6 +80,9 @@ export function Options() {
                 ))}
                 <SettingsGroup heading="MCP servers" hint={MCP_SERVERS_HINT}>
                     <textarea aria-label="MCP servers" spellCheck={false} rows={8} value={shown.mcp_servers} onChange={(event) => { const next = event.currentTarget.value; change((before) => ({ ...before, mcp_servers: next })); }} />
+                </SettingsGroup>
+                <SettingsGroup heading="Backups" hint="Copies of the knowledge database, kept in backups beside it. A restore waits until no task or background job is running.">
+                    <BackupSettings device={knowledge_backups} data_name="knowledge, memories, task runs and inbox" />
                 </SettingsGroup>
                 <SettingsGroup heading="Desktop">
                     <SettingRow label="Launch at login, in the system tray" as_label>

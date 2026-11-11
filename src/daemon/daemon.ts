@@ -3,6 +3,8 @@ import { chmodSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { createConnection, createServer, type Server, type Socket } from 'node:net';
 import { dirname, resolve } from 'node:path';
 
+import type { BackupSchedule } from '@x-tech-laboratories/x-libs/backup_protocol';
+
 import { autoSize } from '../core/autoSize.js';
 import { indexKnowledge, learnFromEpisodes, researchOneTopic, type BackgroundOptions, type ModelLock } from '../core/background.js';
 import { consolidateKnowledge } from '../core/consolidation.js';
@@ -28,6 +30,7 @@ import { backgroundModelKey, defaultSettingsPath, expandUser, saveSettings, vali
 import { executeTaskTree, RunStopped, savedRunOptions, type ExecuteTaskTreeOptions } from '../core/taskTree.js';
 import { LineReader } from '../main/daemonBridge.js';
 import { decodeMessage, encodeMessage } from '../shared/protocol.js';
+import { knowledgeBackups, type KnowledgeBackups } from './backups.js';
 
 // A separate background model is unloaded after this long without background work, to give its memory back.
 export const BACKGROUND_MODEL_IDLE_SECONDS = 300;
@@ -296,6 +299,14 @@ function actionResolution(value: unknown): ActionResolution {
     return resolution as ActionResolution;
 }
 
+function backupSchedule(value: unknown): BackupSchedule {
+    const schedule = isObject(value) ? value : {};
+    if (typeof schedule.automatic !== 'boolean' || !Number.isInteger(schedule.to_keep) || Number(schedule.to_keep) < 1) {
+        throw new Error('schedule must be {automatic, to_keep} with to_keep a whole number of at least 1.');
+    }
+    return { automatic: schedule.automatic, to_keep: Number(schedule.to_keep) };
+}
+
 function mailClass(value: unknown): MailClass {
     const chosen = text(value, 'mail_class', '');
     if (!(MAIL_CLASSES as readonly string[]).includes(chosen)) {
@@ -336,6 +347,9 @@ export class HarnessDaemon {
     private readonly knowledgeStores = new Map<string, KnowledgeStore>();
     private readonly workerWakeup = new Wakeup();
     private backgroundRunRequested = false;
+    // True while a background job may be holding what it read from the knowledge database.
+    private backgroundJobRunning = false;
+    readonly backups: KnowledgeBackups;
     private worker: Promise<void> | null = null;
     // True while suspended: the models are unloaded and no work starts.
     suspended = false;
@@ -354,6 +368,22 @@ export class HarnessDaemon {
         this.dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
         this.stopped = new Promise((resolveStopped) => {
             this.resolveStopped = resolveStopped;
+        });
+        this.backups = knowledgeBackups({
+            store: () => this.knowledgeStore(this.getSettings().knowledge_db_path),
+            restoreBlocked: () =>
+                this.runIsActive()
+                    ? 'A task is running; let it finish or cancel it, then restore.'
+                    : this.backgroundJobRunning
+                      ? 'Background work is running; try again once it finishes, or suspend CODEX first.'
+                      : null,
+            afterRestore: () => {
+                this.knowledgeStores.clear();
+                for (const changed of ['knowledge.changed', 'queue.changed', 'events.changed', 'actions.changed']) {
+                    this.broadcast(changed);
+                }
+            },
+            onError: (error) => console.error(`Automatic backup failed: ${errorText(error)}`),
         });
         const method = (params: readonly string[], handler: MethodHandler): Method => ({ params, handler });
         this.methods = new Map<string, Method>([
@@ -443,6 +473,18 @@ export class HarnessDaemon {
                 method(['query'], (_, params) => this.knowledge(text(params.query, 'query', ''))),
             ],
             ['unfinished_runs', method([], () => this.unfinishedRuns())],
+            ['list_backups', method([], () => this.backups.methods.list_backups())],
+            ['create_backup', method([], () => this.backups.methods.create_backup())],
+            ['restore_backup', method(['name'], (_, params) => this.backups.methods.restore_backup(text(params.name, 'name', '')))],
+            ['remove_backup', method(['name'], (_, params) => this.backups.methods.remove_backup(text(params.name, 'name', '')))],
+            ['get_backup_schedule', method([], () => this.backups.methods.get_backup_schedule())],
+            [
+                'set_backup_schedule',
+                method(['schedule'], (_, params) => {
+                    this.backups.methods.set_backup_schedule(backupSchedule(params.schedule));
+                    return this.backups.methods.get_backup_schedule();
+                }),
+            ],
             [
                 'resume_run',
                 method(['run_id', 'interactive'], (connection, params) =>
@@ -465,6 +507,7 @@ export class HarnessDaemon {
         const store = this.knowledgeStore(this.getSettings().knowledge_db_path);
         store.requeueInterruptedJobs();
         store.requeueInterruptedEvents();
+        this.backups.start();
         this.worker = this.backgroundLoop();
     }
 
@@ -528,6 +571,7 @@ export class HarnessDaemon {
 
     private async closeOnce(): Promise<void> {
         this.shutdown();
+        this.backups.stop();
         if (this.unusedTimer !== null) {
             clearTimeout(this.unusedTimer);
             this.unusedTimer = null;
@@ -1055,8 +1099,15 @@ export class HarnessDaemon {
                         modelCache,
                     };
                     // The machine probe needs no model, so it never takes the turn of the model work below.
-                    const probed = await this.dependencies.refreshEnvironment(settings);
-                    const jobName = await runNextJob(this.backgroundJobs(), settings, workerOptions);
+                    this.backgroundJobRunning = true;
+                    let probed: boolean;
+                    let jobName: string | null;
+                    try {
+                        probed = await this.dependencies.refreshEnvironment(settings);
+                        jobName = await runNextJob(this.backgroundJobs(), settings, workerOptions);
+                    } finally {
+                        this.backgroundJobRunning = false;
+                    }
                     worked = jobName !== null;
                     this.broadcast('queue.changed');
                     if (jobName === 'poll_connectors' || jobName === 'handle_events') {
