@@ -71,7 +71,6 @@ export function App() {
         { id: 'inbox', label: inbox_label(), href: '#/inbox' },
         { id: 'background', label: 'Background', href: '#/background' },
         { id: 'knowledge', label: 'Knowledge', href: '#/knowledge' },
-        { id: 'options', label: 'Options', href: '#/options' },
     ];
     // The oldest waiting question shows; a run that ended takes its open question away.
     const clarification = state.clarifications[0] ?? null;
@@ -88,6 +87,7 @@ export function App() {
                     <StateBadge labels={CONNECTION_LABELS} state={state.connection} />
                 </>}
                 sidebar_foot={<Mascot />}
+                settings={{ href: '#/options', active: page === 'options' }}
                 view_key={page}
                 main_class={page === '' ? 'workbench-main' : undefined}
             >
