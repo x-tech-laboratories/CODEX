@@ -1,6 +1,8 @@
 
 # CODEX
 
+<a href="https://liberapay.com/BeatLink/donate"><img alt="Donate using Liberapay" src="https://liberapay.com/assets/widgets/donate.svg"></a>
+
 A harness that makes small, locally run LLMs more capable on tasks they would
 otherwise fumble.
 
