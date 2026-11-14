@@ -30,7 +30,7 @@
         "@modelcontextprotocol/sdk": "^1.32.2",
         "@x-tech-laboratories/halon": "^0.16.0",
         "@x-tech-laboratories/robobuddy": "github:x-tech-laboratories/RoboBuddy#0ce6c01ed4116609ac78653fa9c5233906012a6c",
-        "@x-tech-laboratories/x-libs": "^0.38.0",
+        "@x-tech-laboratories/x-libs": "^0.46.0",
         "force-graph": "^1.52.0",
         "node-llama-cpp": "^3.22.2",
         "react": "^19.3.1",
