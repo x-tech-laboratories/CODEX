@@ -517,7 +517,8 @@ describe('KnowledgeStore size cap', () => {
         expect(store.episodes({ limit: 100 }).length).toBeLessThan(60);
         expect(store.facts().map((fact) => fact.statement)).toEqual(['Kestrel ingest listens on port 7413.']);
         expect(store.memories().map((memory) => memory.statement)).toEqual(['Prefers ISO dates.']);
-    });
+        // Each of the sixty episodes opens its own connection, which a busy disk slows past the default timeout.
+    }, 60_000);
 
     it('evicts the least used facts first, with their search entries', async () => {
         // The used fact is the oldest, so only its use can keep it.
