@@ -32,7 +32,7 @@
         version = packageJson.version;
         src = self;
         inherit nodejs;
-        npmDepsHash = "sha256-eqRnySNYYNoP3zMlgqzAEFwC9oTN8OsJzHRLJ99pi14=";
+        npmDepsHash = "sha256-KEAmK24hvd9M0Aq1xH3Yzo1PjTlmWIZu61YHx3Z4a+c=";
         npmFlags = [ "--ignore-scripts" ];
         # npm unpacks the RoboBuddy git dependency through the cache, so the cache must be writable.
         makeCacheWritable = true;
