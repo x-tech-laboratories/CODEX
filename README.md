@@ -616,9 +616,8 @@ The one-shot CLI also runs from the dev shell after a build, with
 `npm run cli -- "your prompt"`. The `flock` command from util-linux must be
 on `PATH`; the Nix package and dev shell provide it.
 
-When `package-lock.json` changes, recompute `npmDepsHash` in `flake.nix`
-with `nix run nixpkgs#prefetch-npm-deps -- package-lock.json`, or the Nix
-build fails.
+The Nix build reads its npm packages straight from `package-lock.json`, so a
+lock file change needs nothing else in `flake.nix`.
 
 If node-llama-cpp reports that its prebuilt CUDA build "is not compatible"
 and falls back to the CPU, check the driver before the package: call
