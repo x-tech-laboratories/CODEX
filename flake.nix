@@ -32,7 +32,13 @@
         version = packageJson.version;
         src = self;
         inherit nodejs;
-        npmDepsHash = "sha256-KEAmK24hvd9M0Aq1xH3Yzo1PjTlmWIZu61YHx3Z4a+c=";
+        # Read from package-lock.json, so there is no deps hash to keep in step with it.
+        npmDeps = pkgs.importNpmLock {
+          npmRoot = ./.;
+          # The lock names RoboBuddy by ssh, which needs a key; the same commit comes over https.
+          fetcherOpts."node_modules/@x-tech-laboratories/robobuddy".url = "https://github.com/x-tech-laboratories/RoboBuddy.git";
+        };
+        npmConfigHook = pkgs.importNpmLock.npmConfigHook;
         npmFlags = [ "--ignore-scripts" ];
         # npm unpacks the RoboBuddy git dependency through the cache, so the cache must be writable.
         makeCacheWritable = true;
@@ -43,7 +49,13 @@
         nativeBuildInputs = [ pkgs.makeWrapper ];
         installPhase = ''
           runHook preInstall
+          # importNpmLock puts the original lock back, whose RoboBuddy entry npm would fetch again, so prune with its copy.
+          mv package.json package.json.orig
+          mv package-lock.json package-lock.json.orig
+          cp --no-preserve=mode $npmDeps/package.json $npmDeps/package-lock.json .
           npm prune --omit=dev --ignore-scripts
+          mv package.json.orig package.json
+          mv package-lock.json.orig package-lock.json
           mkdir -p $out/lib/codex $out/bin
           cp -r dist out node_modules evals share resources package.json $out/lib/codex/
           makeWrapper ${nodejs}/bin/node $out/bin/codex \
