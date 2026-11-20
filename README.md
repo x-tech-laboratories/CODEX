@@ -603,6 +603,7 @@ nix develop
 npm ci
 npm run build        # typechecks, builds the CLI and daemon to dist/ and the window to out/
 npm test
+npm run coverage   # raises the coverage floor in vitest.config.ts; commit it
 npm run lint
 npm run dev          # open the window on the dev server, reloading as the page changes
 npm start            # open the built window
@@ -1028,6 +1029,8 @@ Test files named `*.test.ts` sit beside the core, daemon, CLI and main-process f
 See [docs/1-architecture.md](docs/1-architecture.md) for how these parts fit together.
 
 Run the tests with `npm test`, which uses vitest.
+
+The coverage floor in `vitest.config.ts` only rises: CI fails when coverage drops below it or a raised floor is not committed.
 
 ## Current limits
 
