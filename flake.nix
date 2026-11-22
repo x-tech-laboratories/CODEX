@@ -16,7 +16,7 @@
         };
       };
       nodejs = pkgs.nodejs_24;
-      electron = pkgs.electron;
+      electron = pkgs.electron_45;
 
       # node-llama-cpp's prebuilt CUDA build needs the CUDA runtime and the driver's libcuda at run time.
       runtimeLibraryPath = pkgs.lib.makeLibraryPath [
