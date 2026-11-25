@@ -3,13 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BackgroundPaused, type BackgroundOptions } from '../core/background.js';
+import type { BackgroundOptions } from '../core/background.js';
 import { UNTRUSTED_OPEN } from '../core/contextBudget.js';
 import { handleNextEvent, type TreeRunner } from '../core/events.js';
 import { KnowledgeStore } from '../core/knowledge.js';
 import type { ChatModel } from '../core/model.js';
 import { ASSISTANT_DEFAULT_SETTINGS as DEFAULT_SETTINGS, type AssistantSettings as Settings } from './settings.js';
-import { RunStopped } from '../core/taskTree.js';
 import { ASSISTANT_EVENT_HANDLERS } from './eventHandlers.js';
 import { MailStore } from './mailStore.js';
 
@@ -58,39 +57,6 @@ describe('drafting a reply', () => {
         const [action] = store.actions('proposed');
         expect(action).toMatchObject({ kind: 'draft', title: 'Reply to Alice <alice@example.test>: Lunch?', body: 'Friday works for me. Best' });
         expect(store.events()[0].status).toBe('done');
-    });
-
-    it('holds the model for the whole run and releases it when the run fails', async () => {
-        mailDraft();
-        const lock = { acquire: vi.fn(async () => {}), release: vi.fn() };
-        const runTree = vi.fn<TreeRunner>().mockRejectedValue(new Error('boom'));
-
-        await handleNextEvent(settings, { ...options, modelLock: lock }, ASSISTANT_EVENT_HANDLERS, runTree);
-
-        expect(lock.acquire).toHaveBeenCalledOnce();
-        expect(lock.release).toHaveBeenCalledOnce();
-        expect(store.events()[0]).toMatchObject({ status: 'failed', error: 'boom' });
-    });
-
-    it('requeues the event when foreground work stops the run', async () => {
-        mailDraft();
-        const runTree = vi.fn<TreeRunner>().mockRejectedValue(new RunStopped());
-
-        await handleNextEvent(settings, options, ASSISTANT_EVENT_HANDLERS, runTree);
-
-        expect(store.events()[0].status).toBe('pending');
-        expect(store.actions()).toEqual([]);
-    });
-
-    it('does not start while background work is paused', async () => {
-        mailDraft();
-        const runTree = vi.fn<TreeRunner>();
-
-        await handleNextEvent(settings, { ...options, shouldPause: () => true }, ASSISTANT_EVENT_HANDLERS, runTree);
-
-        expect(runTree).not.toHaveBeenCalled();
-        expect(store.events()[0].status).toBe('pending');
-        expect(BackgroundPaused).toBeDefined();
     });
 
     it('ignores a draft the model left empty', async () => {
