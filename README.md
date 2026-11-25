@@ -381,6 +381,7 @@ request starts, and it is unloaded after five minutes without background work.
 | `src/assistant/mailChecks.ts`                        | Sender-rule matching and the checks on drafted mail replies                                                 |
 | `src/assistant/mailStore.ts`                         | The mail tables beside the knowledge store: triage outcomes, drafts and sender rules                        |
 | `src/assistant/eventHandlers.ts`                     | The event handlers the daemon runs: the harness's own plus mail                                             |
+| `src/assistant/identity.ts`                          | CODEX's names for the harness's folders and instructions file, set when imported                    |
 | `src/assistant/settings.ts`                          | The assistant's settings: the harness's plus mail, and where the files live                                 |
 | `src/assistant/prompts.ts`, `share/assistant/prompts/` | The assistant's own prompts                                                                               |
 | `src/daemon/daemon.ts`                               | The daemon: model, runs, background worker, and socket server                                               |

@@ -1,4 +1,5 @@
 // The Electron main process: opens the window and the tray icon, connects them to the daemon, and passes requests and events on.
+import '../assistant/identity.js';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, nativeTheme, screen, shell, Tray } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // The one-shot codex command: answers a prompt on a running daemon, or in this process when none answers.
+import '../assistant/identity.js';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
