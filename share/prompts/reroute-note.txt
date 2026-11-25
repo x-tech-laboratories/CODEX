@@ -1,1 +1,0 @@
- List only the agents still needed; leave 'needs' empty if the task is complete.

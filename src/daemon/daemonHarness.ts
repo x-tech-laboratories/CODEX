@@ -2,7 +2,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { DEFAULT_KNOWLEDGE_DB_PATH } from '../core/settings.js';
+import { DEFAULT_KNOWLEDGE_DB_PATH } from '../assistant/settings.js';
 import { DaemonClient, type EventHandler } from './client.js';
 import { HarnessDaemon, type DaemonDependencies } from './daemon.js';
 

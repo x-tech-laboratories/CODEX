@@ -10,3 +10,11 @@
   before writing your own code: check the module table in the X-Libs README first.
 - A feature another app could use belongs in X-Libs, or Halon for styling, with tests and a README row. If that is out
   of reach, add it to the candidates in X-Libs' `docs/TODO.md`.
+
+## This repository
+
+- CODEX is the assistant; the harness it runs on is [SmartHarness](https://github.com/x-tech-laboratories/SmartHarness),
+  imported as `@x-tech-laboratories/smartharness/<module>` and pinned by commit in `package.json`. A change to the task
+  tree, knowledge store, background learning, agents, prompts or evals belongs in SmartHarness, then a bump of the pin.
+- Assistant code lives in `src/assistant/`; it extends the harness through `applySchemaExtension`, `SettingsSchema` and
+  its own event handlers rather than by patching harness code.
