@@ -1,0 +1,4 @@
+Your blueprint was checked in code and has these problems:
+{{PROBLEMS}}
+
+Write the whole blueprint again with every problem fixed.
