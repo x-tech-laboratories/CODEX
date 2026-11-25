@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // The codex-daemon command: loads the settings, listens on the socket, and runs the background worker until stopped.
+import '../assistant/identity.js';
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 

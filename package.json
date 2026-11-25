@@ -31,7 +31,7 @@
         "@modelcontextprotocol/sdk": "^1.32.2",
         "@x-tech-laboratories/halon": "^0.32.1",
         "@x-tech-laboratories/robobuddy": "github:x-tech-laboratories/RoboBuddy#0ce6c01ed4116609ac78653fa9c5233906012a6c",
-        "@x-tech-laboratories/smartharness": "github:x-tech-laboratories/SmartHarness#3bf9803f14b4fa34c57aa0414059aa551d73b6b2",
+        "@x-tech-laboratories/smartharness": "github:x-tech-laboratories/SmartHarness#d1b99b3ce067c874468f0f4474fe904dc8349924",
         "@x-tech-laboratories/x-libs": "^0.72.0",
         "force-graph": "^1.52.0",
         "node-llama-cpp": "^3.22.3",

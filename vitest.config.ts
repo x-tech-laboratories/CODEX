@@ -3,6 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
     test: {
         environment: 'node',
+        setupFiles: ['src/assistant/identity.ts'],
         // Tests mock harness modules, which only reaches the package's own imports when vitest transforms it.
         server: { deps: { inline: ['@x-tech-laboratories/smartharness'] } },
         include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'src/**/*.test.ts'],

@@ -1,4 +1,5 @@
 // The CODEX daemon: owns the model, runs requests and background research, and serves interfaces over a Unix socket.
+import '../assistant/identity.js';
 import { chmodSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { createConnection, createServer, type Server, type Socket } from 'node:net';
 import { dirname, resolve } from 'node:path';
