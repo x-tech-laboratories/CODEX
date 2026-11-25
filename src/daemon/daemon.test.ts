@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SizeChoice } from '../core/autoSize.js';
 import { KnowledgeStore } from '../core/knowledge.js';
 import { LocalModel } from '../core/model.js';
-import { DEFAULT_SETTINGS, loadSettings, type Settings } from '../core/settings.js';
+import { ASSISTANT_DEFAULT_SETTINGS as DEFAULT_SETTINGS, loadAssistantSettings as loadSettings, type AssistantSettings as Settings } from '../assistant/settings.js';
 import type { ExecuteTaskTreeOptions } from '../core/taskTree.js';
 import { DaemonError } from './client.js';
 import { BACKGROUND_MODEL_IDLE_SECONDS, HarnessDaemon, type DaemonDependencies } from './daemon.js';

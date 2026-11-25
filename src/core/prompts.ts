@@ -13,8 +13,8 @@ const PLACEHOLDER = /\{\{([A-Z_]+)\}\}/g;
 
 const cache = new Map<string, string>();
 
-// Where the prompt's text comes from: the override folder when it has the file, otherwise the bundle.
-export function promptPath(name: string): string {
+// Where the prompt's text comes from: the override folder when it has the file, otherwise the given folder.
+export function promptPath(name: string, directory: string = PROMPTS_DIRECTORY): string {
     const override = process.env[PROMPTS_OVERRIDE_VARIABLE];
     if (override) {
         const candidate = join(override, name + PROMPT_EXTENSION);
@@ -22,29 +22,29 @@ export function promptPath(name: string): string {
             return candidate;
         }
     }
-    return join(PROMPTS_DIRECTORY, name + PROMPT_EXTENSION);
+    return join(directory, name + PROMPT_EXTENSION);
 }
 
 // A prompt is its file's text with one trailing newline removed; nothing else is trimmed, so a note
 // that begins with a space to follow the sentence before it keeps that space.
-export function readPrompt(name: string): string {
-    let text = cache.get(name);
+export function readPrompt(name: string, directory: string = PROMPTS_DIRECTORY): string {
+    const path = promptPath(name, directory);
+    let text = cache.get(path);
     if (text === undefined) {
-        const path = promptPath(name);
         if (!existsSync(path)) {
             throw new Error(`Prompt file missing: ${path}`);
         }
         text = readFileSync(path, 'utf-8').replace(/\n$/, '');
-        cache.set(name, text);
+        cache.set(path, text);
     }
     return text;
 }
 
 // A prompt from the bundle with its placeholders filled; a placeholder without a value, or a value
 // the prompt has no place for, is an error, so a renamed placeholder cannot slip through unfilled.
-export function prompt(name: string, values: Record<string, string | number> = {}): string {
+export function prompt(name: string, values: Record<string, string | number> = {}, directory: string = PROMPTS_DIRECTORY): string {
     const unused = new Set(Object.keys(values));
-    const text = readPrompt(name).replace(PLACEHOLDER, (_, key: string) => {
+    const text = readPrompt(name, directory).replace(PLACEHOLDER, (_, key: string) => {
         if (!(key in values)) {
             throw new Error(`Prompt ${name} has no value for {{${key}}}`);
         }

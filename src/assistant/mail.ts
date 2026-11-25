@@ -2,9 +2,10 @@
 import { closeSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { BackgroundOptions } from './background.js';
-import { KnowledgeStore } from './knowledge.js';
-import { expandUser, type Settings } from './settings.js';
+import type { BackgroundOptions } from '../core/background.js';
+import { KnowledgeStore } from '../core/knowledge.js';
+import { expandUser } from '../core/settings.js';
+import type { AssistantSettings as Settings } from './settings.js';
 
 // ============================================================================
 // Limits

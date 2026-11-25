@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 import { HelpRequested, parseArguments, usageText, UsageError, type ParserSpec } from '../cli/arguments.js';
 import { installStarterAgents } from '../core/agents.js';
-import { defaultSettingsPath, loadSettings } from '../core/settings.js';
+import { assistantSettingsPath as defaultSettingsPath, loadAssistantSettings as loadSettings } from '../assistant/settings.js';
 import { defaultSocketPath } from '../shared/protocol.js';
 import { HarnessDaemon } from './daemon.js';
 

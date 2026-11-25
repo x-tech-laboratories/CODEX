@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { DEFAULT_SETTINGS } from '../core/settings.js';
+import { ASSISTANT_DEFAULT_SETTINGS as DEFAULT_SETTINGS } from '../assistant/settings.js';
 import { connectToDaemon, DISCONNECTED_EVENT } from './client.js';
 import { RunningDaemon } from './daemonHarness.js';
 import { main } from './index.js';

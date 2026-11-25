@@ -3,10 +3,10 @@ import { execFile } from 'node:child_process';
 import type { Duplex } from 'node:stream';
 import { connect } from 'node:tls';
 import { promisify } from 'node:util';
-import type { BackgroundOptions } from './background.js';
-import { KnowledgeStore } from './knowledge.js';
+import type { BackgroundOptions } from '../core/background.js';
+import { KnowledgeStore } from '../core/knowledge.js';
 import { MAIL_FILES_PER_POLL, MAX_MAIL_BYTES, parseMail } from './mail.js';
-import type { ImapAccount, Settings } from './settings.js';
+import type { AssistantSettings as Settings, ImapAccount } from './settings.js';
 
 const run = promisify(execFile);
 

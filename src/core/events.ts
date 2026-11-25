@@ -1,10 +1,9 @@
 // Handle the events queued in the knowledge store: each type has a handler that turns the event into actions for the user.
 import { BackgroundPaused, type BackgroundOptions } from './background.js';
-import { draftReplyHandler, userRequestHandler } from './eventTree.js';
+import { userRequestHandler } from './eventTree.js';
 import { KnowledgeStore, type EventRecord } from './knowledge.js';
 import type { Settings } from './settings.js';
 import { executeTaskTree, type ExecuteTaskTreeOptions } from './taskTree.js';
-import { emailHandler } from './triage.js';
 
 // ============================================================================
 // Handlers
@@ -12,8 +11,8 @@ import { emailHandler } from './triage.js';
 
 export type TreeRunner = (prompt: string, options: ExecuteTaskTreeOptions) => Promise<string>;
 
-export type EventContext = {
-    settings: Settings;
+export type EventContext<Values extends Settings = Settings> = {
+    settings: Values;
     store: KnowledgeStore;
     options: BackgroundOptions;
     // Works a prompt as a task tree; replaceable so tests need no model.
@@ -22,7 +21,7 @@ export type EventContext = {
 
 export type EventOutcome = { status: 'done' | 'ignored'; detail: string };
 
-export type EventHandler = (event: EventRecord, context: EventContext) => Promise<EventOutcome>;
+export type EventHandler<Values extends Settings = Settings> = (event: EventRecord, context: EventContext<Values>) => Promise<EventOutcome>;
 
 function errorText(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -45,8 +44,6 @@ export const notifyHandler: EventHandler = async (event, { store }) => {
 
 export const DEFAULT_EVENT_HANDLERS: ReadonlyMap<string, EventHandler> = new Map([
     ['notify', notifyHandler],
-    ['email.received', emailHandler],
-    ['email.draft', draftReplyHandler],
     ['user.request', userRequestHandler],
 ]);
 
@@ -55,10 +52,10 @@ export const DEFAULT_EVENT_HANDLERS: ReadonlyMap<string, EventHandler> = new Map
 // ============================================================================
 
 // Handle the next queued event, returning false when none is waiting.
-export async function handleNextEvent(
-    settings: Settings,
+export async function handleNextEvent<Values extends Settings>(
+    settings: Values,
     options: BackgroundOptions = {},
-    handlers: ReadonlyMap<string, EventHandler> = DEFAULT_EVENT_HANDLERS,
+    handlers: ReadonlyMap<string, EventHandler<Values>> = DEFAULT_EVENT_HANDLERS,
     runTree: TreeRunner = executeTaskTree,
 ): Promise<boolean> {
     const store = new KnowledgeStore(settings.knowledge_db_path);

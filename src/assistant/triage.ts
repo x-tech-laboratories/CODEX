@@ -1,10 +1,12 @@
 // Triage incoming email: apply the user's sender rules, skip bulk mail without the model, and ask it only whether a person needs to look at the rest.
-import { BackgroundModel, BackgroundPaused, parseJson } from './background.js';
-import type { Section } from './contextBudget.js';
-import type { EventHandler, EventOutcome } from './events.js';
-import type { EventRecord, MailDecider } from './knowledge.js';
+import { BackgroundModel, BackgroundPaused, parseJson } from '../core/background.js';
+import type { Section } from '../core/contextBudget.js';
+import type { EventHandler, EventOutcome } from '../core/events.js';
+import type { EventRecord } from '../core/knowledge.js';
+import { MailStore, type MailDecider } from './mailStore.js';
+import type { AssistantSettings } from './settings.js';
 import { senderAddress, type MailClass } from './mailChecks.js';
-import { prompt } from './prompts.js';
+import { assistantPrompt as prompt } from './prompts.js';
 
 // ============================================================================
 // Choices and prompts
@@ -82,13 +84,14 @@ function readVerdict(reply: string): Verdict | null {
 // The handler
 // ============================================================================
 
-export const emailHandler: EventHandler = async (event, { settings, store, options }): Promise<EventOutcome> => {
+export const emailHandler: EventHandler<AssistantSettings> = async (event, { settings, store, options }): Promise<EventOutcome> => {
+    const mailStore = new MailStore(store);
     const mail = readMail(event);
     const sender = senderAddress(mail.from);
     const title = clip(`${mail.from || 'Unknown sender'}: ${mail.subject || '(no subject)'}`, MAX_TITLE_CHARS);
     const details = { message_id: mail.message_id, source: event.source, file: field(event.payload, 'file') };
     const record = (mailClass: MailClass, decidedBy: MailDecider, reason: string, actionId: number | null): number =>
-        store.recordMailTriage({ eventId: event.id, actionId, sender, subject: mail.subject, messageId: mail.message_id, mailClass, decidedBy, reason });
+        mailStore.recordMailTriage({ eventId: event.id, actionId, sender, subject: mail.subject, messageId: mail.message_id, mailClass, decidedBy, reason });
     // The draft event carries its outcome row, so the draft is stored beside the triage decision.
     const queueDraft = (outcomeId: number): void => {
         if (settings.mail_draft_replies) {
@@ -104,7 +107,7 @@ export const emailHandler: EventHandler = async (event, { settings, store, optio
     };
 
     // A rule the user approved decides before anything else, and the model is not asked.
-    const rule = store.applySenderRule(sender);
+    const rule = mailStore.applySenderRule(sender);
     if (rule) {
         const reason = `Sender rule: ${rule.pattern} is ${rule.mail_class}`;
         if (rule.mail_class === 'ignore') {

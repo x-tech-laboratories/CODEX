@@ -20,13 +20,16 @@ import {
     type NewEvent,
     type TaskRun,
 } from '../core/knowledge.js';
-import { MAIL_CLASSES, type MailClass } from '../core/mailChecks.js';
-import { ImapConnector } from '../core/imap.js';
-import { MailConnector } from '../core/mail.js';
+import { MAIL_CLASSES, type MailClass } from '../assistant/mailChecks.js';
+import { ImapConnector } from '../assistant/imap.js';
+import { MailConnector } from '../assistant/mail.js';
+import { MailStore } from '../assistant/mailStore.js';
+import { ASSISTANT_EVENT_HANDLERS } from '../assistant/eventHandlers.js';
 import { ModelCache } from '../core/model.js';
 import { runNextJob, type BackgroundStep, type Job } from '../core/scheduler.js';
 import { titleConversations } from '../core/titles.js';
-import { backgroundModelKey, defaultSettingsPath, expandUser, saveSettings, validateSettings, type Settings } from '../core/settings.js';
+import { backgroundModelKey, expandUser } from '../core/settings.js';
+import { assistantSettingsPath as defaultSettingsPath, saveAssistantSettings as saveSettings, validateAssistantSettings as validateSettings, type AssistantSettings as Settings } from '../assistant/settings.js';
 import { executeTaskTree, RunStopped, savedRunOptions, type ExecuteTaskTreeOptions } from '../core/taskTree.js';
 import { LineReader } from '../main/daemonBridge.js';
 import { decodeMessage, encodeMessage } from '../shared/protocol.js';
@@ -218,8 +221,8 @@ export type DaemonDependencies = {
     learnFromEpisodes: BackgroundStep;
     consolidateKnowledge: BackgroundStep;
     titleConversations: BackgroundStep;
-    pollConnectors: BackgroundStep;
-    handleEvents: BackgroundStep;
+    pollConnectors: BackgroundStep<Settings>;
+    handleEvents: BackgroundStep<Settings>;
     refreshEnvironment: (settings: Settings) => Promise<boolean>;
     // Seconds on a clock that only moves forward.
     monotonic: () => number;
@@ -241,7 +244,7 @@ const DEFAULT_DEPENDENCIES: DaemonDependencies = {
         const imap = await defaultImapConnector.poll(settings, options);
         return maildir || imap;
     },
-    handleEvents: (settings, options) => handleNextEvent(settings, options),
+    handleEvents: (settings, options) => handleNextEvent(settings, options, ASSISTANT_EVENT_HANDLERS),
     refreshEnvironment: (settings) => refreshEnvironment(settings),
     monotonic: () => performance.now() / 1000,
 };
@@ -345,6 +348,7 @@ export class HarnessDaemon {
     private nextClarificationId = 1;
     private backgroundIdleSince: number | null = null;
     private readonly knowledgeStores = new Map<string, KnowledgeStore>();
+    private readonly mailStores = new Map<string, MailStore>();
     private readonly workerWakeup = new Wakeup();
     private backgroundRunRequested = false;
     // True while a background job may be holding what it read from the knowledge database.
@@ -943,7 +947,7 @@ export class HarnessDaemon {
 
     resolveAction(actionId: number, resolution: ActionResolution): Json {
         const settings = this.getSettings();
-        const resolved = this.knowledgeStore(settings.knowledge_db_path).resolveAction(actionId, resolution, {
+        const resolved = this.mailStore(settings.knowledge_db_path).resolveAction(actionId, resolution, {
             senderRuleThreshold: settings.mail_rule_proposal_threshold,
         });
         if (resolved) {
@@ -954,20 +958,20 @@ export class HarnessDaemon {
 
     // Recent mail outcomes and, per triage class, how often the user kept or dismissed what was shown.
     mailOutcomes(limit = 100, since = 0): Json {
-        const store = this.knowledgeStore(this.getSettings().knowledge_db_path);
+        const store = this.mailStore(this.getSettings().knowledge_db_path);
         return { outcomes: store.mailOutcomes(limit), summary: store.mailOutcomeSummary(since) };
     }
 
     senderRules(): Json[] {
-        return this.knowledgeStore(this.getSettings().knowledge_db_path).senderRules();
+        return this.mailStore(this.getSettings().knowledge_db_path).senderRules();
     }
 
     setSenderRule(pattern: string, chosenClass: MailClass): Json {
-        return this.knowledgeStore(this.getSettings().knowledge_db_path).setSenderRule(pattern, chosenClass, 'user');
+        return this.mailStore(this.getSettings().knowledge_db_path).setSenderRule(pattern, chosenClass, 'user');
     }
 
     deleteSenderRule(pattern: string): Json {
-        return { deleted: this.knowledgeStore(this.getSettings().knowledge_db_path).deleteSenderRule(pattern) };
+        return { deleted: this.mailStore(this.getSettings().knowledge_db_path).deleteSenderRule(pattern) };
     }
 
     // ========================================================================
@@ -1053,7 +1057,7 @@ export class HarnessDaemon {
     }
 
     // Connectors queue events and events are handled first, then titling conversations, queued research, indexing what it found, learning from past requests, and tidying.
-    private backgroundJobs(): Job[] {
+    private backgroundJobs(): Job<Settings>[] {
         const { pollConnectors, handleEvents, titleConversations, researchOneTopic, indexKnowledge, learnFromEpisodes, consolidateKnowledge } = this.dependencies;
         return [
             { name: 'poll_connectors', jobClass: 'reactive', step: pollConnectors },
@@ -1192,6 +1196,15 @@ export class HarnessDaemon {
         if (store === undefined) {
             store = new KnowledgeStore(databasePath);
             this.knowledgeStores.set(databasePath, store);
+        }
+        return store;
+    }
+
+    private mailStore(databasePath: string): MailStore {
+        let store = this.mailStores.get(databasePath);
+        if (store === undefined) {
+            store = new MailStore(this.knowledgeStore(databasePath));
+            this.mailStores.set(databasePath, store);
         }
         return store;
     }

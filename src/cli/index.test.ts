@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { KnowledgeStore } from '../core/knowledge.js';
-import { DEFAULT_SETTINGS, type Settings } from '../core/settings.js';
+import { ASSISTANT_DEFAULT_SETTINGS as DEFAULT_SETTINGS, type AssistantSettings as Settings } from '../assistant/settings.js';
 import type { ExecuteTaskTreeOptions } from '../core/taskTree.js';
 import { DaemonClient } from '../daemon/client.js';
 import { RunningDaemon } from '../daemon/daemonHarness.js';

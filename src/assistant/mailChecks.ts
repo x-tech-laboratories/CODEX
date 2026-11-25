@@ -1,5 +1,5 @@
 // Checks on mail work that do not rely on the model: who a draft goes to, its subject, what it states, and the sender rules.
-import { unsupportedValues } from './checks.js';
+import { unsupportedValues } from '../core/checks.js';
 
 // ============================================================================
 // Classes and sender rules
