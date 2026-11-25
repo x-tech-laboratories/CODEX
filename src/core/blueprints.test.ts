@@ -82,6 +82,21 @@ describe('validateBlueprint', () => {
         expect(validateBlueprint({ inputs: 'x', steps: [] })).toContain('"inputs" must be a list of names.');
     });
 
+    it('refuses too many steps, steps without an id and inputs that are not a list', () => {
+        const tooMany = withSteps((blueprint) => {
+            for (let index = 0; index < 16; index++) {
+                blueprint.steps.push({ id: `note${index}`, kind: 'notify', message: 'x', inputs: ['report'], each: '' });
+            }
+        });
+        const malformed = withSteps((blueprint) => {
+            blueprint.steps.push(null as never, { id: 'loose', kind: 'notify', message: 'x', inputs: 'report' as never, each: '' });
+        });
+
+        expect(validateBlueprint(tooMany)).toContain('The blueprint has 20 steps; keep it to 16.');
+        expect(validateBlueprint(malformed)).toContain('Step 5 needs a non-empty "id".');
+        expect(validateBlueprint(malformed)).toContain('step "loose" needs "inputs" as a list of ids.');
+    });
+
     it('refuses unknown kinds, sources and agents', () => {
         const problems = validateBlueprint(
             withSteps((blueprint) => {

@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TASKS_PATH, formatRun, loadBlueprintTasks, runTrial, summarizeTrial, type TrialRun } from './blueprintTrial.js';
+import { TASKS_PATH, formatRun, loadBlueprintTasks, main, runTrial, summarizeTrial, type TrialRun } from './blueprintTrial.js';
 import type { ChatModel } from './model.js';
 
 let directory: string;
@@ -59,6 +59,31 @@ describe('blueprint trial', () => {
             [2, 'out of memory'],
         ]);
         expect(summarizeTrial(runs)).toEqual({ runs: 2, errors: 1, firstPassed: 1, finalPassed: 1 });
+    });
+
+    it('runs the trial from the command line, writes the results and closes the model', async () => {
+        const tasksPath = join(directory, 'requests.json');
+        const outputPath = join(directory, 'out.json');
+        writeFileSync(tasksPath, JSON.stringify([{ id: 'a', request: 'x' }]), 'utf-8');
+        const close = vi.fn(async () => {});
+        const loaded: string[] = [];
+        const llm: ChatModel = {
+            close,
+            async createChatCompletion(request) {
+                expect(request.response_format).toBeUndefined();
+                return { content: PASSING, tool_calls: [], finish_reason: 'stop' };
+            },
+        };
+
+        const code = await main(['--tasks', tasksPath, '--model-path', 'spark.gguf', '--repeat', '2', '--output', outputPath, '--no-grammar'], async (path) => {
+            loaded.push(path);
+            return llm;
+        });
+
+        expect(code).toBe(0);
+        expect(loaded).toEqual(['spark.gguf']);
+        expect(close).toHaveBeenCalledOnce();
+        expect(JSON.parse(readFileSync(outputPath, 'utf-8')).summary).toEqual({ runs: 2, errors: 0, firstPassed: 2, finalPassed: 2 });
     });
 
     it('describes each run in one line plus what is left', () => {

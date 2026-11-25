@@ -77,7 +77,11 @@ export function summarizeTrial(runs: TrialRun[]): { runs: number; errors: number
 // Command line
 // ============================================================================
 
-export async function main(argv = process.argv.slice(2)): Promise<number> {
+type ModelLoader = (modelPath: string, contextSize: number, gpuLayers: number) => Promise<ChatModel>;
+
+const loadLocalModel: ModelLoader = (modelPath, contextSize, gpuLayers) => loadModel(null, modelPath, contextSize, gpuLayers, null);
+
+export async function main(argv = process.argv.slice(2), load: ModelLoader = loadLocalModel): Promise<number> {
     const { values } = parseArgs({
         args: argv,
         options: {
@@ -91,7 +95,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     });
     const settings = loadSettings(values.settings);
     const tasks = loadBlueprintTasks(values.tasks);
-    const llm = await loadModel(null, values['model-path'] ?? settings.model_path, settings.context_size, settings.gpu_layers, null);
+    const llm = await load(values['model-path'] ?? settings.model_path, settings.context_size, settings.gpu_layers);
     try {
         const runs = await runTrial(llm, tasks, Number(values.repeat), !values['no-grammar']);
         const summary = summarizeTrial(runs);
