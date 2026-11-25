@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { KnowledgeStore } from '../core/knowledge.js';
+import { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
 import { MAIL_FILES_PER_POLL, MAX_MAIL_BODY_CHARS, MailConnector, decodeHeader, htmlToText, parseMail } from './mail.js';
 import { ASSISTANT_DEFAULT_SETTINGS as DEFAULT_SETTINGS, type AssistantSettings as Settings } from './settings.js';
 

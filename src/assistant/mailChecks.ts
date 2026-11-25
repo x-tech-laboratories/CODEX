@@ -1,5 +1,5 @@
 // Checks on mail work that do not rely on the model: who a draft goes to, its subject, what it states, and the sender rules.
-import { unsupportedValues } from '../core/checks.js';
+import { unsupportedValues } from '@x-tech-laboratories/smartharness/checks';
 
 // ============================================================================
 // Classes and sender rules

@@ -1,8 +1,8 @@
 // Triage incoming email: apply the user's sender rules, skip bulk mail without the model, and ask it only whether a person needs to look at the rest.
-import { BackgroundModel, BackgroundPaused, parseJson } from '../core/background.js';
-import type { Section } from '../core/contextBudget.js';
-import type { EventHandler, EventOutcome } from '../core/events.js';
-import type { EventRecord } from '../core/knowledge.js';
+import { BackgroundModel, BackgroundPaused, parseJson } from '@x-tech-laboratories/smartharness/background';
+import type { Section } from '@x-tech-laboratories/smartharness/contextBudget';
+import type { EventHandler, EventOutcome } from '@x-tech-laboratories/smartharness/events';
+import type { EventRecord } from '@x-tech-laboratories/smartharness/knowledge';
 import { MailStore, type MailDecider } from './mailStore.js';
 import type { AssistantSettings } from './settings.js';
 import { senderAddress, type MailClass } from './mailChecks.js';

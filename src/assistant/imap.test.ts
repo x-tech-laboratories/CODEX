@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { IMAP_POLL_SECONDS, ImapConnector } from './imap.js';
-import { KnowledgeStore } from '../core/knowledge.js';
+import { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
 import { ASSISTANT_DEFAULT_SETTINGS as DEFAULT_SETTINGS, type AssistantSettings as Settings, type ImapAccount } from './settings.js';
 
 // ============================================================================

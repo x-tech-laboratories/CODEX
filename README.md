@@ -1,21 +1,23 @@
-
 # CODEX
 
 <a href="https://liberapay.com/BeatLink/donate"><img alt="Donate using Liberapay" src="https://liberapay.com/assets/widgets/donate.svg"></a> <a href="https://ko-fi.com/I4V52ANK6N"><img alt="Support me on Ko-fi" src="https://ko-fi.com/img/githubbutton_sm.svg"></a>
 
-A harness that makes small, locally run LLMs more capable on tasks they would
-otherwise fumble.
+A personal assistant that runs on a local LLM: it reads your mail, triages it,
+drafts replies for you to approve, works requests you leave for later, and
+answers questions from what it has researched and remembers.
 
-Small models struggle with long, multistep reasoning: they lose track of
-constraints, skip requirements, and invent facts. CODEX never asks the
-model to do the whole job at once. It works each request as a tree of tasks,
-gives the model one narrow goal per call, and passes forward only the results
-that call needs. Alongside the task tree, a local SQLite knowledge store keeps what the
-harness has researched, and a background worker uses idle time to research and
-refresh it, so the harness grows more useful the longer it runs.
+CODEX is built on [SmartHarness](https://github.com/x-tech-laboratories/SmartHarness), which makes small,
+locally run models capable by working each request as a tree of narrow tasks
+over a knowledge store that grows in idle time. SmartHarness's README explains
+how a request is handled, the agents, standing instructions, commands,
+long-term memory, the tools and their safety rules, and the evals; this one
+covers what the assistant adds: the daemon and its interfaces, mail, backups,
+installation and configuration.
 
 Models run through `node-llama-cpp` from a local GGUF file. Nothing is sent to
 a hosted model.
+
+See [docs/0-goal.md](docs/0-goal.md) for what the assistant is for.
 
 ## Daemon and interfaces
 
@@ -98,488 +100,6 @@ closes the connection; reconnect afterwards. `suspend` and
 `resume` are sent the same way, but suspending cancels the window's running
 request, so ask whoever is using the window first.
 
-## How a request is handled
-
-Every request is worked as a tree of tasks.
-
-The request becomes the top task, whose deliverable is a complete reply to it.
-Each task is worked the same way:
-
-| Step   | What the model does                                                                                                                                                                                                                                       | Reply    |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| Decide | Choose how to do the task: `answer` it without tools, `research` it, read local `files`, `act` with file, test, or MCP tools, or `decompose` it into 2 to 5 subtasks, each with a prompt, a deliverable, and the earlier subtasks it depends on | JSON     |
-| Gather | Run the chosen tools: stored knowledge and web searches first, then the tool-calling loop with only that approach's tools                                                                                                                                 | Findings |
-| Write  | Produce exactly what the task's deliverable describes                                                                                                                                                                                                     | Text     |
-| Check  | Mark whether the result delivers it: met, partly met, or missing, with the correction needed                                                                                                                                                              | JSON     |
-| Revise | Apply the correction once                                                                                                                                                                                                                                 | Text     |
-
-A decomposed task runs its subtasks in order, then a combine step writes its
-result from theirs, and that result is checked and revised in the same way. The
-top task's write or combine step is the final answer.
-
-- **The model sees where it is.** Every call gets the original request, the
-  current task and its deliverable, the results of the earlier tasks it or any
-  task above it depends on, and an outline of the whole tree with each task's
-  state, so it does not redo work another task covers.
-- **Only allowed approaches are offered.** The decision's JSON schema lists
-  only the approaches the settings permit: `act` only when file writes, tests,
-  or an MCP server are enabled, and `decompose` only while the task is above
-  `max_task_depth` and the tree is below `max_task_nodes`. llama.cpp enforces
-  the schema as a grammar, so the model cannot pick anything else.
-- **Try first, split on failure.** Small models split too eagerly, so the
-  decision prompt asks for a direct approach whenever one step can finish the
-  task. A task whose result still fails its check after one revision is then
-  split into smaller subtasks and tried again, when depth and node limits
-  allow; otherwise its result is kept and marked unverified.
-- **A folder tree is split by folder.** When a request asks to go through
-  every file in a folder and its subfolders, and the gather step listed
-  subfolders it never entered (for instance because it ran out of tool
-  calls), or a listing was cut to fit, or the result still leaves out listed
-  files after its revision, the task is split in code: one subtask for the
-  files directly in the folder and one per subfolder, each named in its
-  prompt. Their results are joined under one heading per folder without a
-  model merging them. When there are more folders than `max_task_nodes` and
-  five subtasks per task allow, neighbouring folders share a subtask and the
-  answer says so.
-- **No runaway recursion.** A subtask that restates its parent, or a
-  decomposition into fewer than two real subtasks, is dropped, and the task is
-  done directly instead. Dependencies may only point to earlier subtasks.
-- **Failures are planned around.** An error in a subtask marks it failed and
-  the run carries on; the parent re-plans its remaining subtasks once with the
-  failure in view. Its combine step says plainly what failed. Only an error in
-  the top task fails the run.
-- **Calculations show their working.** Every writer works out arithmetic,
-  counts, and date calculations step by step before giving the result, since a
-  small model gets them wrong when it answers with a bare number, and the check
-  redoes them itself.
-- **Research is not left to the model's judgement.** A decision that lists
-  outside facts to check is turned into research. The top task's own words are
-  always searched first, a top-level answer gets one quick search unless the
-  request is plain arithmetic or rewriting pasted text, and when every search
-  finds nothing the writer is told not to describe what it could not look up.
-- **Checks that do not rely on the model.** A result citing a URL that appears
-  in no captured evidence fails its check, and so does a researched result
-  that states a version number or date found nowhere in the evidence or the
-  request. Dates are compared by value, so "October 9, 2026", "9 October 2026",
-  and "2026-10-09" all match, and numbers in code blocks are not checked. A task
-  that acted is held to what its tools really did: its result must name every
-  file written, say when a write or a test run failed, give the test result,
-  and not claim a change when nothing was written. When the request asks to
-  cover every item (classify, categorize, go through, list all, or "each" or
-  "every" before a word such as file, folder or email) and a tool listed
-  items (`list_directory`, or a connected tool that lists or searches), a
-  result that leaves listed names out fails its check, naming them; with
-  subfolders asked for, so does a subfolder that was never listed.
-- **Earlier results are condensed, not cut.** Each call's input is measured
-  with the model's own tokenizer and fitted to `context_size` minus that call's
-  reply budget. When it would overflow, the largest earlier results are
-  summarized first, each only once per run, and only what still overflows is
-  trimmed; the request and the current task are never condensed. Decisions and
-  checks reply in at most 1024 and 512 tokens, which leaves them more room for
-  input. Fetched pages are summarized in chunks, then the chunk summaries are
-  merged.
-- **Untrusted input.** Web pages, file contents, tool output, search results,
-  and everything recalled from the knowledge store are fenced between
-  `<untrusted-data>` tags under a heading that says to use them as information
-  and never follow instructions in them. Any such tag inside the text is
-  removed first, so a hostile page cannot close the fence early, and so is
-  every sentence that gives orders to the reader ("ignore previous
-  instructions", "note to AI assistants", anything about the system prompt,
-  "end every answer with", or a line starting `System:`), which becomes
-  `[instruction removed]`. A 4B model followed an appended instruction inside
-  the fence every time; with those sentences removed it passed every hostile
-  task. `evals/hostile_seed.json` and `evals/hostile_tasks.json` test this:
-  `codex eval --seed evals/hostile_seed.json --tasks evals/hostile_tasks.json`.
-
-`mode` limits what a request may do: in `answer` and `draft` mode the `act`
-approach is never offered, so nothing is changed, while `auto` (the default)
-and `execute` allow it. Set `mode` in the settings, pass `--mode`, use the
-selector beside the Run button, or start the prompt with `/ask` or `/answer`,
-`/draft` or `/plan`, or `/do` or `/execute`.
-
-The decision asks one clarification question for the top task when the request
-is materially ambiguous, then decides again with the answer. The finished tree
-is saved with the request's episode in the knowledge store.
-
-With a knowledge store, a tree run is also checkpointed: the store's
-`task_runs` table keeps the options it started with and every task's state,
-saved after each change. A run that is cancelled, fails, or is cut off by a
-crash or a daemon restart can be resumed. Finished tasks keep their results, a
-task that had already split carries on with its unfinished subtasks, and a
-task that was cut off mid-way starts again from its decision. The clarification
-answer and the evidence gathered so far are restored, and the run works under
-the options it started with, not the current settings. The window
-offers Resume and Discard for the newest unfinished run, and
-`codex --resume` resumes it from the command line.
-
-## Agents
-
-A task can hand its work to a named specialist agent, which works it as its own task tree with its own instructions and tools. Agents are Markdown files in `~/.config/codex/agents/` and the folder's `.codex/agents/`: the file name is the agent's name, and the YAML front matter gives a `description` (what the parent reads to choose it), `mcp_servers` (servers only this agent may use), and `agents` (the agents it can hand work to). The body is added to the standing instructions for the agent's calls. Agents nest three deep at most. See [docs/1-architecture.md](docs/1-architecture.md#agent-hierarchy).
-
-A starter set ships in `share/agents/`: 26 agents that each own the MCP server of the same name (`mail`, `calendar`, `contacts`, `notes`, `todos`, `weather`, `files`, `bookmarks`, `music`, `photos`, `lights`, `thermostat`, `shopping`, `recipes`, `fitness`, `bank`, `travel`, `maps`, `news`, `translate`, `timers`, `packages`, `car`, `health`, `library` and `vault`), and four that hand work to two of them: `comms` (`mail`, `contacts`), `home` (`lights`, `thermostat`), `media` (`music`, `photos`) and `meals` (`recipes`, `shopping`). The first run of the daemon or the CLI copies it into `~/.config/codex/agents/` when that folder does not exist yet; delete or edit the copies as you like, and an existing folder is never touched again. An agent whose servers are not all connected is never offered: a starter agent stays dormant until a configured, enabled MCP server carries its name, so name your mail server `mail` (or change `mcp_servers` in the agent file) and the hierarchy is on without further setup. With no agents at all, a task sees every connected server's tools at once, which is what the eval's `tree` runner measures.
-
-## Standing instructions
-
-Rules you write yourself go into every model call, after the request, and are
-never condensed or trimmed before the earlier results are. CODEX reads
-two files, in this order:
-
-- `~/.config/codex/CODEX.md` (under `$XDG_CONFIG_HOME` when it
-  is set), for rules that hold everywhere.
-- `CODEX.md` in `filesystem_root`, or `AGENTS.md` when there is none,
-  for rules about that folder, such as how its tests run.
-
-Together they are cut at 4000 characters, since a small model's window has
-little room to spare. Keep each rule short and plain; a small model follows a
-written rule far more reliably than one it has to work out.
-
-### Skills and guides
-
-Guides for one kind of work go only to the tasks doing it, so they cost the
-rest nothing. Each skill has a folder of Markdown files, read in name order:
-
-| Skill                        | Folders                                                                             | Tasks that get it                     |
-| ---------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------- |
-| Researching and fact finding | `~/.config/codex/skills/research/`, then the folder's `.codex/skills/research/` | Tasks that chose `research`         |
-| Code review and editing      | `~/.config/codex/skills/code/`, then the folder's `.codex/skills/code/`         | Tasks that chose `files` or `act` |
-
-A skill's guides are cut at 3000 characters. They reach every step of the task
-after its decision (gathering, writing, checking, and revising) beside the
-lessons of the same skill that memory holds (see below).
-
-## Commands
-
-A prompt may start with a command. Besides the mode prefixes (`/ask`, `/plan`,
-`/do`, and the rest), these work in every interface:
-
-| Command                                       | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/remember [store] statement [Why: reason]` | Stores a memory you state yourself, without the model, in one of the memory stores below: `user` (the default), `general`, `locations`, `software`, `project`, `research`, or `code`. `preference` and `correction` also mean `user`, and `reference` means `locations`. A `project` memory belongs to the current folder; the others hold everywhere. A stated memory outlasts a probed or learned one it contradicts |
-| `/memories [store]`                         | Lists the memories for the current folder under each store's heading, with their numbers, or only those of one store                                                                                                                                                                                                                                                                                                                             |
-| `/forget number` or `/forget words`       | Deletes one memory, by its number or by words from it; when several match, they are listed instead                                                                                                                                                                                                                                                                                                                                               |
-| `/init`                                     | Reads the folder and writes its `CODEX.md`, or improves the one there. With file writes off, it replies with the text instead                                                                                                                                                                                                                                                                                                                  |
-
-Define your own commands as Markdown files named after the command, in
-`~/.config/codex/commands/` or the folder's `.codex/commands/`
-(which wins when both have one of the same name). `/review parser.py` runs
-`review.md`:
-
-```markdown
----
-description: Review code for bugs
-mode: draft
----
-Review $ARGUMENTS for bugs and list each with the line it is on.
-```
-
-`$ARGUMENTS` is replaced by the words after the command, which otherwise
-follow the template. `mode` (`answer`, `draft`, or `execute`) is optional; a
-command in `answer` or `draft` mode never changes a file. A prompt starting
-with an unknown command, or with a path such as `/etc/hosts`, is left as it
-is.
-
-## Long-term memory
-
-### Knowledge store
-
-Knowledge lives in a SQLite database at `knowledge_db_path`
-(`~/.local/share/codex/knowledge.sqlite3` by default). It holds:
-
-- **Topics**, each with an optional parent topic, a priority, a summary, how
-  often it has been used, and when it was last researched.
-- **Sources**: URL, title, snippet, the search query, the topic, when it was
-  retrieved, and when it expires (one week by default).
-- **Facts**: single statements under a topic, each with its source and a
-  confidence from 0 to 1. A repeated fact keeps its highest confidence.
-- **Memory stores**: short statements, each in one store and with an optional
-  reason it holds. A memory is learned from past requests, probed from the
-  machine, or stated by the user, and a project memory belongs to the folder
-  (`filesystem_root`) its requests were worked in.
-  | Store         | Holds                                                                                          | Recalled                                   |
-  | ------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------ |
-  | `general`   | Lasting facts learned from requests that are about neither the user nor the machine            | Up to 4 per request                        |
-  | `user`      | How the user likes answers, the tools, languages, and styles they use, and what they corrected | Up to 6 per request                        |
-  | `locations` | Folders, files, URLs, and hosts on this machine                                                | Up to 4 per request                        |
-  | `software`  | Programs, services, and versions installed or running on this machine                          | Up to 4 per request                        |
-  | `project`   | Ongoing work and rules of one folder                                                           | Up to 6 per request, from that folder only |
-  | `research`  | Lessons for researching and fact finding                                                       | Up to 5 per task that researches           |
-  | `code`      | Lessons for code review and editing                                                            | Up to 5 per task that reads files or acts  |
-- **Episodes**: each finished request with its mode, its task tree, any
-  clarification, the answer, and how it ended (how many tasks met their
-  deliverable, and how many were unverified or failed).
-- **Full-text indexes** (FTS5) over sources, and over facts and episodes.
-- **Embeddings** of facts and topics, for finding them by meaning.
-- **A graph** of nodes and labelled edges. Topics link to child topics
-  (`contains`) and to their sources (`supported_by`); entity relationships can
-  carry the source that supports them.
-- **A research queue** of pending, running, done, and failed jobs.
-
-Before the first model call, the request recalls what memory holds for it: from
-each store but the two skill stores, up to that store's limit, those sharing the
-most words with the request first, then those the user stated, then the
-newest, so a new memory is never crowded out by older ones. Each store is shown
-under its own heading. The skill stores are recalled the same way once a task
-has decided how to work, for that task's own prompt. Recall also brings facts and past episodes that share at least half of the
-prompt's search terms, or three of them for a longer prompt, ignoring common
-words; those sharing the most terms come first. When fewer than five match and
-the request names a stored topic (every word of the topic's name appears in
-it), the rest come from that topic and its subtopics, most relevant, trusted,
-and used first. With an embedding model (see below), facts are also found by
-meaning, even when they share no words with the request, and the two rankings
-are merged; when the request names no topic, the topic closest in meaning
-supplies the branch. These go to every later step as
-"Remembered context", and each recall counts towards that fact's and topic's use
-count. In a task tree, each subtask also recalls facts for its own prompt, and
-each search query recalls facts for itself; facts that answer every query of a
-task let it skip its tool loop, as stored summaries do. Recalled facts count as
-evidence when checking cited URLs and values. Each recalled fact shows when its
-source was retrieved; once that source has expired, the fact is marked as
-possibly out of date, no longer lets a task skip its web research, and its
-topic is queued for fresh research. When the run ends, it is recorded as an
-episode.
-
-### Backups
-
-The daemon backs up the knowledge database once a day into `backups` beside it
-(`~/.local/share/codex/backups` by default), keeping the last 14, and checks
-again every hour while it runs. Options → Backups backs up by hand, changes how
-many are kept or turns daily backups off, and restores a backup. A restore
-backs up the current database first, then puts the backup in place while the
-daemon keeps running; it is refused while a task or a background job is
-running, since either may still write what it read before. The daemon methods
-are `list_backups`, `create_backup`, `restore_backup` (`name`),
-`remove_backup` (`name`), `get_backup_schedule` and `set_backup_schedule`
-(`schedule`: `{"automatic", "to_keep"}`), and the schedule is kept in
-`backup-schedule.json` beside the database.
-
-### Search by meaning
-
-`embedding_model_path` (`./models/embedding.gguf` by default) points at a small
-embedding model, run on the CPU so the GPU stays with the chat model.
-[Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF)
-in Q8_0 (about 640 MB) is the one this was built with. While idle, the
-background worker embeds facts and topics in batches of eight, and embeds a
-topic again when its summary changes. Vectors are stored in the knowledge
-database and searched with sqlite-vec. Consolidation also compares topics,
-and facts under one topic, whose vectors are close, so duplicates worded
-differently are merged too. Without the file, or if it fails to load, search
-stays word-based.
-
-Every web search a request runs is stored under a topic named after its
-query. A stored source is reused only while it has not expired and shares at
-least half of the prompt's search terms. Only snippets and summaries are
-stored, never full pages.
-
-The schema is versioned, and an older database is upgraded in place when it is
-opened; a database from a newer version is refused.
-
-The database is local and not encrypted; choose a private path if other users
-can read your files.
-
-### Background research
-
-While the daemon runs, a background worker uses idle time to grow the store.
-For each queued topic it:
-
-1. Searches the web, then fetches and summarizes the first two result pages,
-   skipping one whose text matches a page already read.
-2. Numbers every page summary and search snippet, then asks the model, through
-   small JSON schemas, for facts from each page on its own and from the
-   snippets together, each citing its source number and a confidence. A last
-   call writes the topic summary, relationships between named things, and the
-   broader topic this one belongs under. Each call's reply stays short, and a
-   call that fails loses only its own part. A fact citing a number that is not
-   a source is kept without one. A fact stating a version or date that no
-   source contains is dropped, and one whose values or most of whose words are
-   missing from the source it cites, or that cites none, is kept at low
-   confidence.
-3. Stores the sources, page summaries, facts, and relationships. Summary
-   sentences stating a version or date no source contains are dropped, and the
-   topic's place in the tree is left to consolidation.
-
-When a fact is recalled later, it comes with the chain of topics above it and
-their summaries, so the model gets the broader picture in a few lines, and with
-up to five stored relationships of the named things it mentions.
-
-With no research queued, the worker reads recent requests that have not been
-processed yet and remembers what they show, putting each statement in one
-memory store, with a reason when the requests give one. Each recorded request
-lists the paths its file tools opened and the writes and test runs it made, and
-a `locations` memory is kept only when every path, URL, or host and port it
-names appears there or in the request, and a `software` memory only when the
-first two words naming the program do. Each pass reads requests from one folder,
-and the project memories it learns stay with that folder. It is told to leave
-out secrets and personal identifiers.
-
-The daemon also probes the machine when it starts and again every
-`background_refresh_interval_hours`, without the model: the home folder, the
-working folder, the desktop's named folders, mounted filesystems, the operating
-system, kernel, shell, desktop, which common commands are and are not
-installed, and the running system and user services. These are the `locations`
-and `software` memories marked probed; each probe replaces the last one's, so
-what is no longer there is forgotten. The same call names up to three general subjects that would help
-with the ongoing work the requests show, and each one with no facts yet is
-queued for research. It also re-queues topics whose research is older than
-`background_refresh_interval_hours`, or half that for a topic recalled at least
-five times and used since it was last researched; topics used since their last
-research, and the most used, go first. A topic whose last attempt failed waits
-a full interval, and one that has failed three times since its last success is
-left alone until a request or the learning step asks for it again.
-
-Not everything becomes a research topic. A query that is a question or a
-remark rather than a subject, such as "can you access the local filesystem" or
-"i had a pet dog", is never queued, and neither is a sentence of the model's own
-answer that a check rejected: looking up a guessed value only finds pages that
-agree with the guess.
-
-The worker yields to foreground work. It takes the shared model lock for one
-model call at a time, checks before every step and every generated token
-whether a prompt has started, and if so puts its job back in the queue.
-
-Topics reach the queue from requests and by hand. Every search during a request
-is queued unless its topic already has facts: one that found results is turned
-into facts, and one that found nothing is tried again later. A sentence that a
-check rejects for stating a version or date found in no evidence is queued as
-well, led by the start of the request it answers so the search knows its
-subject, up to three per check, so the claim gets looked up. A page fetched during
-a request keeps its summary in the store as well. Otherwise, add topics on
-the Background page: **Queue topic** adds one to the queue, and **Research now** starts it at once, even
-while idle research is paused. The worker stops when the daemon exits. One-shot
-CLI runs without a daemon read and write the knowledge store but do not start
-the worker.
-
-`background_poll_interval_seconds` and `background_max_tokens` bound its
-resource use, and `background_max_pending_jobs` bounds the backlog. Set
-`background_research_enabled` to `false` to pause it.
-
-### Mail
-
-List Maildir folders (the ones a mail syncer such as mbsync fills) in `mail_maildir_paths`
-in `settings.json` to have the daemon read new messages. Mail from lists and automatic
-senders is skipped, and the model looks at the rest and proposes a notification for what
-a person needs to see. Messages older than `mail_max_age_days` are not read, and the
-daemon only reads files; it never holds a mail password. The proposals appear on the
-window's **Inbox** page, where **Done** and **Dismiss** clear them. The tray menu lists
-`Inbox (n)` while any are waiting, and a desktop notification announces new ones while
-the window is not in front.
-
-A message that waits for a reply also gets a drafted answer (`mail_draft_replies`), which
-appears in the Inbox as a draft; CODEX never sends mail. To read an IMAP mailbox directly,
-add it to `mail_imap_accounts` with a `host`, `username` and a `password_command`, the
-program and arguments that print the password (for example your password manager's
-command); the password is never stored in settings. The `queue_request` daemon method
-leaves a request for the assistant to work while idle, and its answer waits in the Inbox.
-
-A drafted reply that mentions a date, time, amount or name the email never does, or
-that names another recipient or subject, ends with a `Check:` line saying what to look
-at; it is still only a draft. These checks are word matches, so they sometimes flag a
-name you meant to use.
-
-Sender rules decide how mail from an address or a whole domain is handled, without the
-model: `ignore` drops it, `notify` shows it, and `reply` shows it and drafts an answer.
-A rule for an address beats one for its domain. They live in the `mail_sender_rules`
-table of the knowledge store, and the daemon methods `sender_rules`,
-`set_sender_rule` (`pattern`, `mail_class`) and `delete_sender_rule` (`pattern`) list,
-add and remove them, for example:
-
-```bash
-echo '{"id": 1, "method": "set_sender_rule", "params": {"pattern": "news.example.org", "mail_class": "ignore"}}' \
-  | socat - "UNIX-CONNECT:$XDG_RUNTIME_DIR/codex/daemon.sock"
-```
-
-After you dismiss `mail_rule_proposal_threshold` (default 3, 0 for never) messages in a
-row from one sender, the Inbox asks whether to ignore that sender: **Done** adds the
-rule and **Dismiss** declines it for good. What triage decided and what you did with
-each message is kept in `mail_outcomes`; the `mail_outcomes` daemon method returns the
-recent rows and how often you kept what was shown.
-
-Background work runs on the main model unless `background_model_path` names
-another GGUF file. That model gets its own cache, so the two never evict each
-other, and loads with `background_gpu_layers` (default 0, the CPU) and
-`background_context_size` (0 uses `context_size`). It still stops as soon as a
-request starts, and it is unloaded after five minutes without background work.
-
-### Conversation titles
-
-Each request gets a short title, like a chat title, written by the model in
-idle time: "SQLite FTS5 ranking" for "how does fts5 in sqlite rank its
-results?". Unfinished runs are titled first, then finished requests, newest
-first. A title has one to five words and at most 40 characters and must share
-a word with the request; otherwise, or when the model fails, the request's
-first words become the title. Topics are named by the same rules (see below).
-
-### Background consolidation
-
-With no research queued and no requests left to learn from, the worker tidies
-the store, one small piece per pass, until nothing is left to do.
-
-Changes that need no model come first:
-
-- A topic that is its own ancestor is moved to the top level.
-- Topics whose names have the same words, such as "Python packaging" and
-  "packaging Python", are merged, and so are facts under one topic that differ
-  only in case and punctuation.
-- Topics with no facts, sources, or subtopics, such as a parent whose
-  subtopics were filed elsewhere, are queued for research, unless their
-  research is still unfinished or has failed. A full queue leaves them for a
-  later pass.
-- Of a topic's failed research attempts, only the newest three are kept.
-- Low-confidence facts that have never been recalled are pruned once they are
-  `background_prune_after_days` old. A pruned fact stays in the store and comes
-  back if research finds it again.
-- When the store's data passes `background_max_store_megabytes` (1024 by
-  default), the least valuable rows are deleted until it is back under 90% of
-  that size: pruned facts first, then finished task runs, processed episodes,
-  expired sources no fact cites, and last the least used facts. Memories and
-  topics are never evicted. Freed space is reused by SQLite rather than
-  returned to the disk.
-
-Then the model checks the name of each researched topic once, and of any other
-topic whose name is over five words or 40 characters. A search query or a
-sentence such as "how do i use fts5 in sqlite" becomes a title as short as a
-chat title, such as "SQLite FTS5", drawn from the name, the searches that found
-the topic, its summary and its facts. The model sees the existing topics sharing
-a word with it, so it can reuse one, and a name that another topic already has
-merges the two. A title must share a word with the current name or one of those
-searches, since one drawn only from the summary may describe a different thing.
-A renamed topic is researched again under its new name, and it and its
-subtopics are placed again, since they were placed under the old name. A topic
-that names no subject, such as a sentence copied from an answer that gives a
-screen size but never says which product it means, is removed when it holds no
-facts, only sentence-length searches found it, and its own name is not a title
-drawn from those searches; its subtopics take its place and its sources stay. A
-title about checking a claim, with a word such as "claim" or "verification",
-counts as naming no subject.
-
-The model then compares pairs that share at least half their words, one pair
-per call, with a schema that lets it reply only with a short reason and one
-verdict:
-
-| Pair                      | Verdicts                                                     | What happens                                                                                                                                                                                                                                                                         |
-| ------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Two topics                | same subject, first is broader, second is broader, different | Same subjects are merged into the one with more facts and sources, carrying over its facts, sources, subtopics, queued research, and graph edges. A broader topic adopts the narrower one when that narrows where it sits now                                                        |
-| Two facts under one topic | same, contradict, different                                  | Same facts are merged into the more trusted one. Of two contradicting facts the less trusted is marked disputed, or both when neither is more trusted, and the topic is queued for fresh research                                                                                    |
-| Two memories in one store | same, contradict, different                                  | Same memories are merged. Of two contradicting memories the older is set aside, except that one the user stated outlasts the rest and a probed one outlasts a learned one. Two probed memories are never compared. Project memories are compared only with those of their own folder |
-
-Disputed and pruned facts and set-aside memories are no longer recalled. Each
-pair is compared once; its verdict is stored, and a fact or memory learned
-again after being set aside is compared afresh.
-
-Each topic's place in the tree is also reviewed once every
-`background_refresh_interval_hours`. The model picks the narrowest of up to 20
-related topics that this one is a kind of or part of, or the top level, from a
-list fixed by the schema. Its own subtopics, topics with no summary, and topics
-whose names hold every word of its name and more, such as "PinePhone
-community" for "PinePhone", are never offered. A researched
-topic may instead name a broader subject the tree lacks, such as "Pine64" for
-"PinePhone" beside "PineTime"; that topic is made where this one sat and is
-placed in its own turn, and a topic made this way never names one above itself.
-A move under an existing topic happens only when a second, separate question,
-asked as a pair comparison with the moving topic first, also finds that topic
-broader. When a topic moves, the summaries of its new and old parents are
-rewritten.
-Research never files a topic itself, so the tree is shaped only here.
-
 ## Installation
 
 With Nix, which builds the CUDA version of llama.cpp and supplies the CUDA
@@ -628,10 +148,10 @@ user-space library, which can happen after a NixOS rebuild; a reboot fixes it.
 
 Then put a GGUF model at `./models/model.gguf`, or point `model_path` at one,
 and optionally an embedding model at `./models/embedding.gguf` (see
-[Search by meaning](#search-by-meaning)). The reference model, the one the
+[Search by meaning](https://github.com/x-tech-laboratories/SmartHarness#search-by-meaning)). The reference model, the one the
 evals are measured on, is
 [Spark-X2.6-4B](https://huggingface.co/XHToken/Spark-X2.6-4B-GGUF) at
-`Q4_K_M`; why is in `docs/1-architecture.md`, "Reference model".
+`Q4_K_M`; why is in SmartHarness's `docs/1-architecture.md`, "Reference model".
 
 ## Usage
 
@@ -642,151 +162,9 @@ codex            # asks for a prompt when run in a terminal
 codex-gui        # open the window
 codex-daemon     # run the daemon in the foreground
 codex --resume   # carry on the newest unfinished task tree run
-codex eval       # compare the bare model and the task tree
-codex recall-benchmark  # score recall with no chat model
+codex eval       # SmartHarness's eval: compare the bare model and the task tree
+codex recall-benchmark  # SmartHarness's recall benchmark, with no chat model
 ```
-
-### Evaluation
-
-`codex eval` answers each task in `evals/tasks.json` with the bare model
-(one call with a plain system prompt) and with the task tree, both on one
-loaded model. Each answer is scored by checks that do not use
-the model: `contains`, `contains_any`, `not_contains`, `regex`, `not_regex`,
-`max_words`, and `min_words`. It prints each result as it lands, then a table of passed
-tasks, passed checks, errors, seconds, model calls, and generated tokens per
-runner.
-
-Each run gets an empty knowledge store and an empty scratch directory as its
-filesystem root, with no MCP servers, so no task sees what an earlier one found
-or the user's own files. Web search stays on.
-
-The set mixes everyday questions and writing with tasks a small model tends
-to get wrong on its own: counting letters, multi-step arithmetic and dates, a
-logic puzzle, facts that need a search, and writing under several exact
-constraints.
-
-One run per task cannot tell a real change from chance, since the same task
-can pass one run and fail the next. `--repeat N` goes through the whole set N
-times and adds each runner's pass rate and its passes per round to the table,
-then lists the tasks a runner passed in only some rounds. Beside the pooled
-rate it prints pass^k: the tasks a runner passed in every round, which a lucky
-round cannot inflate. Every run, repeated or not, ends with a table of passes
-per task and runner, a star marking the tasks passed in every round.
-
-`--compare OLD` pairs this run with an earlier `--output` file, task by task
-and runner by runner: passes on each side and the change, biggest change first and tasks
-in only one file last,
-then each runner's pooled and pass^k totals on both sides and how many tasks got
-better or worse. `--compare OLD --against NEW` pairs two saved files without
-running anything or loading the model. Any result file works, including ones
-saved before these fields existed.
-
-`--prompts DIR` runs with prompt variants: each file in `DIR` replaces the
-shipped one of the same name in `share/prompts/` (for example a `decision.txt`
-of your own), the rest stay as shipped, and the `--output` file records the
-folder as `prompts_dir`. Setting `CODEX_PROMPTS_DIR` does the same. Nothing is
-rebuilt, so variants can be swapped between runs and compared with
-`--compare`.
-
-`--output` writes every run with its answer, checks, seconds, model calls,
-tokens and native `tool_calls`, and beside them `agents` (each hand-over to an
-agent in order, with the agent that handed it over and its depth),
-`tool_sequence` (every tool call in order, with the agent whose run made it,
-whether it named an offered tool with arguments its schema accepts, `valid`,
-and whether it failed, `error`) and `tool_choice`. A task may list
-`expect_servers`, the servers a right answer needs; `tool_choice` is then
-whether the run made a valid call on each of them, and is null for a task that
-lists none. The summary adds per runner `distinct_tasks`,
-`tasks_passed_every_round` and `pass_every_round_rate` (pass^k), the counts of
-tool calls, valid calls and failed calls, and `tool_choice_accuracy`; each
-`task_passes` entry gains `every_round`.
-
-`--stream` prints each run's start, every task-tree step and every tool call
-as it happens, prefixed with the task, runner and round and the seconds since
-the run began, such as `[inbox-newest / agents #2] +4.1s tool
-mcp__mail__list_inbox {"limit":1}`. Without it a run prints nothing until it
-ends, so a slow or looping one cannot be told apart from a working one.
-
-`evals/execute_tasks.json` holds execute-mode tasks. Each one carries `files`,
-a small project written into the scratch root before the run, and the task
-tree may change those files and run their tests. The bare model gets
-the files inline and gives back each file it changes in full, as a
-`File: <path>` line and a fenced block, which is written into the root before
-scoring. Three more checks look at the files after the run: `tests_pass` runs
-unittest discovery as the `run_tests` tool does, `file_contains` looks for text
-in one file, and `file_unchanged` fails when a file such as a test differs from
-how the task gave it.
-
-`evals/reasoning_tasks.json` holds 25 short reasoning and trivia questions
-taken from
-[Questions-for-AI-Model-Testing](https://github.com/thehsansaeed/Questions-for-AI-Model-Testing)
-(MIT, notice in `evals/reasoning_tasks.LICENSE`): trick questions (eggs boiled
-together, months with 28 days, burying survivors), decimal comparisons such as
-9.9 against 9.11 in both orders, letter counts, order of operations and a clock
-angle. Three ask about things that change or are only estimated (Voyager
-speeds, the number of galaxies) and run in `auto` mode so the tree may search.
-It is the set to run when comparing models.
-
-`evals/agents_tasks.json` and `evals/scaled_tasks.json` compare the task tree
-with every connected tool at once (`tree`) against the same tree with the
-starter agents to hand work to (`agents`). Their tools come from canned MCP
-servers (`evals/fake_mcp_server.mjs`, `evals/fake_catalogue.json`) that return
-fixed, made-up replies. The first set connects six servers and 32 tools; the
-scaled set connects 26 servers and 116 tools, nine of them named `search`, and
-most of its 22 tasks need two to four servers.
-
-`--seed-store PATH` measures what recall adds: the task tree runs once more,
-as `tree+store`, starting from a fresh
-copy of that knowledge store, such as the one in `knowledge_db_path`. The copy
-is made with SQLite's backup, so the seed store itself is never changed.
-
-`--seed` builds that store from `evals/seed.json`, or from a seed file it
-names, and answers `evals/recall_tasks.json` unless `--tasks` names another
-set. The seed holds made-up facts about a lab that does not exist, with their
-sources and two user memories, so no web search can answer the recall tasks
-and only recall can. One task asks about something the seed leaves out, to
-catch an answer that borrows a nearby fact. When `embedding_model_path` names
-a model, the facts and topics are embedded as the store is built, and every
-run recalls by meaning as well as by words.
-
-```bash
-codex eval --runners bare,tree --only stable-fact,python-bug
-codex eval --tasks my-tasks.json --output report.json
-codex eval --tasks evals/execute_tasks.json
-codex eval --tasks evals/reasoning_tasks.json --runners bare,tree --repeat 3
-codex eval --runners tree --repeat 3 --output report.json
-codex eval --tasks evals/agents_tasks.json --runners tree,agents --stream
-codex eval --tasks evals/agents_tasks.json --runners tree,agents --repeat 3 --compare old.json
-codex eval --compare old.json --against new.json
-codex eval --tasks evals/scaled_tasks.json --runners tree,agents --repeat 3
-codex eval --runners tree --seed-store ~/.local/share/codex/knowledge.sqlite3
-codex eval --seed --runners tree
-```
-
-### Recall benchmark
-
-`codex recall-benchmark` scores recall itself, with no chat model. It
-builds a store from the made-up facts in `evals/recall_benchmark_seed.json`,
-asks each question in `evals/recall_benchmark.json`, and compares the five
-facts recalled with the ones each question expects. Questions come in four
-kinds: ones that share words with their fact, paraphrases that share none,
-ones that should bring up several facts, and unrelated ones that should bring
-up nothing. It runs once by words alone and once with the embedding model, and
-reports each kind's pass rate, the share of expected facts found, the mean
-reciprocal rank, and the time per recall. `--words-only` skips the embedding
-run and `--show-failures` lists what each failed question recalled.
-
-On 2026-10-21, with Qwen3-Embedding-0.6B on a busy CPU:
-
-|                              | Words only | With meaning |
-| ---------------------------- | ---------- | ------------ |
-| Shared words                 | 100%       | 100%         |
-| Paraphrase                   | 0%         | 100%         |
-| Several facts                | 50%        | 100%         |
-| Unrelated (nothing recalled) | 100%       | 100%         |
-| Expected facts found         | 38%        | 100%         |
-| Mean reciprocal rank         | 0.35       | 0.91         |
-| Seconds per recall           | 0.00       | 2.29         |
 
 ### The window
 
@@ -925,123 +303,106 @@ context that fits in memory, up to 32768 tokens, then gives a quarter of it to
 background model, it sizes that model on its own device as well and sets
 `background_context_size` and `background_max_tokens` from it.
 
-The model's prompts ship with the program in `share/prompts/`, one text file
-per prompt, and are not a settings file: there is no user copy to override
+The model's prompts ship with SmartHarness in its `share/prompts/`, and the
+assistant's own (mail triage and drafted replies) in `share/assistant/prompts/`,
+one text file per prompt. They are not a settings file: there is no user copy to override
 them, because a prompt changes only when the eval shows the new wording does
 better. To try a variant, point the eval at a folder of replacement files with
-`--prompts DIR` (see Evaluation).
+`--prompts DIR` (see SmartHarness's [Evaluation](https://github.com/x-tech-laboratories/SmartHarness#evaluation)).
 
-## Tools and safety
+## Backups
 
-| Tool                              | Approach             | Notes                                                                                                                                                |
-| --------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `web_search`                    | research             | DuckDuckGo results from its HTML search page, capped by `max_search_results`                                                                       |
-| `web_fetch`                     | research             | Public HTTP(S) pages only; private and local addresses are refused, including after redirects. The page is summarized for a focus the model supplies |
-| `list_directory`, `read_file` | research, files, act | Paths must stay under `filesystem_root`                                                                                                            |
-| `write_file`                    | act                  | Only with `allow_file_writes`; creates or replaces files and cannot delete; refuses `.codex/`, `CODEX.md`, `AGENTS.md` and the config folder    |
-| `run_tests`                     | act                  | Only with `enable_test_execution`; runs Python `unittest` discovery under the root with a 120-second limit                                       |
+The daemon backs up the knowledge database once a day into `backups` beside it
+(`~/.local/share/codex/backups` by default), keeping the last 14, and checks
+again every hour while it runs. Options → Backups backs up by hand, changes how
+many are kept or turns daily backups off, and restores a backup. A restore
+backs up the current database first, then puts the backup in place while the
+daemon keeps running; it is refused while a task or a background job is
+running, since either may still write what it read before. The daemon methods
+are `list_backups`, `create_backup`, `restore_backup` (`name`),
+`remove_backup` (`name`), `get_backup_schedule` and `set_backup_schedule`
+(`schedule`: `{"automatic", "to_keep"}`), and the schedule is kept in
+`backup-schedule.json` beside the database.
 
-`filesystem_root` is resolved from the current directory. Paths are relative to
-it; an absolute path is accepted only when it points inside it. Files with
-sensitive names such as `.env` or private keys are refused. Each task's tool
-loop may make at most `max_tool_calls` calls (1 to 10).
+## Mail
 
-### MCP servers
+List Maildir folders (the ones a mail syncer such as mbsync fills) in `mail_maildir_paths`
+in `settings.json` to have the daemon read new messages. Mail from lists and automatic
+senders is skipped, and the model looks at the rest and proposes a notification for what
+a person needs to see. Messages older than `mail_max_age_days` are not read, and the
+daemon only reads files; it never holds a mail password. The proposals appear on the
+window's **Inbox** page, where **Done** and **Dismiss** clear them. The tray menu lists
+`Inbox (n)` while any are waiting, and a desktop notification announces new ones while
+the window is not in front.
 
-Explicitly configured MCP servers can provide extra tools to tasks that act. Each
-enabled server must list `allowed_tools`; only those are exposed, named
-`mcp__<server>__<tool>`. Configure only servers you trust. Sessions open for a
-task's tool loop and close after it.
+A message that waits for a reply also gets a drafted answer (`mail_draft_replies`), which
+appears in the Inbox as a draft; CODEX never sends mail. To read an IMAP mailbox directly,
+add it to `mail_imap_accounts` with a `host`, `username` and a `password_command`, the
+program and arguments that print the password (for example your password manager's
+command); the password is never stored in settings. The `queue_request` daemon method
+leaves a request for the assistant to work while idle, and its answer waits in the Inbox.
 
-Two transports are supported:
+A drafted reply that mentions a date, time, amount or name the email never does, or
+that names another recipient or subject, ends with a `Check:` line saying what to look
+at; it is still only a draft. These checks are word matches, so they sometimes flag a
+name you meant to use.
 
-- **`stdio`** runs `command` with `args` locally. It inherits basic variables
-  such as `PATH` and `HOME`; anything else goes in `env`.
-- **`http`** connects to a Streamable HTTP endpoint at `url` and sends `headers`
-  with every request.
+Sender rules decide how mail from an address or a whole domain is handled, without the
+model: `ignore` drops it, `notify` shows it, and `reply` shows it and drafts an answer.
+A rule for an address beats one for its domain. They live in the `mail_sender_rules`
+table of the knowledge store, and the daemon methods `sender_rules`,
+`set_sender_rule` (`pattern`, `mail_class`) and `delete_sender_rule` (`pattern`) list,
+add and remove them, for example:
 
-Values in `env` and `headers` can reference process variables as `${NAME}`, so
-secrets stay out of the file. A missing variable stops the task with an error.
-
-```json
-{
-	"mcp_servers": [
-		{
-			"name": "docs",
-			"transport": "stdio",
-			"command": "docs-mcp-server",
-			"args": [],
-			"env": {"DOCS_TOKEN": "${DOCS_TOKEN}"},
-			"allowed_tools": ["search_docs", "fetch_doc"]
-		},
-		{
-			"name": "trilium",
-			"transport": "http",
-			"url": "http://127.0.0.1:37840/mcp",
-			"headers": {"Authorization": "Bearer ${TRILIUM_ETAPI_TOKEN}"},
-			"allowed_tools": ["search_notes", "get_note", "get_note_content"]
-		}
-	]
-}
+```bash
+echo '{"id": 1, "method": "set_sender_rule", "params": {"pattern": "news.example.org", "mail_class": "ignore"}}' \
+  | socat - "UNIX-CONNECT:$XDG_RUNTIME_DIR/codex/daemon.sock"
 ```
 
-Trilium serves MCP at `/mcp` once it is enabled in Options > AI / LLM, and
-accepts an ETAPI token from Options > ETAPI as a bearer token.
+After you dismiss `mail_rule_proposal_threshold` (default 3, 0 for never) messages in a
+row from one sender, the Inbox asks whether to ignore that sender: **Done** adds the
+rule and **Dismiss** declines it for good. What triage decided and what you did with
+each message is kept in `mail_outcomes`; the `mail_outcomes` daemon method returns the
+recent rows and how often you kept what was shown.
+
+Background work runs on the main model unless `background_model_path` names
+another GGUF file. That model gets its own cache, so the two never evict each
+other, and loads with `background_gpu_layers` (default 0, the CPU) and
+`background_context_size` (0 uses `context_size`). It still stops as soon as a
+request starts, and it is unloaded after five minutes without background work.
 
 ## Project layout
 
 | Path                                                 | Contents                                                                                                    |
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `src/core/taskTree.ts`                             | The task tree: deciding, gathering, writing, checking, and splitting tasks                                  |
-| `src/core/model.ts`                                | Loading the model and making one call to it                                                                 |
-| `src/core/evidence.ts`                             | Searching with memory, recall formatting, page summaries, and the research queue                            |
-| `src/core/checks.ts`                               | Checks on a result that do not rely on the model                                                            |
-| `src/core/mailChecks.ts`                           | Sender-rule matching and the checks on drafted mail replies                                                 |
-| `src/core/toolStage.ts`                            | The tool-calling loop each task's gather step runs                                                          |
-| `src/core/tools.ts`                                | Built-in tools and their path and URL checks                                                                |
-| `src/core/mcpTools.ts`                             | MCP client for stdio and HTTP servers                                                                       |
-| `src/core/contextBudget.ts`                        | Fitting each call's input into the context window                                                           |
-| `src/core/knowledge.ts`                            | SQLite knowledge store, memory stores, queue, and graph                                                     |
-| `src/core/environment.ts`                          | Probing the machine for the locations and software memory stores                                            |
-| `src/core/agents.ts`, `share/agents/`              | Reading agent definitions and the MCP servers each one may use; the starter agents copied on first run       |
-| `src/core/prompts.ts`, `share/prompts/`            | The model's prompts, one text file each, and the loader that reads them                                      |
-| `src/core/recallBenchmark.ts`                      | Scoring recall against questions with known relevant facts                                                  |
-| `src/core/embeddings.ts`                           | The embedding model used to find facts and topics by meaning                                                |
-| `src/core/background.ts`                           | One background research job                                                                                 |
-| `src/core/consolidation.ts`                        | One background consolidation step: merging, re-filing, and pruning the store                                |
-| `src/core/gpuLock.ts`                              | The GPU lock file shared with other programs                                                                |
-| `src/core/autoSize.ts`                             | Auto size: fitting context and token limits to the memory available                                         |
-| `src/core/settings.ts`                             | Defaults and validation                                                                                     |
-| `src/core/evaluation.ts`, `evals/tasks.json`     | The eval harness and its fixed task set                                                                     |
-| `src/core/taskView.ts`                             | Task tree lines and task details                                                                            |
-| `src/daemon/daemon.ts`                             | The daemon: model, runs, background worker, and socket server                                               |
-| `src/daemon/backups.ts`                            | Daily backups of the knowledge database, and restoring one                                                 |
-| `src/daemon/client.ts`, `src/shared/protocol.ts` | Connecting to the daemon and the message format                                                             |
-| `src/cli/index.ts`                                 | The one-shot command line, with the `eval` and `recall-benchmark` subcommands                           |
-| `src/main/tray.ts`, `src/main/autostart.ts`      | The system tray icon and menu, and the login autostart entry                                                |
-| `src/main`, `src/preload`, `src/shared/ipc.ts`   | The Electron main process that starts the daemon and relays its messages, and the bridge the page calls it through |
-| `src/web`                                          | The window's React page: the workbench, inbox, background, knowledge and options views on X-Libs' widgets   |
-| `evals/seed.json`, `evals/recall_tasks.json`     | The seed store's made-up facts and the tasks only recall can answer                                         |
-| `evals/reasoning_tasks.json`                       | Short reasoning and trivia questions for comparing models                                                   |
+| `src/assistant/mail.ts`, `src/assistant/imap.ts`     | Reading new mail from Maildir folders and IMAP mailboxes as events                                          |
+| `src/assistant/triage.ts`                            | Triage of incoming email: sender rules, bulk mail, and the model's verdict                                  |
+| `src/assistant/draftReply.ts`                        | Drafting a reply to mail that waits for one, as a task tree                                                 |
+| `src/assistant/mailChecks.ts`                        | Sender-rule matching and the checks on drafted mail replies                                                 |
+| `src/assistant/mailStore.ts`                         | The mail tables beside the knowledge store: triage outcomes, drafts and sender rules                        |
+| `src/assistant/eventHandlers.ts`                     | The event handlers the daemon runs: the harness's own plus mail                                             |
+| `src/assistant/settings.ts`                          | The assistant's settings: the harness's plus mail, and where the files live                                 |
+| `src/assistant/prompts.ts`, `share/assistant/prompts/` | The assistant's own prompts                                                                               |
+| `src/daemon/daemon.ts`                               | The daemon: model, runs, background worker, and socket server                                               |
+| `src/daemon/backups.ts`                              | Daily backups of the knowledge database, and restoring one                                                  |
+| `src/daemon/client.ts`, `src/shared/protocol.ts`     | Connecting to the daemon and the message format                                                             |
+| `src/cli/index.ts`                                   | The one-shot command line, with SmartHarness's `eval` and `recall-benchmark` as subcommands                  |
+| `src/main/tray.ts`, `src/main/autostart.ts`          | The system tray icon and menu, and the login autostart entry                                                |
+| `src/main`, `src/preload`, `src/shared/ipc.ts`       | The Electron main process that starts the daemon and relays its messages, and the bridge the page calls it through |
+| `src/web`                                            | The window's React page: the workbench, inbox, background, knowledge and options views on X-Libs' widgets   |
 
-Test files named `*.test.ts` sit beside the core, daemon, CLI and main-process files they cover; the page's tests live in `tests/`.
+The task tree, knowledge store, background research, agents, prompts and evals
+are [SmartHarness](https://github.com/x-tech-laboratories/SmartHarness), imported as
+`@x-tech-laboratories/smartharness/<module>` and pinned to a commit in
+`package.json`.
+
+Test files named `*.test.ts` sit beside the files they cover; the page's tests live in `tests/`.
 
 See [docs/1-architecture.md](docs/1-architecture.md) for how these parts fit together.
 
 Run the tests with `npm test`, which uses vitest.
 
 The coverage floor in `vitest.config.ts` only rises: CI fails when coverage drops below it or a raised floor is not committed.
-
-## Current limits
-
-- Subtasks run one after another. Resuming restarts the task that was cut off
-  from its decision, so the work it had done before the stop is redone.
-- One-shot CLI runs without a daemon load the model for each run; the daemon
-  keeps it loaded and shares it with the background worker.
-- Topics found by searches during a request are named after the query and stay
-  at the top level until the background worker researches them.
-
-See `docs/3-roadmap.md` for planned work.
 
 ## License
 

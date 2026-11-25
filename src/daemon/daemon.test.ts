@@ -5,11 +5,11 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { SizeChoice } from '../core/autoSize.js';
-import { KnowledgeStore } from '../core/knowledge.js';
-import { LocalModel } from '../core/model.js';
+import type { SizeChoice } from '@x-tech-laboratories/smartharness/autoSize';
+import { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
+import { LocalModel } from '@x-tech-laboratories/smartharness/model';
 import { ASSISTANT_DEFAULT_SETTINGS as DEFAULT_SETTINGS, loadAssistantSettings as loadSettings, type AssistantSettings as Settings } from '../assistant/settings.js';
-import type { ExecuteTaskTreeOptions } from '../core/taskTree.js';
+import type { ExecuteTaskTreeOptions } from '@x-tech-laboratories/smartharness/taskTree';
 import { DaemonError } from './client.js';
 import { BACKGROUND_MODEL_IDLE_SECONDS, HarnessDaemon, type DaemonDependencies } from './daemon.js';
 import { EventLog, RunningDaemon } from './daemonHarness.js';

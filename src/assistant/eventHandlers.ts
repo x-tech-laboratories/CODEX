@@ -1,5 +1,5 @@
 // The event handlers the assistant runs: the harness's own, plus mail triage and drafted replies.
-import { DEFAULT_EVENT_HANDLERS, type EventHandler } from '../core/events.js';
+import { DEFAULT_EVENT_HANDLERS, type EventHandler } from '@x-tech-laboratories/smartharness/events';
 import { draftReplyHandler } from './draftReply.js';
 import type { AssistantSettings } from './settings.js';
 import { emailHandler } from './triage.js';

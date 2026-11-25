@@ -1,5 +1,5 @@
 // The assistant's mail records beside the knowledge store: what triage decided, the drafts it proposed, and sender rules.
-import { KnowledgeStore, firstChars, now, type ActionResolution, type Connection, type ResolvedAction, type Row, type SchemaExtension } from '../core/knowledge.js';
+import { KnowledgeStore, firstChars, now, type ActionResolution, type Connection, type ResolvedAction, type Row, type SchemaExtension } from '@x-tech-laboratories/smartharness/knowledge';
 import { MAIL_CLASSES, conflictingRule, matchSenderRule, normalizeRulePattern, type MailClass, type SenderRule } from './mailChecks.js';
 
 // ============================================================================

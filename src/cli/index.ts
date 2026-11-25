@@ -5,12 +5,12 @@ import { resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 
-import { installStarterAgents } from '../core/agents.js';
-import { KnowledgeStore } from '../core/knowledge.js';
-import { ModelCache } from '../core/model.js';
-import { expandUser, MODE_CHOICES } from '../core/settings.js';
+import { installStarterAgents } from '@x-tech-laboratories/smartharness/agents';
+import { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
+import { ModelCache } from '@x-tech-laboratories/smartharness/model';
+import { expandUser, MODE_CHOICES } from '@x-tech-laboratories/smartharness/settings';
 import { assistantSettingsPath as defaultSettingsPath, loadAssistantSettings as loadSettings, validateAssistantSettings as validateSettings, type AssistantSettings as Settings } from '../assistant/settings.js';
-import { executeTaskTree, savedRunOptions, type ExecuteTaskTreeOptions } from '../core/taskTree.js';
+import { executeTaskTree, savedRunOptions, type ExecuteTaskTreeOptions } from '@x-tech-laboratories/smartharness/taskTree';
 import { connectToDaemon, DISCONNECTED_EVENT, type DaemonClient, type EventHandler } from '../daemon/client.js';
 import { HelpRequested, parseArguments, usageText, UsageError, type ParserSpec } from './arguments.js';
 
@@ -114,8 +114,8 @@ function parserSpec(): ParserSpec {
 
 // Subcommands that hand the rest of the command line to their own parser.
 const SUBCOMMANDS: Record<string, () => Promise<{ main: (argv: string[]) => Promise<number> }>> = {
-    eval: () => import('../core/evaluation.js'),
-    'recall-benchmark': () => import('../core/recallBenchmark.js'),
+    eval: () => import('@x-tech-laboratories/smartharness/evaluation'),
+    'recall-benchmark': () => import('@x-tech-laboratories/smartharness/recallBenchmark'),
 };
 
 // Suspend or resume the running daemon; with none running there is nothing to do, which is not a failure.

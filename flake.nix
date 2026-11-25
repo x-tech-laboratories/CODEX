@@ -1,5 +1,5 @@
 {
-  description = "CODEX: a task-tree harness for locally run language models";
+  description = "CODEX: a personal assistant on a locally run language model";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -35,12 +35,13 @@
         # Read from package-lock.json, so there is no deps hash to keep in step with it.
         npmDeps = pkgs.importNpmLock {
           npmRoot = ./.;
-          # The lock names RoboBuddy by ssh, which needs a key; the same commit comes over https.
+          # The lock names RoboBuddy and SmartHarness by ssh, which needs a key; the same commits come over https.
           fetcherOpts."node_modules/@x-tech-laboratories/robobuddy".url = "https://github.com/x-tech-laboratories/RoboBuddy.git";
+          fetcherOpts."node_modules/@x-tech-laboratories/smartharness".url = "https://github.com/x-tech-laboratories/SmartHarness.git";
         };
         npmConfigHook = pkgs.importNpmLock.npmConfigHook;
         npmFlags = [ "--ignore-scripts" ];
-        # npm unpacks the RoboBuddy git dependency through the cache, so the cache must be writable.
+        # npm unpacks the git dependencies through the cache, so the cache must be writable.
         makeCacheWritable = true;
         env = {
           ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
@@ -49,15 +50,24 @@
         nativeBuildInputs = [ pkgs.makeWrapper ];
         installPhase = ''
           runHook preInstall
-          # importNpmLock puts the original lock back, whose RoboBuddy entry npm would fetch again, so prune with its copy.
+          # importNpmLock puts the original lock back, whose git entries npm would fetch again, so prune with its copy.
           mv package.json package.json.orig
           mv package-lock.json package-lock.json.orig
           cp --no-preserve=mode $npmDeps/package.json $npmDeps/package-lock.json .
           npm prune --omit=dev --ignore-scripts
           mv package.json.orig package.json
           mv package-lock.json.orig package-lock.json
+          # A git dependency is linked from its store path, where Node would look for its own dependencies, so copy it in;
+          # prune drops what only a linked package needs, so package.json also lists SmartHarness's own dependencies.
+          for link in node_modules/@x-tech-laboratories/*; do
+            if [ -L "$link" ]; then
+              target=$(readlink -f "$link")
+              rm "$link"
+              cp -r --no-preserve=mode "$target" "$link"
+            fi
+          done
           mkdir -p $out/lib/codex $out/bin
-          cp -r dist out node_modules evals share resources package.json $out/lib/codex/
+          cp -r dist out node_modules share resources package.json $out/lib/codex/
           makeWrapper ${nodejs}/bin/node $out/bin/codex \
             --add-flags $out/lib/codex/dist/cli/index.js \
             --prefix LD_LIBRARY_PATH : "${runtimeLibraryPath}" \

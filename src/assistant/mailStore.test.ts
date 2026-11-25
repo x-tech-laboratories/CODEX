@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { KnowledgeStore, MIGRATIONS } from '../core/knowledge.js';
+import { KnowledgeStore, MIGRATIONS } from '@x-tech-laboratories/smartharness/knowledge';
 import { MailStore } from './mailStore.js';
 
 // ============================================================================

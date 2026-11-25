@@ -5,16 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({ runStage: vi.fn() }));
 
-vi.mock('../core/model.js', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('../core/model.js')>()),
+vi.mock('@x-tech-laboratories/smartharness/model', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@x-tech-laboratories/smartharness/model')>()),
     runStage: fakes.runStage,
 }));
 
-import { BackgroundPaused, type BackgroundOptions } from '../core/background.js';
-import { UNTRUSTED_OPEN } from '../core/contextBudget.js';
-import { handleNextEvent } from '../core/events.js';
-import { KnowledgeStore } from '../core/knowledge.js';
-import type { ChatModel } from '../core/model.js';
+import { BackgroundPaused, type BackgroundOptions } from '@x-tech-laboratories/smartharness/background';
+import { UNTRUSTED_OPEN } from '@x-tech-laboratories/smartharness/contextBudget';
+import { handleNextEvent } from '@x-tech-laboratories/smartharness/events';
+import { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
+import type { ChatModel } from '@x-tech-laboratories/smartharness/model';
 import { ASSISTANT_EVENT_HANDLERS } from './eventHandlers.js';
 import { MailStore } from './mailStore.js';
 import { ASSISTANT_DEFAULT_SETTINGS as DEFAULT_SETTINGS, type AssistantSettings as Settings } from './settings.js';

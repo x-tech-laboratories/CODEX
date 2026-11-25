@@ -12,7 +12,7 @@ import {
     validateSettings,
     type Settings,
     type SettingsSchema,
-} from '../core/settings.js';
+} from '@x-tech-laboratories/smartharness/settings';
 
 // ============================================================================
 // Paths

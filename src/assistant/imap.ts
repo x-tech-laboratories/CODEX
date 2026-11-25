@@ -3,8 +3,8 @@ import { execFile } from 'node:child_process';
 import type { Duplex } from 'node:stream';
 import { connect } from 'node:tls';
 import { promisify } from 'node:util';
-import type { BackgroundOptions } from '../core/background.js';
-import { KnowledgeStore } from '../core/knowledge.js';
+import type { BackgroundOptions } from '@x-tech-laboratories/smartharness/background';
+import { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
 import { MAIL_FILES_PER_POLL, MAX_MAIL_BYTES, parseMail } from './mail.js';
 import type { AssistantSettings as Settings, ImapAccount } from './settings.js';
 

@@ -5,11 +5,11 @@ import { dirname, resolve } from 'node:path';
 
 import type { BackupSchedule } from '@x-tech-laboratories/x-libs/backup_protocol';
 
-import { autoSize } from '../core/autoSize.js';
-import { indexKnowledge, learnFromEpisodes, researchOneTopic, type BackgroundOptions, type ModelLock } from '../core/background.js';
-import { consolidateKnowledge } from '../core/consolidation.js';
-import { refreshEnvironment } from '../core/environment.js';
-import { handleNextEvent } from '../core/events.js';
+import { autoSize } from '@x-tech-laboratories/smartharness/autoSize';
+import { indexKnowledge, learnFromEpisodes, researchOneTopic, type BackgroundOptions, type ModelLock } from '@x-tech-laboratories/smartharness/background';
+import { consolidateKnowledge } from '@x-tech-laboratories/smartharness/consolidation';
+import { refreshEnvironment } from '@x-tech-laboratories/smartharness/environment';
+import { handleNextEvent } from '@x-tech-laboratories/smartharness/events';
 import {
     ACTION_RESOLUTIONS,
     EVENT_TRUSTS,
@@ -19,18 +19,18 @@ import {
     type EventTrust,
     type NewEvent,
     type TaskRun,
-} from '../core/knowledge.js';
+} from '@x-tech-laboratories/smartharness/knowledge';
 import { MAIL_CLASSES, type MailClass } from '../assistant/mailChecks.js';
 import { ImapConnector } from '../assistant/imap.js';
 import { MailConnector } from '../assistant/mail.js';
 import { MailStore } from '../assistant/mailStore.js';
 import { ASSISTANT_EVENT_HANDLERS } from '../assistant/eventHandlers.js';
-import { ModelCache } from '../core/model.js';
-import { runNextJob, type BackgroundStep, type Job } from '../core/scheduler.js';
-import { titleConversations } from '../core/titles.js';
-import { backgroundModelKey, expandUser } from '../core/settings.js';
+import { ModelCache } from '@x-tech-laboratories/smartharness/model';
+import { runNextJob, type BackgroundStep, type Job } from '@x-tech-laboratories/smartharness/scheduler';
+import { titleConversations } from '@x-tech-laboratories/smartharness/titles';
+import { backgroundModelKey, expandUser } from '@x-tech-laboratories/smartharness/settings';
 import { assistantSettingsPath as defaultSettingsPath, saveAssistantSettings as saveSettings, validateAssistantSettings as validateSettings, type AssistantSettings as Settings } from '../assistant/settings.js';
-import { executeTaskTree, RunStopped, savedRunOptions, type ExecuteTaskTreeOptions } from '../core/taskTree.js';
+import { executeTaskTree, RunStopped, savedRunOptions, type ExecuteTaskTreeOptions } from '@x-tech-laboratories/smartharness/taskTree';
 import { LineReader } from '../main/daemonBridge.js';
 import { decodeMessage, encodeMessage } from '../shared/protocol.js';
 import { knowledgeBackups, type KnowledgeBackups } from './backups.js';

@@ -3,7 +3,7 @@ import type { BrowserWindow, OpenDialogOptions, SaveDialogOptions } from 'electr
 
 import type { Implementation } from '@x-tech-laboratories/x-libs/electron/bridge';
 
-import { loadCommands } from '../core/commands.js';
+import { loadCommands } from '@x-tech-laboratories/smartharness/commands';
 import { codex_events, type CodexApi, type DialogRequest, type UserCommand } from '../shared/ipc.js';
 
 // The window hears this alongside the daemon's events when launch at login changes from the tray.

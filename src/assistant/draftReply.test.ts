@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { BackgroundOptions } from '../core/background.js';
-import { UNTRUSTED_OPEN } from '../core/contextBudget.js';
-import { handleNextEvent, type TreeRunner } from '../core/events.js';
-import { KnowledgeStore } from '../core/knowledge.js';
-import type { ChatModel } from '../core/model.js';
+import type { BackgroundOptions } from '@x-tech-laboratories/smartharness/background';
+import { UNTRUSTED_OPEN } from '@x-tech-laboratories/smartharness/contextBudget';
+import { handleNextEvent, type TreeRunner } from '@x-tech-laboratories/smartharness/events';
+import { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
+import type { ChatModel } from '@x-tech-laboratories/smartharness/model';
 import { ASSISTANT_DEFAULT_SETTINGS as DEFAULT_SETTINGS, type AssistantSettings as Settings } from './settings.js';
 import { ASSISTANT_EVENT_HANDLERS } from './eventHandlers.js';
 import { MailStore } from './mailStore.js';

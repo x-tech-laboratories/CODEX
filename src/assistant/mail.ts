@@ -2,9 +2,9 @@
 import { closeSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { BackgroundOptions } from '../core/background.js';
-import { KnowledgeStore } from '../core/knowledge.js';
-import { expandUser } from '../core/settings.js';
+import type { BackgroundOptions } from '@x-tech-laboratories/smartharness/background';
+import { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
+import { expandUser } from '@x-tech-laboratories/smartharness/settings';
 import type { AssistantSettings as Settings } from './settings.js';
 
 // ============================================================================

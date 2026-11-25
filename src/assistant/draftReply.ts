@@ -1,8 +1,8 @@
 // An email that needs an answer gets a drafted reply, worked as a task tree on the background model.
-import { untrustedBlock } from '../core/contextBudget.js';
-import type { EventContext, EventHandler, EventOutcome } from '../core/events.js';
-import { clip, field, MAX_ANSWER_CHARS, MAX_TITLE_CHARS, runEventTree } from '../core/eventTree.js';
-import type { EventRecord } from '../core/knowledge.js';
+import { untrustedBlock } from '@x-tech-laboratories/smartharness/contextBudget';
+import type { EventContext, EventHandler, EventOutcome } from '@x-tech-laboratories/smartharness/events';
+import { clip, field, MAX_ANSWER_CHARS, MAX_TITLE_CHARS, runEventTree } from '@x-tech-laboratories/smartharness/eventTree';
+import type { EventRecord } from '@x-tech-laboratories/smartharness/knowledge';
 import { assistantPrompt as prompt } from './prompts.js';
 import { checkNote, draftChecks, replySubject, senderAddress, type MailThread } from './mailChecks.js';
 import { MailStore } from './mailStore.js';

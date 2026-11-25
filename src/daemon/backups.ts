@@ -9,7 +9,7 @@ import { backup_naming, keep_backing_up } from '@x-tech-laboratories/x-libs/back
 import { json_backup_schedule } from '@x-tech-laboratories/x-libs/server/backup_routes';
 import { sqlite_backups } from '@x-tech-laboratories/x-libs/server/sqlite_backups';
 
-import type { KnowledgeStore } from '../core/knowledge.js';
+import type { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
 
 export type KnowledgeBackupOptions = {
     // The store for the knowledge database the settings name now.

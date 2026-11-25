@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { DEFAULT_SETTINGS, loadSettings } from '../core/settings.js';
+import { DEFAULT_SETTINGS, loadSettings } from '@x-tech-laboratories/smartharness/settings';
 import { ASSISTANT_DEFAULT_SETTINGS, ASSISTANT_SETTINGS, DEFAULT_KNOWLEDGE_DB_PATH, loadAssistantSettings, saveAssistantSettings, validateAssistantSettings } from './settings.js';
 
 const folders: string[] = [];

@@ -1,26 +1,22 @@
 # Goal
 
-Codex is a harness for running small local LLMs as personal assistants on consumer computers. It aims to let them punch far above their weight in capability, reasoning, memory and the ability to research and learn.
+CODEX is a personable personal assistant that runs on the user's own computer. It handles the user's email, calendar, tasks, bookmarks, notes, files and research: noticing what happens, preparing what is needed, and acting where the user allows.
 
-**Why local and small:** large models need datacenters, which means subscriptions and sending private data away. Small models run on the user's own hardware but have stale knowledge and weak reasoning. The harness is there to close that gap.
+**Built on a harness:** the reasoning, memory and research come from [SmartHarness](https://github.com/x-tech-laboratories/SmartHarness), which makes small local models capable through task trees, a knowledge store and background learning. CODEX adds what an assistant needs around it: a daemon that is always on, interfaces, event sources such as mail, an Inbox of proposed actions, a persona and a face.
 
-**The method:** deterministic harness code externalizes thinking steps (gathering facts, researching, loading/storing/refining memory, review and critique) and runs each as an atomic, independent task. Each task re-prompts the model with a fresh context, dedicated memory, hyperspecific instructions and a scratchpad that carries forward only what later steps need. The combination of model and harness should show emergent reasoning and memory beyond what the model manages alone.
+**Local and private:** the model runs on the user's hardware, and nothing is sent to a hosted model. CODEX uses whichever local model serves the user best, which need not be the small reference model the harness is measured with.
 
-**Learn how to learn, not what to know:** the model's weights supply language and common sense; facts, how-to knowledge and skills live outside it, where they can be researched, checked, updated and corrected. A model taught to search, store and retrieve does not go out of date the day it ships.
+**Asks before it acts:** CODEX proposes; the user approves. Drafts are never sent, and outside content cannot make it change anything unattended.
 
-**What it should handle:** the user's email, calendar, tasks, bookmarks, notes, files and research: noticing what happens, preparing what is needed, and acting where the user allows.
+**The long-range aim:** an always-on assistant that perceives what happens across the user's domains, prioritizes, prepares and reflects, learning in idle time.
 
-**The long-range aim:** an always-on assistant whose harness re-prompts one core model for each function a mind needs (perceiving events, storing and recalling memory, prioritizing, reviewing the results of its own actions, setting and pursuing goals, drives, initiative, reflection), learning continuously in idle time.
-
-**Nothing is settled.** The design in docs 1–2 records what is built and why, not a commitment. Any part of the strategy or architecture, including the model, the decomposition method and the memory design, may change when evals show something better.
+**Nothing is settled.** The design in docs 1–2 records what is built and why, not a commitment.
 
 ## The docs
 
 - `0-goal.md`: this file.
-- `1-architecture.md`: what is built, how it works, and why.
-- `2-open-questions-and-approaches.md`: the open questions, and the unbuilt approaches that answer them.
+- `1-architecture.md`: what the assistant adds to the harness, how it works, and why.
+- `2-open-questions-and-approaches.md`: the assistant's open questions, and the unbuilt approaches that answer them.
 - `3-roadmap.md`: order, status, and how to measure each step.
 
-An approach moves from doc 2 to doc 1, with its rationale, once it is built; one an eval rejects moves to `docs/done/` with the result.
-
-They were distilled from the research notes and design conversations kept in `docs/done/`, and from the old `TODO.md` (see git history). Built/not-built statuses were checked against the code on 2026-11-06; the roadmap says what remains unchecked.
+SmartHarness keeps the same four docs for the harness itself.
