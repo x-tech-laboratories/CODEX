@@ -2,6 +2,10 @@
 
 Order and status of the assistant's work. The harness's own roadmap, including the eval loop and model choice, is SmartHarness's `docs/3-roadmap.md`.
 
+## Merge with X-Context
+
+Doc 4, "Order of work", comes first from 2026-11-26. The mail work below is frozen: mail moves to an application of its own (doc 4, decision 9).
+
 ## Reactive assistant
 
 ### Status

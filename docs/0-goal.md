@@ -10,6 +10,8 @@ CODEX is a personable personal assistant that runs on the user's own computer. I
 
 **The long-range aim:** an always-on assistant that perceives what happens across the user's domains, prioritizes, prepares and reflects, learning in idle time.
 
+**Becoming a knowledge base too:** X-Context is merging into CODEX, which will own its knowledge graph instead of using SmartHarness's store; doc 4 has the plan and the decisions.
+
 **Nothing is settled.** The design in docs 1–2 records what is built and why, not a commitment.
 
 ## The docs
@@ -18,5 +20,6 @@ CODEX is a personable personal assistant that runs on the user's own computer. I
 - `1-architecture.md`: what the assistant adds to the harness, how it works, and why.
 - `2-open-questions-and-approaches.md`: the assistant's open questions, and the unbuilt approaches that answer them.
 - `3-roadmap.md`: order, status, and how to measure each step.
+- `4-merge-with-x-context.md`: the plan to merge X-Context in and make CODEX a knowledge base as well as an assistant; newer than docs 0–3 where they disagree.
 
 SmartHarness keeps the same four docs for the harness itself.
