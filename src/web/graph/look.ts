@@ -67,6 +67,7 @@ export function maker_text(row: { made_by: MadeBy; rule: string; engine: string;
   if (row.made_by === "user") return "you";
   if (row.made_by === "rule") return rule_words[row.rule] ?? `a rule (${row.rule})`;
   if (row.made_by === "similarity") return `similarity of meaning${row.model ? ` (${row.model})` : ""}`;
+  if (row.made_by === "program") return "a program, through a token or MCP";
   return `${row.engine || "a program"}${row.model ? ` (${row.model})` : ""}`;
 }
 

@@ -151,7 +151,7 @@ const local_mcp = create_local_mcp({
   page_only,
   settings_file: join(profile, "mcp.json"),
   default_port: 3922,
-  call: (method, args) => context_bridge.dispatch(bind_methods(() => database, announce_change), method, args),
+  call: (method, args) => context_bridge.dispatch(bind_methods(() => database, announce_change, "program"), method, args),
 });
 
 // ── Desktop settings ─────────────────────────────────────────────────────────

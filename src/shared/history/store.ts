@@ -8,7 +8,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
 import { define_feature } from "../feature.ts";
-import { entity_history, link_history } from "../graph/history.ts";
+import { entity_history, insert_row, link_ends_exist, link_history } from "../graph/history.ts";
 
 // ── Snapshots ────────────────────────────────────────────────────────────────
 
@@ -58,6 +58,33 @@ function apply_snapshot(database: SqlDatabase, levels: Level[], item_id: string,
   }
 }
 
+// ── Contexts ─────────────────────────────────────────────────────────────────
+
+const context_levels: Level[] = [
+  { table: "contexts", column: "id" },
+  { table: "context_items", column: "context_id", from: { level: 0, column: "id" } },
+  { table: "context_feeds", column: "context_id", from: { level: 0, column: "id" } },
+];
+
+const context_links = "SELECT * FROM graph_links WHERE (from_kind = 'context' AND from_id = ?) OR (to_kind = 'context' AND to_id = ?) ORDER BY id";
+
+// A context's rows with the graph's links to it, so a removed context comes back with them.
+function read_context(database: SqlDatabase, id: string): Snapshot | null {
+  const snapshot = read_snapshot(database, context_levels, id);
+  if (!snapshot?.contexts?.length) return null;
+  return { ...snapshot, graph_links: (database.prepare(context_links).all(id, id) as Record<string, unknown>[]).map((row) => ({ ...row })) };
+}
+
+// Puts a context's rows back, and each of its links that is gone while both its ends exist; a link still there, as the
+// user may have decided it since, is left as it is.
+function apply_context(database: SqlDatabase, id: string, snapshot: Snapshot): void {
+  apply_snapshot(database, context_levels, id, snapshot);
+  for (const row of snapshot.graph_links ?? []) {
+    if (database.prepare("SELECT 1 FROM graph_links WHERE id = ?").get(String(row.id))) continue;
+    if (link_ends_exist(database, row)) insert_row(database, "graph_links", row);
+  }
+}
+
 // ── Items ────────────────────────────────────────────────────────────────────
 
 // An item kept by levels of tables, or read and put back by its own functions, as the graph's are.
@@ -85,12 +112,15 @@ export const item_kinds: ItemKind[] = [
     kind: "context",
     label: "Context",
     item_table: "contexts",
-    levels: [
-      { table: "contexts", column: "id" },
-      { table: "context_items", column: "context_id", from: { level: 0, column: "id" } },
-      { table: "context_feeds", column: "context_id", from: { level: 0, column: "id" } },
+    read: read_context,
+    apply: apply_context,
+    // A link noted by an end that is not a context reads as nothing here, and keeps no version.
+    watches: [
+      { table: "contexts", item_columns: ["id"] },
+      { table: "context_items", item_columns: ["context_id"] },
+      { table: "context_feeds", item_columns: ["context_id"] },
+      { table: "graph_links", item_columns: ["from_id", "to_id"] },
     ],
-    watches: [{ table: "contexts", item_columns: ["id"] }, { table: "context_items", item_columns: ["context_id"] }, { table: "context_feeds", item_columns: ["context_id"] }],
     name_of: (snapshot) => String(first(snapshot, "contexts")?.name ?? "Context"),
     summary: (snapshot) => count(snapshot, "context_items", "item"),
   },

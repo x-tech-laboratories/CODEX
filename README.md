@@ -67,6 +67,8 @@ link that stops being true is closed rather than deleted.
 - **Yours to decide:** a proposal waits until you accept or reject it, only from CODEX's own page; a rejection is
   remembered, so the same link is never proposed again. Two entities found to be one are joined, never merged, and
   the join can be undone.
+- **By other programs:** a link or entity added through a token or MCP is proposed, made by a program, and waits for
+  you like the assistant's; what you add at CODEX's own page is yours and accepted at once.
 
 **Seeing it:** **Graph** beside List, Cards and Grouped on a context's page draws the context, what it holds, their
 entities and links, with proposed links dashed; **Show everything** widens it to the whole graph, which the **Graph**
@@ -136,7 +138,12 @@ start a new conversation.
 calls the API and MCP serve; never your settings, plugins, accounts, sync, backups or History. Each kind of change has
 a level under **Settings → Assistant → Action policy**: **Never**, **Ask me first** (the default for every change),
 **Allowed while I'm in the conversation**, or **Allowed, even in the background** (for background jobs to come; none
-exist yet). A change that has to ask shows as a card in the conversation with **Approve** and **Reject**. Once a reply
+exist yet). A change that has to ask shows as a card in the conversation with **Approve** and **Reject**, and under
+**Why, and from what** the message that asked for it and what the assistant read first, quoting another app's text only
+when that app is marked **May be sent to a hosted engine**. Every change it made, by your approval or on its own, has
+**Undo** on its row in the conversation for as long as nothing has changed those contexts since; the undo goes through
+History and is noted in the conversation, and only you can do it, from CODEX's own page. A change History keeps nothing
+of, such as a refresh, says on its row that it cannot be undone. Once a reply
 has read text that came from another app, such as an item's title or a search, every change it asks for waits for you,
 whatever its level, since that text could carry someone else's instructions.
 
@@ -250,7 +257,8 @@ These work as in every X-app. A browser signs in with a name and password; **You
 on a second factor and makes tokens; an admin adds users on **Users**. The desktop app syncs with a server from
 **Settings → This device → Sync**, and every copy backs itself up daily, keeping the last 14. Every change to a
 context, its name, notes and the items it holds, is kept under **History**, where any version can be restored and a
-deleted context brought back; a refresh is left out, since it changes only what the apps said.
+deleted context brought back with its links to what still exists; a refresh is left out, since it changes only what
+the apps said.
 
 ## Coming from X-Context
 

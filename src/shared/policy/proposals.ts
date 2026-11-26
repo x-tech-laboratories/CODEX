@@ -7,27 +7,39 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { drizzle_of, new_id } from "../feature.ts";
 import { parse_sources } from "../privacy/sources.ts";
-import type { Proposal, ProposalReason, ProposalStatus } from "./model.ts";
+import { no_evidence, type Proposal, type ProposalEvidence, type ProposalRead, type ProposalReason, type ProposalStatus } from "./model.ts";
 import { proposals } from "./schema.ts";
 
 // ── Proposals ────────────────────────────────────────────────────────────────
 
-function as_proposal(row: typeof proposals.$inferSelect): Proposal {
-  let args: Record<string, unknown> = {};
+function parsed_object(text: string): Record<string, unknown> {
   try {
-    args = JSON.parse(row.arguments) as Record<string, unknown>;
+    const value: unknown = JSON.parse(text);
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   } catch {
-    args = {};
+    return {};
   }
-  return { ...row, arguments: args, reason: row.reason as ProposalReason, status: row.status as ProposalStatus, sources: parse_sources(row.sources) };
 }
 
-export function add_proposal(database: SqlDatabase, values: { conversation_id: string; method: string; arguments: Record<string, unknown>; summary: string; reason: ProposalReason; sources: string[] }): Proposal {
+function parsed_evidence(text: string): ProposalEvidence {
+  const value = parsed_object(text);
+  const reads = Array.isArray(value.reads) ? (value.reads as ProposalRead[]) : [];
+  return { asked_by: String(value.asked_by ?? ""), run_id: String(value.run_id ?? ""), reads };
+}
+
+function as_proposal(row: typeof proposals.$inferSelect): Proposal {
+  return { ...row, arguments: parsed_object(row.arguments), reason: row.reason as ProposalReason, status: row.status as ProposalStatus, sources: parse_sources(row.sources), evidence: parsed_evidence(row.evidence) };
+}
+
+export function add_proposal(
+  database: SqlDatabase,
+  values: { conversation_id: string; method: string; arguments: Record<string, unknown>; summary: string; reason: ProposalReason; sources: string[]; evidence?: ProposalEvidence },
+): Proposal {
   // After every proposal before it, even one made in the same millisecond, so they list in the order they were made.
   const last = drizzle_of(database).select({ created_at: proposals.created_at }).from(proposals).orderBy(desc(proposals.created_at)).limit(1).get();
   let created_at = new Date().toISOString();
   if (last && created_at <= last.created_at) created_at = new Date(Date.parse(last.created_at) + 1).toISOString();
-  const row = { id: new_id(), ...values, arguments: JSON.stringify(values.arguments), sources: JSON.stringify(values.sources), status: "waiting", result: "", created_at, resolved_at: "" };
+  const row = { id: new_id(), ...values, arguments: JSON.stringify(values.arguments), sources: JSON.stringify(values.sources), evidence: JSON.stringify(values.evidence ?? no_evidence), status: "waiting", result: "", created_at, resolved_at: "" };
   drizzle_of(database).insert(proposals).values(row).run();
   return as_proposal(row);
 }

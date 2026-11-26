@@ -17,14 +17,14 @@ type Snapshot = Record<string, Row[]>;
 
 const entity_links = "SELECT * FROM graph_links WHERE (from_kind = 'entity' AND from_id = ?) OR (to_kind = 'entity' AND to_id = ?) ORDER BY id";
 
-function insert_row(database: SqlDatabase, table: string, row: Row): void {
+export function insert_row(database: SqlDatabase, table: string, row: Row): void {
   const existing = new Set((database.prepare(`SELECT name FROM pragma_table_info('${table}')`).all() as { name: string }[]).map((column) => column.name));
   const columns = Object.keys(row).filter((column) => existing.has(column));
   database.prepare(`INSERT OR REPLACE INTO ${table} (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`).run(...(columns.map((column) => row[column]) as never[]));
 }
 
 // Whether a link's ends both exist, so putting it back never leaves a link to nothing.
-function ends_exist(database: SqlDatabase, row: Row): boolean {
+export function link_ends_exist(database: SqlDatabase, row: Row): boolean {
   const keys = [node_key(row.from_kind as NodeKind, String(row.from_id)), node_key(row.to_kind as NodeKind, String(row.to_id))];
   const found = read_nodes(database, keys);
   return keys.every((key) => found.has(key));
@@ -61,7 +61,7 @@ export const entity_history: GraphHistoryKind = {
     database.prepare("DELETE FROM graph_links WHERE (from_kind = 'entity' AND from_id = ?) OR (to_kind = 'entity' AND to_id = ?)").run(id, id);
     database.prepare("DELETE FROM graph_entities WHERE id = ?").run(id);
     for (const row of snapshot.graph_entities ?? []) insert_row(database, "graph_entities", row);
-    for (const row of snapshot.graph_links ?? []) if (ends_exist(database, row)) insert_row(database, "graph_links", row);
+    for (const row of snapshot.graph_links ?? []) if (link_ends_exist(database, row)) insert_row(database, "graph_links", row);
   },
   name_of: (snapshot) => String(snapshot.graph_entities?.[0]?.name ?? "Entity"),
   summary: (snapshot) => {
@@ -85,7 +85,7 @@ export const link_history: GraphHistoryKind = {
   apply: (database, id, snapshot) => {
     const row = snapshot.graph_links?.[0];
     if (!row) return;
-    if (!ends_exist(database, row)) throw new Error("One end of this link no longer exists, so it cannot come back.");
+    if (!link_ends_exist(database, row)) throw new Error("One end of this link no longer exists, so it cannot come back.");
     database.prepare("DELETE FROM graph_links WHERE id = ?").run(id);
     insert_row(database, "graph_links", row);
   },

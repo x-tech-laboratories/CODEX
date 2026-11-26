@@ -14,7 +14,10 @@ import { untrusted_block } from "../engines/untrusted.ts";
 import { new_id } from "../feature.ts";
 import { is_read_only } from "../page_api.ts";
 import { brings_outside_content, core_tools, decide, is_offered, level_of, offered_api, proposing_calls, type Presence } from "../policy/policy.ts";
+import { clip_excerpt } from "../graph/writing.ts";
+import type { ProposalRead } from "../policy/model.ts";
 import { add_proposal } from "../policy/proposals.ts";
+import { mark_before_change, undo_of_change } from "../policy/undo.ts";
 import { sources_named, summarize_call } from "../policy/summaries.ts";
 import { screen_result } from "../privacy/results.ts";
 import { counts_of, local_screen, may_send, note_source, open_screen, taints, withheld_line, type Screen } from "../privacy/screen.ts";
@@ -65,8 +68,13 @@ export interface ToolContext {
   screen?: Screen;
   // The engine and model answering, which the graph's proposals record as their maker.
   maker?: { engine: string; model: string };
-  // Hears what the policy made of each call, in order, so it can be kept with the call.
-  on_decided?: (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id">) => void;
+  // The user's message the run answers and the run's id, which its proposals carry as evidence.
+  asked_by?: string;
+  run_id?: string;
+  // What the run has read so far, each read by its tool call, which a proposal carries as evidence.
+  reads?: ProposalRead[];
+  // Hears what the policy made of each call, in order, so it can be kept with the call; gives back the call's id.
+  on_decided?: (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id" | "undo">) => string | void;
 }
 
 // The sources whose content the run has read so far, by collector id, for what it keeps.
@@ -93,24 +101,34 @@ export function engine_tools(context: ToolContext): EngineTools {
   const core = Object.entries(core_tools)
     .filter(([name]) => is_offered(name))
     .map(([name, description]) => ({ name, description, parameters: brief_schema(input_schema(offered_api[name]!)) }));
-  const decided = (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id">, outcome: ToolOutcome): ToolOutcome => {
-    context.on_decided?.(name, record);
+  const reads = (context.reads ??= []);
+  const decided = (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id" | "undo">, outcome: ToolOutcome): ToolOutcome => {
+    const call_id = context.on_decided?.(name, record);
+    const read = reads.at(-1);
+    if (call_id && read && read.name === name && !read.call_id) read.call_id = call_id;
     return outcome;
+  };
+  let hosted_screen: Screen | null = null;
+  // A read's excerpt is kept only when every source it carried may leave this computer, as graph evidence is.
+  const note_read = async (name: string, given: Record<string, unknown>, sources: Set<string>, text: string) => {
+    const hosted = (hosted_screen ??= await open_screen(context.database(), true));
+    const excerpt = [...sources].every((source) => may_send(hosted, source)) ? clip_excerpt(text) : "";
+    reads.push({ call_id: "", name, arguments: given, sources: [...sources].sort(), excerpt });
   };
   const screen = (context.screen ??= local_screen());
   // Other apps' text is screened by source: a hosted engine is not sent what it may not see, and only a source not
   // marked trusted makes the run's later changes wait; what is left is fenced either way.
-  const run = async (name: string, args: unknown[]): Promise<string> => {
+  const run = async (name: string, args: unknown[]): Promise<{ text: string; sources: Set<string>; plain: string }> => {
     // A search leaves out this conversation's own messages, the user's question among them.
-    const given = name === "search_index" ? [args[0], args[1] ?? null, args[2] ?? default_hits, context.conversation_id] : args;
-    const value = await context.call(name, given);
-    if (!brings_outside_content(name)) return as_text(value);
+    const sent = name === "search_index" ? [args[0], args[1] ?? null, args[2] ?? default_hits, context.conversation_id] : args;
+    const value = await context.call(name, sent);
+    if (!brings_outside_content(name)) return { text: as_text(value), sources: new Set(), plain: as_text(value) };
     const screened = screen_result(context.database(), screen, name, args, value);
     if (taints(screen, screened.sources)) context.has_outside_content = true;
     const text = as_text(screened.value);
     const shown = screened.sources.size > 0 ? untrusted_block(text) : text;
     const withheld = withheld_line(screen, screened.withheld, screened.withheld_kinds);
-    return withheld ? `${shown}\n${withheld}` : shown;
+    return { text: withheld ? `${shown}\n${withheld}` : shown, sources: screened.sources, plain: text };
   };
   return {
     definitions,
@@ -124,19 +142,24 @@ export function engine_tools(context: ToolContext): EngineTools {
         return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}.`, is_error: true });
       }
       try {
-        if (is_read_only(name)) return decided(name, { outcome: "ran" }, { result: await run(name, args), is_error: false });
+        if (is_read_only(name)) {
+          const read = await run(name, args);
+          await note_read(name, given, read.sources, read.plain);
+          return decided(name, { outcome: "ran" }, { result: read.text, is_error: false });
+        }
         // A proposal to the graph waits for the user anyway, so it runs at once, carrying what the run has read.
         if (proposing_calls.has(name)) {
           const padded = [...args, ...Array.from({ length: Math.max(0, offered_api[name]!.params.length - args.length) }, () => undefined)];
           const maker = { engine: context.maker?.engine ?? "", model: context.maker?.model ?? "", sources: read_sources(screen) };
-          return decided(name, { outcome: "ran" }, { result: await run(name, [...padded, maker]), is_error: false });
+          return decided(name, { outcome: "ran" }, { result: (await run(name, [...padded, maker])).text, is_error: false });
         }
         const database = context.database();
         const decision = decide(level_of(database, name), context.presence, context.has_outside_content);
         if (decision.action === "refuse") return decided(name, { outcome: "refused" }, { result: `The user does not permit ${name}, so it was not run.`, is_error: true });
         if (decision.action === "propose") {
           const sources = [...new Set([...read_sources(screen), ...sources_named(database, given)])].sort();
-          const proposal = add_proposal(database, { conversation_id: context.conversation_id, method: name, arguments: given, summary: summarize_call(database, name, given), reason: decision.reason, sources });
+          const evidence = { asked_by: context.asked_by ?? "", run_id: context.run_id ?? "", reads: structuredClone(reads) };
+          const proposal = add_proposal(database, { conversation_id: context.conversation_id, method: name, arguments: given, summary: summarize_call(database, name, given), reason: decision.reason, sources, evidence });
           const why = decision.reason === "outside content" ? " because this conversation has read text from other apps" : "";
           return decided(
             name,
@@ -144,7 +167,11 @@ export function engine_tools(context: ToolContext): EngineTools {
             { result: `Not done yet: this change waits for the user's approval${why}. Tell the user what you proposed; it is proposal ${proposal.id}.`, is_error: false },
           );
         }
-        return decided(name, { outcome: "ran", applied_by: "engine_auto" }, { result: await run(name, args), is_error: false });
+        // Noted as it is made, so the user can undo it from the conversation.
+        const summary = summarize_call(database, name, given);
+        const mark = mark_before_change(database);
+        const result = (await run(name, args)).text;
+        return decided(name, { outcome: "ran", applied_by: "engine_auto", undo: undo_of_change(context.database(), mark, summary) }, { result, is_error: false });
       } catch (error) {
         return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}`, is_error: true });
       }
@@ -253,7 +280,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   if (chosen !== undefined && (runs.has(chosen) || !has_conversation(database, chosen))) throw new Error(runs.has(chosen) ? "A reply is still being written here; stop it or wait for it first." : `There is no conversation ${chosen}.`);
   const conversation_id = chosen ?? add_conversation_record(database, context_id);
   const instructions = screened_instructions(database, context_id, conversation_id, new Date().toISOString().slice(0, 10), screen);
-  add_message(database, { conversation_id, role: "user", text: text.trim(), sources: [] });
+  const question = add_message(database, { conversation_id, role: "user", text: text.trim(), sources: [] });
   const state: RunState = { run_id: new_id(), engine: found.engine.label, model: found.engine.model, started_at: new Date().toISOString(), text: "", reasoning: "", tool_calls: [], notices: [] };
   const run: Run = { conversation_id, screen, abort: new AbortController(), state, done: Promise.resolve() };
   runs.set(conversation_id, run);
@@ -268,6 +295,8 @@ export async function start_run(database: SqlDatabase, context_id: string | null
     has_outside_content: taints(screen, [...instructions.sources, ...replayed.sources]),
     screen,
     maker: { engine: found.engine.id, model: found.engine.model },
+    asked_by: question.id,
+    run_id: state.run_id,
     on_decided: (name, record) => note_decision(run, name, record),
   });
   const request = { instructions: instructions.value, conversation: replayed.turns, tools };
@@ -276,11 +305,17 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   return { conversation_id, run_id: state.run_id };
 }
 
-// What the policy made of a call, kept with the call the engine announced under that name and not yet decided.
-function note_decision(run: Run, name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id">): void {
+// What the policy made of a call, kept with the call the engine announced under that name and not yet decided; gives
+// back the call's id.
+function note_decision(run: Run, name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id" | "undo">): string {
   const call = run.state.tool_calls.find((each) => each.name === name && each.outcome === "pending");
-  if (call) Object.assign(call, record);
-  else run.state.tool_calls.push({ id: `codex_${run.state.tool_calls.length + 1}`, name, arguments: {}, result: "", is_error: false, text_at: run.state.text.length, ...record });
+  if (call) {
+    Object.assign(call, record);
+    return call.id;
+  }
+  const id = `codex_${run.state.tool_calls.length + 1}`;
+  run.state.tool_calls.push({ id, name, arguments: {}, result: "", is_error: false, text_at: run.state.text.length, ...record });
+  return id;
 }
 
 // Each call's place in the text as kept, which loses the streamed text's leading spaces.

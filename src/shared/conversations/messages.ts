@@ -67,3 +67,17 @@ export function add_message(database: SqlDatabase, message: NewMessage): Convers
   refresh_conversation_items(database, has_conversation(database, message.conversation_id) ? [message.conversation_id] : []);
   return { ...row, tool_calls: message.tool_calls ?? [], notices: message.notices ?? [], sources: message.sources ?? [unrecorded_source] };
 }
+
+// One message by its id, or null when it is gone.
+export function message_of(database: SqlDatabase, id: string): ConversationMessage | null {
+  const row = drizzle_of(database).select({ conversation_id: conversation_messages.conversation_id }).from(conversation_messages).where(eq(conversation_messages.id, id)).get();
+  return row ? (list_messages(database, row.conversation_id).find((message) => message.id === id) ?? null) : null;
+}
+
+// Rewrites one tool call kept on a message, such as to mark it undone.
+export function update_tool_call(database: SqlDatabase, message_id: string, call_id: string, change: (call: ToolCallRecord) => ToolCallRecord): void {
+  const message = message_of(database, message_id);
+  if (!message) throw new Error(`There is no message ${message_id}.`);
+  const calls = message.tool_calls.map((call) => (call.id === call_id ? change(call) : call));
+  drizzle_of(database).update(conversation_messages).set({ tool_calls: JSON.stringify(calls) }).where(eq(conversation_messages.id, message_id)).run();
+}

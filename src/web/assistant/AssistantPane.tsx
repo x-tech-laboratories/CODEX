@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { MenuItem } from "@x-tech-laboratories/x-libs/web/menus";
 import { age } from "@x-tech-laboratories/x-libs/web/format";
-import { AddIcon, ChevronDownIcon, EditIcon, Icon } from "@x-tech-laboratories/x-libs/web/react/icons";
+import { AddIcon, ChevronDownIcon, EditIcon, Icon, UndoIcon } from "@x-tech-laboratories/x-libs/web/react/icons";
 import { FormGroup } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Markdown } from "@x-tech-laboratories/x-libs/web/react/markdown";
 import { MenuButton } from "@x-tech-laboratories/x-libs/web/react/menu_button";
@@ -19,6 +19,7 @@ import { Send, Square } from "lucide-react";
 
 import { conversation_item_id, reply_parts, type AssistantStatus, type ConversationMessage, type ConversationSummary, type ToolCallRecord } from "../../shared/conversations/model.ts";
 import type { Proposal } from "../../shared/policy/model.ts";
+import type { ChangeUndoState } from "../../shared/policy/undo.ts";
 import { attempt, calls, page, succeeds, use_data } from "../api.ts";
 import { add_to_contexts, delete_conversation, move_to_context, rename_conversation } from "../contexts/item_actions.tsx";
 import { open_conversation, take_wanted, wanted_watch } from "./selection.ts";
@@ -50,12 +51,31 @@ function pretty(text: string): string {
   }
 }
 
+// Under an applied change: Undo while it can still be undone, why not when it cannot, or that it was.
+function UndoLine({ undo }: { undo: ChangeUndoState }) {
+  const [busy, set_busy] = useState(false);
+  if (undo.state === "undone") return <p className="muted small tool-call-undo">Undone by you.</p>;
+  if (undo.state === "impossible") return <p className="muted small tool-call-undo">{undo.reason}</p>;
+  const run = async () => {
+    set_busy(true);
+    await succeeds(() => calls().undo_change(undo.message_id, undo.call_id), "Undone.");
+    set_busy(false);
+  };
+  return (
+    <p className="tool-call-undo">
+      <button type="button" disabled={busy} onClick={() => void run()}>
+        <Icon icon={UndoIcon} /> Undo
+      </button>
+    </p>
+  );
+}
+
 // One call the engine made, folded to its name and outcome; open, its arguments and what came back. A proposed call
-// reads as the user decided it, when they have.
-export function ToolCallRow({ call, decided }: { call: ToolCallRecord; decided?: Proposal["status"] | undefined }) {
+// reads as the user decided it, when they have; an applied change offers its undo underneath.
+export function ToolCallRow({ call, decided, undo }: { call: ToolCallRecord; decided?: Proposal["status"] | undefined; undo?: ChangeUndoState | undefined }) {
   const made_by = call.applied_by === "user_approval" ? "approved by you" : call.applied_by === "engine_auto" ? "made by the assistant" : "";
   const [words, tone] = (call.outcome === "proposed" && decided && decided_words[decided]) || [outcome_words[call.outcome], outcome_tones[call.outcome]];
-  return (
+  const row = (
     <FormGroup
       class_name="tool-call"
       summary={
@@ -75,6 +95,13 @@ export function ToolCallRow({ call, decided }: { call: ToolCallRecord; decided?:
         </>
       )}
     </FormGroup>
+  );
+  if (!undo) return row;
+  return (
+    <div className="tool-call-applied">
+      {row}
+      <UndoLine undo={undo} />
+    </div>
   );
 }
 
@@ -112,7 +139,10 @@ function Thinking({ text }: { text: string }) {
   );
 }
 
-function Message({ message, decided }: { message: ConversationMessage; decided: Map<string, Proposal["status"]> }) {
+// Each applied change's undo state, by "<message id>:<call id>".
+type Undos = Map<string, ChangeUndoState>;
+
+function Message({ message, decided, undos }: { message: ConversationMessage; decided: Map<string, Proposal["status"]>; undos: Undos }) {
   if (message.role === "user") {
     return (
       <div className="chat-message from-user card">
@@ -126,7 +156,7 @@ function Message({ message, decided }: { message: ConversationMessage; decided: 
         <p className="muted small">{message.text}</p>
         {message.tool_calls.map((call) => (
           // A refusal in an event is the user rejecting the proposal, as events kept before "rejected" said.
-          <ToolCallRow key={call.id} call={call.outcome === "refused" ? { ...call, outcome: "rejected" } : call} />
+          <ToolCallRow key={call.id} call={call.outcome === "refused" ? { ...call, outcome: "rejected" } : call} undo={undos.get(`${message.id}:${call.id}`)} />
         ))}
       </div>
     );
@@ -135,7 +165,11 @@ function Message({ message, decided }: { message: ConversationMessage; decided: 
     <div className="chat-message from-assistant">
       <Notices notices={message.notices} />
       {reply_parts(message.text, message.tool_calls).map((part, at) =>
-        "call" in part ? <ToolCallRow key={part.call.id} call={part.call} decided={part.call.proposal_id ? decided.get(part.call.proposal_id) : undefined} /> : <Markdown key={`text-${at}`} text={part.text} />,
+        "call" in part ? (
+          <ToolCallRow key={part.call.id} call={part.call} decided={part.call.proposal_id ? decided.get(part.call.proposal_id) : undefined} undo={undos.get(`${message.id}:${part.call.id}`)} />
+        ) : (
+          <Markdown key={`text-${at}`} text={part.text} />
+        ),
       )}
       {message.error && <ReplyError error={message.error} detail={message.error_detail} />}
       {message.engine && <p className="muted small">{[message.engine, message.model].filter(Boolean).join(" · ")}</p>}
@@ -157,8 +191,48 @@ function Reply({ run }: { run: LiveRun }) {
 
 // ── Proposals ────────────────────────────────────────────────────────────────
 
-// A change waiting for the user, with what it would do in plain words.
-export function ProposalCard({ proposal }: { proposal: Proposal }) {
+// One line of arguments, clipped, for a read named in a proposal's evidence.
+function brief_arguments(args: Record<string, unknown>): string {
+  const text = Object.entries(args)
+    .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+    .join(", ");
+  return text.length > 120 ? `${text.slice(0, 119)}…` : text;
+}
+
+// What a proposal came from: the message that asked for it, what the run read before proposing, and the sources.
+function Evidence({ proposal, asked, label_of }: { proposal: Proposal; asked: string | null; label_of: (source: string) => string }) {
+  const { evidence } = proposal;
+  if (!evidence.asked_by && evidence.reads.length === 0) return <p className="muted small">No evidence was kept for this proposal.</p>;
+  const sources = proposal.sources.filter((source) => source !== "*");
+  return (
+    <div className="proposal-evidence">
+      {asked !== null && (
+        <p className="small">
+          <span className="muted">Asked for in your message: </span>“{asked}”
+        </p>
+      )}
+      {evidence.reads.length > 0 ? (
+        <>
+          <p className="muted small">What it read first, as the calls above show:</p>
+          <ul className="proposal-reads">
+            {evidence.reads.map((read, at) => (
+              <li key={`${read.call_id}-${at}`} className="small">
+                <code>{read.name}</code> {brief_arguments(read.arguments)}
+                {read.excerpt ? <span className="muted"> · “{read.excerpt}”</span> : read.sources.length > 0 && <span className="muted"> · not quoted, as {read.sources.map(label_of).join(", ")} may not leave this computer</span>}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="muted small">It read nothing before proposing.</p>
+      )}
+      {sources.length > 0 && <p className="muted small">From: {sources.map(label_of).join(", ")}</p>}
+    </div>
+  );
+}
+
+// A change waiting for the user, with what it would do in plain words and, folded, what it came from.
+export function ProposalCard({ proposal, asked = null, label_of = (source) => source }: { proposal: Proposal; asked?: string | null; label_of?: (source: string) => string }) {
   const [busy, set_busy] = useState(false);
   const decide = async (decision: "approve" | "reject") => {
     set_busy(true);
@@ -171,6 +245,9 @@ export function ProposalCard({ proposal }: { proposal: Proposal }) {
       <p className="muted small">
         {proposal.reason === "outside content" ? "Proposed after reading text from other apps, so it waits for you whatever its level." : "Its level asks for your approval."}
       </p>
+      <FormGroup class_name="proposal-why" summary={<span className="muted small">Why, and from what</span>}>
+        <Evidence proposal={proposal} asked={asked} label_of={label_of} />
+      </FormGroup>
       <div className="proposal-actions">
         <button type="button" className="accent solid" disabled={busy} onClick={() => void decide("approve")}>
           Approve
@@ -366,6 +443,11 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
   const shown = list.data?.find((each) => each.id === shown_id) ?? data ?? null;
   const waiting = data?.proposals.filter((proposal) => proposal.status === "waiting") ?? [];
   const decided = new Map((data?.proposals ?? []).map((proposal) => [proposal.id, proposal.status]));
+  const undo_list = use_data((api) => (shown_id ? api.list_change_undos(shown_id) : Promise.resolve([])), [shown_id]);
+  const undos: Undos = new Map((undo_list.data ?? []).map((each) => [`${each.message_id}:${each.call_id}`, each]));
+  const collectors = use_data((api) => api.list_collectors());
+  const label_of = (source: string) => collectors.data?.find((each) => each.id === source)?.label ?? source;
+  const asked_text = (id: string) => data?.messages.find((message) => message.id === id)?.text ?? null;
   const count = (data?.messages.length ?? 0) + waiting.length + (run ? 1 : 0);
 
   // In braces, since a browser's scrollIntoView may give back a promise, which React would take for a cleanup.
@@ -394,11 +476,11 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
               <p className="muted small">{context_id ? "A new conversation about this context: ask about it, or ask CODEX to change it." : "No context is open, so this conversation will be in no context."}</p>
             )}
             {data?.messages.map((message) => (
-              <Message key={message.id} message={message} decided={decided} />
+              <Message key={message.id} message={message} decided={decided} undos={undos} />
             ))}
             {run && <Reply run={run} />}
             {waiting.map((proposal) => (
-              <ProposalCard key={proposal.id} proposal={proposal} />
+              <ProposalCard key={proposal.id} proposal={proposal} asked={asked_text(proposal.evidence.asked_by)} label_of={label_of} />
             ))}
           </>
         )}

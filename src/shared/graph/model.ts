@@ -15,7 +15,7 @@ export const graph_statuses = ["proposed", "accepted", "rejected"] as const;
 export type GraphStatus = (typeof graph_statuses)[number];
 
 // Who made a link or entity: the user, a rule on an exact key, the nearness of two items' meaning, or an engine.
-export type MadeBy = "user" | "rule" | "similarity" | "engine";
+export type MadeBy = "user" | "rule" | "similarity" | "engine" | "program";
 
 export type NodeKind = "context" | "item" | "entity";
 

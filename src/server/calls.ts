@@ -10,9 +10,16 @@ import { send_text } from "@x-tech-laboratories/x-libs/server/replies";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { context_bridge } from "../shared/bridge.ts";
+import type { Caller } from "../shared/caller.ts";
 import { bind_methods, context_api, is_read_only, type ContextMethods } from "../shared/store.ts";
 
 // ── Data calls ───────────────────────────────────────────────────────────────
+
+// A signed-in browser, or the desktop window over the daemon's socket, which has no sign-in, is the page; a token is a program.
+export function caller_of(request: object): Caller {
+  const viewer = (request as { viewer?: { via: string } | null }).viewer;
+  return viewer?.via === "token" ? "program" : "page";
+}
 
 // An import, such as a Liftosaur file, arrives as one call's argument.
 const import_body_limit = 32 * 1024 * 1024;
@@ -32,7 +39,7 @@ export function register_context_calls(api: FastifyInstance, database: () => Sql
         return send_text(reply, 400, (error as Error).message);
       }
     } else return send_text(reply, 400, "send the arguments as a JSON list or object");
-    const methods = bind_methods(database, () => changes.announce_change(changes.client_id_of(request)));
+    const methods = bind_methods(database, () => changes.announce_change(changes.client_id_of(request)), caller_of(request));
     const result = await context_bridge.dispatch(methods, request.params.method, args);
     if (result === undefined) return reply.code(204).send();
     if (is_read_only(request.params.method)) reply.header("cache-control", "no-store");
