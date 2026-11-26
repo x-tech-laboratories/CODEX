@@ -3,7 +3,7 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { inArray } from "@x-tech-laboratories/x-libs/drizzle";
+import { eq, inArray } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { items } from "../contexts/schema.ts";
@@ -21,10 +21,6 @@ import { dot, from_blob, fts_query, fuse_ranks, unit } from "./text.ts";
 
 // How many each ranking offers the fusion, and how long an excerpt is.
 const ranked_per_list = 50;
-// A piece counts as near in meaning only above this cosine, and within this share of the nearest one, since every
-// text is somewhat near every other.
-const least_similarity = 0.3;
-const share_of_best = 0.75;
 const excerpt_chars = 200;
 export const default_hits = 20;
 export const most_hits = 100;
@@ -50,6 +46,44 @@ function shorten(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > excerpt_chars ? `${flat.slice(0, excerpt_chars - 1)}…` : flat;
 }
+
+// ── Meaning ──────────────────────────────────────────────────────────────────
+
+// Every text is somewhat near every other, and how near depends on the model, so a hit is judged against the other
+// documents' scores for the same query rather than against a fixed cosine.
+// Below this many documents there are too few scores to tell the usual from the unusual.
+export const fewest_for_spread = 8;
+// The best must stand this many spreads (the middle half's width) above the upper quartile, or nothing matches.
+export const stand_out_spreads = 1.2;
+// A hit must reach this share of the way from the upper quartile to the best.
+export const share_above_upper = 0.25;
+// With too few documents, a hit must reach this share of the way from the lowest to the best, and one alone is not judged.
+const share_of_range = 0.75;
+
+function quantile(ascending: number[], share: number): number {
+  const at = (ascending.length - 1) * share;
+  const low = Math.floor(at);
+  const high = Math.ceil(at);
+  return ascending[low]! + (ascending[high]! - ascending[low]!) * (at - low);
+}
+
+// The least score that counts as a meaning match for one query, given every document's score; null when the best does
+// not stand out from the rest, so the query matches nothing by meaning. Unchanged by any rescaling of the scores.
+export function meaning_floor(scores: number[]): number | null {
+  if (scores.length === 0) return null;
+  const ascending = [...scores].sort((first, second) => first - second);
+  const best = ascending.at(-1)!;
+  if (ascending.length < fewest_for_spread) {
+    const lowest = ascending[0]!;
+    return best > lowest ? lowest + share_of_range * (best - lowest) : null;
+  }
+  const upper = quantile(ascending, 0.75);
+  const spread = upper - quantile(ascending, 0.25);
+  if (best <= upper || best - upper < stand_out_spreads * spread) return null;
+  return upper + share_above_upper * (best - upper);
+}
+
+// ── Words ────────────────────────────────────────────────────────────────────
 
 // The documents whose words match, best first, each with the piece of text around the match.
 function by_words(index: SqlDatabase, query: string, scope: Set<string> | null): { keys: string[]; excerpts: Map<string, string> } {
@@ -77,7 +111,8 @@ async function by_meaning(database: SqlDatabase, index: SqlDatabase, query: stri
   if (rows.length === 0) return none;
   let wanted: Float32Array;
   try {
-    const [vector] = await found.embedder.embed([query]);
+    const { embedder } = found;
+    const vector = embedder.embed_query ? await embedder.embed_query(query) : (await embedder.embed([query]))[0];
     wanted = unit(vector ?? []);
   } catch (error) {
     problems.push(`The embedder could not read the search: ${(error as Error).message}`);
@@ -90,13 +125,24 @@ async function by_meaning(database: SqlDatabase, index: SqlDatabase, query: stri
     if (score > (best.get(row.key)?.score ?? -Infinity)) best.set(row.key, { score, text: row.text });
   }
   const sorted = [...best].sort((first, second) => second[1].score - first[1].score);
-  const floor = Math.max(least_similarity, (sorted[0]?.[1].score ?? 0) * share_of_best);
-  const ranked = sorted.filter(([, { score }]) => score >= floor).slice(0, ranked_per_list);
+  const floor = meaning_floor(sorted.map(([, { score }]) => score));
+  const ranked = floor === null ? [] : sorted.filter(([, { score }]) => score >= floor).slice(0, ranked_per_list);
   return { keys: ranked.map(([key]) => key), excerpts: new Map(ranked.map(([key, { text }]) => [key, shorten(text)])) };
 }
 
-// Finds items, contexts and messages by words and by meaning, in one context and those inside it or everywhere.
-export async function search(database: SqlDatabase, index: SqlDatabase, query: string, context_id: string | null = null, limit = default_hits, problems: string[] = []): Promise<SearchHit[]> {
+// A message's score is weighed down by this much, so items, contexts and entities rank ahead of messages scoring close.
+export const message_weight = 0.85;
+
+// The keys of a conversation's messages, to leave out of a search made from within it.
+function message_keys_of(database: SqlDatabase, conversation_id: string | null): Set<string> {
+  if (!conversation_id) return new Set();
+  const rows = drizzle_of(database).select({ id: conversation_messages.id }).from(conversation_messages).where(eq(conversation_messages.conversation_id, conversation_id)).all();
+  return new Set(rows.map((row) => `message:${row.id}`));
+}
+
+// Finds items, contexts and messages by words and by meaning, in one context and those inside it or everywhere; the
+// messages of the conversation named last are left out, as an engine answering there already has them.
+export async function search(database: SqlDatabase, index: SqlDatabase, query: string, context_id: string | null = null, limit = default_hits, problems: string[] = [], leave_out_conversation: string | null = null): Promise<SearchHit[]> {
   if (!query.trim()) return [];
   const tree = context_tree(database);
   if (context_id && !tree.has(context_id)) throw new Error(`There is no context ${context_id}.`);
@@ -104,6 +150,9 @@ export async function search(database: SqlDatabase, index: SqlDatabase, query: s
   const words = by_words(index, query, scope);
   const meaning = await by_meaning(database, index, query, scope, problems);
   const scores = fuse_ranks([words.keys, meaning.keys]);
+  const left_out = message_keys_of(database, leave_out_conversation);
+  for (const key of left_out) scores.delete(key);
+  for (const [key, score] of scores) if (key.startsWith("message:")) scores.set(key, score * message_weight);
   const wanted = Math.max(1, Math.min(most_hits, Math.floor(Number(limit) || default_hits)));
   const keys = [...scores].sort((first, second) => second[1] - first[1]).slice(0, wanted).map(([key]) => key);
   if (keys.length === 0) return [];

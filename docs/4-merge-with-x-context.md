@@ -140,7 +140,7 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 
 ## Known gaps
 
-As of 2026-11-26:
+As of 2026-11-26 (closed on 2026-11-26: a reply's tool calls show where each was made in it):
 
 - No background job proposes links yet: rules and similarity run after each index pass, and an engine proposes only
   when the user asks with Suggest links.
@@ -148,7 +148,6 @@ As of 2026-11-26:
 - History brings back a removed context without the links it had, which went with it.
 
 - Proposals carry no evidence and no undo beyond History.
-- A reply's tool-call rows show above its text instead of where in the reply each call was made.
 - The Claude-subscription engine and the SmartHarness engine are not built.
 - No hosted model has been tried. A local 4B reasoning model (llama.cpp's server, 8,192 tokens of context, on a CPU)
   answered end to end on 2026-11-26: tool calls, proposals, trusted sources and stopping worked. What that run found
@@ -159,6 +158,10 @@ As of 2026-11-26:
   `list_item_changes`) itself, so other apps cannot read its conversations or contexts as items.
 - A device still on the shape before conversations were items deletes, after any write of its own, the messages of
   every conversation whose id is not a context's, and syncs those deletions; every device should be updated together.
+- The graph proposes two items as related above a fixed cosine of 0.8 (`graph/similarity.ts`); with Qwen3-Embedding,
+  where right matches score 0.65 to 0.75, that never fires. It wants a rule judged against the scores, as search's is.
+- Search's meaning rule (`meaning_floor`) was set on one real run's scores, with the unrelated documents' scores filled
+  in from the range it gave; a run with a real model should check it on a larger set.
 
 ## Later, as separate projects
 

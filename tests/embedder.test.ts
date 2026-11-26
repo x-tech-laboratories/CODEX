@@ -57,6 +57,19 @@ describe("the OpenAI-compatible embedder", () => {
     expect(fake.requests).toHaveLength(1);
   });
 
+  it("puts the query prefix before a search alone, reading \\n as a new line, and nothing before what is searched", async () => {
+    const fake = await start_endpoint((input) => ({ body: vectors_of(input) }));
+    const settings: Record<string, string | number> = { endpoint: fake.endpoint, model: "qwen3-embedding", dimensions: 3, query_prefix: "Instruct: find notes\\nQuery: " };
+    const embedder = openai_embedder(() => settings);
+
+    await embedder.embed(["Pick worktop colour"]);
+    expect(await embedder.embed_query!("countertop colour choice")).toHaveLength(3);
+    settings.query_prefix = "";
+    await embedder.embed_query!("bare");
+
+    expect(fake.requests.map((request) => request.body.input)).toEqual([["Pick worktop colour"], ["Instruct: find notes\nQuery: countertop colour choice"], ["bare"]]);
+  });
+
   it("sends no key without a command, and refuses vectors of the wrong size or number, and a failed answer", async () => {
     let answer: (input: string[]) => { status?: number; body: unknown } = (input) => ({ body: vectors_of(input, 4) });
     const fake = await start_endpoint((input) => answer(input));

@@ -27,36 +27,99 @@ function go_to(context_id: string): void {
   window.location.hash = context_href(context_id).slice(1);
 }
 
+// A conversation's messages found, gathered in one row where the first of them ranked.
+interface FoundConversation {
+  conversation: { id: string; title: string };
+  where: SearchHit["where"];
+  messages: SearchHit[];
+}
+
+export type FoundEntry = { hit: SearchHit } | FoundConversation;
+
+// The conversation a hit belongs to: a message's, or a conversation's own item; null for anything else.
+function conversation_of_hit(hit: SearchHit): { id: string; title: string } | null {
+  if (hit.kind === "message") return hit.conversation;
+  if (hit.kind === "item" && hit.item_kind === "conversation") return { id: conversation_of_item(hit.id) ?? "", title: hit.title };
+  return null;
+}
+
+// The hits in their order, each conversation's messages, and the conversation itself, gathered where the first of
+// them ranked; a message whose conversation is unknown stays a row of its own.
+export function group_hits(hits: SearchHit[]): FoundEntry[] {
+  const entries: FoundEntry[] = [];
+  const gathered = new Map<string, FoundConversation>();
+  for (const hit of hits) {
+    const conversation = conversation_of_hit(hit);
+    if (!conversation) {
+      entries.push({ hit });
+      continue;
+    }
+    const found = gathered.get(conversation.id);
+    const messages = hit.kind === "message" ? [hit] : [];
+    if (found) {
+      found.messages.push(...messages);
+      continue;
+    }
+    const entry = { conversation, where: hit.where, messages };
+    gathered.set(conversation.id, entry);
+    entries.push(entry);
+  }
+  return entries;
+}
+
+function Places({ where }: { where: SearchHit["where"] }) {
+  return (
+    <Chips inline>
+      {where.map((place) => (
+        <Chip key={place.id || place.name} on_click={place.id ? () => go_to(place.id) : undefined}>
+          {place.name}
+        </Chip>
+      ))}
+    </Chips>
+  );
+}
+
+// A conversation with the messages in it that matched, each with who wrote it and the words around the match.
+function ConversationHit({ entry }: { entry: FoundConversation }) {
+  const { conversation, messages } = entry;
+  const where = entry.where.length === 0 ? [{ id: "", name: "In no context" }] : entry.where;
+  return (
+    <li className="item-row">
+      <Icon icon={MessageSquare} />
+      <div className="item-text">
+        <div className="item-title">
+          <a
+            href={conversation_route(conversation.id)}
+            onClick={(event) => {
+              event.preventDefault();
+              open_conversation(conversation.id, entry.where.map((place) => place.id), null);
+            }}
+          >
+            {conversation.title}
+          </a>
+          {messages.length > 0 && (
+            <span className="muted small">
+              {messages.length} {messages.length === 1 ? "message" : "messages"}
+            </span>
+          )}
+        </div>
+        {messages.map((message) => (
+          <span key={message.id} className="muted item-snippet">
+            {message.title}: {message.excerpt}
+          </span>
+        ))}
+        <Places where={where} />
+      </div>
+    </li>
+  );
+}
+
 // One thing found: its title, opening in its app or on its context's page, the words around the match and where it is.
 function Hit({ hit }: { hit: SearchHit }) {
   const icon = hit.kind === "item" ? look_of(hit.item_kind).icon : hit_icons[hit.kind];
   const where = hit.kind === "message" && hit.where.length === 0 ? [{ id: "", name: "In no context" }] : hit.where;
-  const conversation = hit.conversation;
   const title =
-    hit.kind === "message" && conversation ? (
-      <span>
-        {hit.title}, in{" "}
-        <a
-          href={conversation_route(conversation.id)}
-          onClick={(event) => {
-            event.preventDefault();
-            open_conversation(conversation.id, hit.where.map((place) => place.id), null);
-          }}
-        >
-          {conversation.title}
-        </a>
-      </span>
-    ) : hit.kind === "item" && hit.item_kind === "conversation" ? (
-      <a
-        href={conversation_route((conversation_of_item(hit.id) ?? ""))}
-        onClick={(event) => {
-          event.preventDefault();
-          open_conversation((conversation_of_item(hit.id) ?? ""), hit.where.map((place) => place.id), null);
-        }}
-      >
-        {hit.title}
-      </a>
-    ) : hit.kind === "item" && hit.uri ? (
+    hit.kind === "item" && hit.uri ? (
       <a href={hit.uri} target="_blank" rel="noreferrer">
         {hit.title}
       </a>
@@ -71,13 +134,7 @@ function Hit({ hit }: { hit: SearchHit }) {
       <div className="item-text">
         <div className="item-title">{title}</div>
         {hit.excerpt && <span className="muted item-snippet">{hit.excerpt}</span>}
-        <Chips inline>
-          {where.map((place) => (
-            <Chip key={place.id || place.name} on_click={place.id ? () => go_to(place.id) : undefined}>
-              {place.name}
-            </Chip>
-          ))}
-        </Chips>
+        <Places where={where} />
       </div>
     </li>
   );
@@ -93,9 +150,7 @@ function Found({ query }: { query: string }) {
             <Empty title="Nothing matches" hint="Items in your contexts, their text from their apps, your contexts' notes and the conversations are searched; add new items from a context's page." />
           ) : (
             <ul className="item-list">
-              {hits.map((hit) => (
-                <Hit key={`${hit.kind}:${hit.id}`} hit={hit} />
-              ))}
+              {group_hits(hits).map((entry) => ("hit" in entry ? <Hit key={`${entry.hit.kind}:${entry.hit.id}`} hit={entry.hit} /> : <ConversationHit key={`conversation:${entry.conversation.id}`} entry={entry} />))}
             </ul>
           )
         }

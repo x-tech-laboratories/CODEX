@@ -14,6 +14,9 @@ export interface Embedder {
   is_local?(): boolean;
   // One vector per text, in the same order.
   embed(texts: string[], signal?: AbortSignal): Promise<number[][]>;
+  // The vector of a search, for a model that wants an instruction before a query and none before what it searches;
+  // left out, a search is embedded like any text.
+  embed_query?(query: string, signal?: AbortSignal): Promise<number[]>;
 }
 
 // The setting naming the embedder the index uses, by the id its plugin provides it under; empty for none.

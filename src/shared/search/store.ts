@@ -14,8 +14,9 @@ import { default_hits, most_hits, search } from "./search.ts";
 
 // ── Calls ────────────────────────────────────────────────────────────────────
 
-function search_index(database: SqlDatabase, query: string, context_id: string | null = null, limit: number = default_hits): Promise<SearchHit[]> {
-  return search(database, index_host().index(), query, context_id || null, limit);
+// An engine's search leaves out the conversation it answers in, given last; the api offers no such argument.
+function search_index(database: SqlDatabase, query: string, context_id: string | null = null, limit: number = default_hits, leave_out_conversation: string | null = null): Promise<SearchHit[]> {
+  return search(database, index_host().index(), query, context_id || null, limit, [], leave_out_conversation);
 }
 
 function get_index_state(database: SqlDatabase): Promise<IndexState> {

@@ -53,7 +53,7 @@ export function direct_engine(label: string, settings: () => SettingValues, make
     async *run(request: EngineRequest, signal: AbortSignal): AsyncGenerator<EngineEvent> {
       const values = settings();
       if (!model()) {
-        yield { type: "error", message: `Set the ${label} engine's model under Settings → Engine.` };
+        yield { type: "error", message: `Set the ${label} engine's model under Settings → Assistant → Engine.` };
         return;
       }
       let api_key: string;

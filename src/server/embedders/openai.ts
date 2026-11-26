@@ -23,7 +23,8 @@ function endpoint_of(settings: SettingValues): string {
 export function openai_embedder(settings: () => SettingValues, read: SecretReader = read_secret): Embedder {
   const model = () => String(settings().model ?? "").trim();
   const dimensions = () => Number(settings().dimensions) || 768;
-  return {
+  const query_prefix = () => String(settings().query_prefix ?? "").replace(/\\n/g, "\n");
+  const embedder: Embedder = {
     label: "OpenAI-compatible embeddings",
     model,
     dimensions,
@@ -49,7 +50,12 @@ export function openai_embedder(settings: () => SettingValues, read: SecretReade
         return vector as number[];
       });
     },
+    async embed_query(query, signal) {
+      const [vector] = await embedder.embed([`${query_prefix()}${query}`], signal);
+      return vector!;
+    },
   };
+  return embedder;
 }
 
 export function openai_embedder_plugin(read?: SecretReader): ContextPlugin {

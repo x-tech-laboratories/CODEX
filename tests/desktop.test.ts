@@ -10,7 +10,7 @@ import { hash_password } from "@x-tech-laboratories/x-libs/server/passwords";
 
 import { register_context_calls } from "../src/server/calls.ts";
 import { open_store, page_only } from "../src/shared/store.ts";
-import { desktop_setting_defaults, read_desktop_settings, starts_hidden } from "../src/shared/desktop.ts";
+import { desktop_setting_defaults, first_window_size, read_desktop_settings, starts_hidden } from "../src/shared/desktop.ts";
 import { tray_view, type TrayActions, type TrayState } from "../src/main/tray_menu.ts";
 import type { ContextSummary } from "../src/shared/contexts/model.ts";
 
@@ -107,5 +107,13 @@ describe("the data calls over HTTP", () => {
     expect((policy.json() as { method: string; level: string }[]).find((entry) => entry.method === "rename_context")!.level).toBe("auto");
     await window.close();
     await program.close();
+  });
+});
+
+describe("the first window's size", () => {
+  it("takes most of the screen, keeps a sensible least and most, and never passes the screen", () => {
+    expect(first_window_size({ width: 1600, height: 1000 })).toEqual({ width: 1360, height: 880 });
+    expect(first_window_size({ width: 3840, height: 2160 })).toEqual({ width: 1800, height: 1200 });
+    expect(first_window_size({ width: 800, height: 600 })).toEqual({ width: 800, height: 600 });
   });
 });
