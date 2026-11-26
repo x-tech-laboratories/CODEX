@@ -83,12 +83,15 @@ const allowed_tools = [
   "follow_feed",
   "get_context",
   "get_item",
+  "get_node_links",
   "list_collector_feeds",
   "list_collectors",
   "list_contexts",
   "list_feed_group_news",
   "move_context",
   "move_item",
+  "propose_entity",
+  "propose_link",
   "refresh_items",
   "remove_context",
   "remove_item",
@@ -108,7 +111,7 @@ describe("a run's tools", () => {
     const fixture = start_fixture();
     const { tools } = tools_of(fixture);
     expect(tools.definitions.map((tool) => tool.name).sort()).toEqual(allowed_tools);
-    for (const never of ["set_setting", "get_settings", "set_action_level", "resolve_proposal", "set_source_mark", "rebuild_index", "import_contexts", "send_message", "list_conversations", "get_conversation", "rename_conversation", "delete_conversation", "stop_reply"]) {
+    for (const never of ["set_setting", "get_settings", "set_action_level", "resolve_proposal", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals", "add_graph_link", "remove_entity", "suggest_links", "rebuild_index", "import_contexts", "send_message", "list_conversations", "get_conversation", "rename_conversation", "delete_conversation", "stop_reply"]) {
       expect(allowed_tools).not.toContain(never);
     }
   });

@@ -196,7 +196,7 @@ describe("indexing", () => {
     const first_reads = notes.reads.length;
     const first_calls = embedder.calls.length;
 
-    expect(await sync_documents(fixture.database, index)).toEqual({ written: 0, removed: 0 });
+    expect(await sync_documents(fixture.database, index)).toEqual({ written: 0, removed: 0, written_keys: [], was_empty: false });
     await index_now();
     expect([notes.reads.length, embedder.calls.length]).toEqual([first_reads, first_calls]);
 

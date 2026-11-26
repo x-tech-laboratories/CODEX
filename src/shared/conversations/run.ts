@@ -13,7 +13,7 @@ import { untrusted_block } from "../engines/untrusted.ts";
 
 import { new_id } from "../feature.ts";
 import { is_read_only } from "../page_api.ts";
-import { brings_outside_content, decide, is_offered, level_of, offered_api, type Presence } from "../policy/policy.ts";
+import { brings_outside_content, decide, is_offered, level_of, offered_api, proposing_calls, type Presence } from "../policy/policy.ts";
 import { add_proposal } from "../policy/proposals.ts";
 import { sources_named, summarize_call } from "../policy/summaries.ts";
 import { screen_result } from "../privacy/results.ts";
@@ -62,6 +62,8 @@ export interface ToolContext {
   has_outside_content: boolean;
   // What the engine may be sent of each source, and what it was; left out, a local engine with no source marked.
   screen?: Screen;
+  // The engine and model answering, which the graph's proposals record as their maker.
+  maker?: { engine: string; model: string };
   // Hears what the policy made of each call, in order, so it can be kept with the call.
   on_decided?: (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id">) => void;
 }
@@ -103,6 +105,12 @@ export function engine_tools(context: ToolContext): EngineTools {
       }
       try {
         if (is_read_only(name)) return decided(name, { outcome: "ran" }, { result: await run(name, args), is_error: false });
+        // A proposal to the graph waits for the user anyway, so it runs at once, carrying what the run has read.
+        if (proposing_calls.has(name)) {
+          const padded = [...args, ...Array.from({ length: Math.max(0, offered_api[name]!.params.length - args.length) }, () => undefined)];
+          const maker = { engine: context.maker?.engine ?? "", model: context.maker?.model ?? "", sources: read_sources(screen) };
+          return decided(name, { outcome: "ran" }, { result: await run(name, [...padded, maker]), is_error: false });
+        }
         const database = context.database();
         const decision = decide(level_of(database, name), context.presence, context.has_outside_content);
         if (decision.action === "refuse") return decided(name, { outcome: "refused" }, { result: `The user does not permit ${name}, so it was not run.`, is_error: true });
@@ -239,6 +247,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
     presence: "conversation",
     has_outside_content: taints(screen, [...instructions.sources, ...replayed.sources]),
     screen,
+    maker: { engine: found.engine.id, model: found.engine.model },
     on_decided: (name, record) => note_decision(run, name, record),
   });
   const request = { instructions: instructions.value, conversation: replayed.turns, tools };

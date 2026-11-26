@@ -106,6 +106,88 @@ Drizzle, which FTS5 and vector blobs need. The server and the daemon open it and
   every other read (PR A's withholding and trust). The first page's search uses it, and Settings → Index shows the
   state, the embedder and Rebuild.
 
+## The knowledge graph
+
+Built 2026-11-26 on doc 4's "Knowledge graph". `src/shared/graph/` keeps three synced tables (`schema.ts`):
+
+- `graph_entities`: a person, organisation, topic, place or other, with a name and other names (`alt_names`).
+- `graph_links`: a typed link between two nodes, each end a kind (`context`, `item`, `entity`; a conversation is an
+  item) and an id. Its `type` is one of `mentions`, `about`, `related_to`, `part_of`, `depends_on` and `same_as`, with
+  an optional free `label`. Both tables record who made the row (`made_by`: `user`, `rule`, `similarity` or `engine`,
+  with the `rule`, or the `engine` and `model`), its evidence (`evidence_ref`, an `item:<id>` or `message:<id>`, and
+  `evidence_excerpt`), a `status` of `proposed`, `accepted` or `rejected`, and a `sources` list like the conversations'.
+  A link also has `valid_from` and `valid_until` (a link that stops being true is closed, never deleted) and
+  `recorded_at`.
+- `graph_decisions`: each accept and reject, with who made what was decided; `list_graph_decision_counts` totals them
+  per maker, the signal later work learns from. They stay when the link or entity goes.
+
+Who decides: what the user makes (`add_graph_link`, `add_entity`, `join_entities`) is accepted at once, and so is what
+a rule makes. What an engine or similarity makes is proposed, and only the user at the page accepts or rejects it:
+`accept_graph_proposals` and `reject_graph_proposals` are page-only like `resolve_proposal`, and never offered to an
+engine. A rejected proposal stays as a rejected row, so the same two nodes are never proposed the same type of link
+again; removing a link a rule, similarity or an engine made keeps it as rejected for the same reason, while the user's
+own link goes. Accepting a link accepts a proposed entity at its end; rejecting an entity rejects the links proposed
+to it.
+
+Two entities found to be one are joined by an accepted `same_as` link (`join_entities`); nothing is merged, and
+removing that link undoes it. Reads (`records.ts`, `read_joins`) treat a joined group as its earliest-made entity,
+carrying the others' names and links. Nothing is joined on a name alone: `propose_entity` gives back an entity of the
+same kind already known by that name (or one of its other names) instead of making a second, and refuses one the user
+rejected; only a `same_as` link the user accepts joins two.
+
+Reading (`reading.ts`): `get_graph(context_id?, filter?)` gives a context, every context inside it, the items they hold
+and the entities linked to those, or the whole graph (contexts not archived, the items they hold, conversations in no
+context and every entity), with the links among them and the `structure` (each context to its children and items,
+drawn but not links). The filter takes node kinds or types, link types, statuses (accepted and proposed by default)
+and closed links; it caps the nodes at 300 (up to 5000), contexts first, then by link count, and says how many nodes
+and links were not shown. `get_node_links(node)` lists every link of a node of any status with the node at its other
+end, `list_graph_proposals(context_id?)` what waits, `list_link_counts(context_id)` each held item's open links.
+
+Writing: `change_graph_link`, `close_graph_link`, `remove_graph_link`, `rename_entity` and `remove_entity`, which takes
+its links along. After every write the feature removes any link whose end no longer exists: a removed context or
+entity, or a deleted conversation. An item merely in no context keeps its links, which show again when it is back.
+History keeps an entity with its links and each link with what its ends were called (`graph/history.ts`), so a removed
+entity comes back with its links and a removed link while both ends exist.
+
+### Links without a model
+
+`rules.ts` runs after each index pass (`when_indexed` in the indexer), for the documents the pass wrote and those
+whose text holds the address of one written or whose parent it is, so it runs only for what changed; every document
+when the index was empty. Each rule makes accepted links with an id every device gives alike (`rule:<rule>:<from>><to>`),
+so two devices make one link:
+
+- `links_to`: an item or context whose title, snippet, notes or text from its app holds another kept item's address
+  exactly (trailing punctuation and slashes aside), `related_to` labelled "links to".
+- `app_link`: a `codex://context/<id>`, `codex://conversation/<id>` or other app's item link (`scheme://kind/id`) to
+  a context or item CODEX holds, `related_to` labelled "links to".
+- `parent`: an item whose app gives its parent in its detail (`parent`, which X-Tasks gives for a subtask), `part_of`
+  that parent.
+
+A link a rule no longer finds is closed; one that comes back opens again. A link the user rejected, or one of that
+type someone else made, stands in its place.
+
+`similarity.ts` runs after a pass that embedded something: an item given new vectors (their mean, scaled to length
+one) is compared with every other item's, and those at a cosine of 0.8 or more become proposed `related_to` links
+labelled "similar", made by `similarity` with the embedder and model, at most three waiting per item, never between two
+items already linked in any way or a pair once rejected.
+
+A pass that made or closed links tells the host (`on_change`), which records History and announces the change.
+
+### Engines and the graph
+
+Engines are offered `get_node_links` and the two proposing calls, `propose_entity` and `propose_link`. The proposing
+calls only make proposals, so they run without approval and are not changes under the action policy
+(`proposing_calls` in `policy.ts`); the run passes them the engine, the model and the sources it has read, which the
+proposal carries. Evidence names an item or a message; its excerpt is kept only when every source it carries is marked
+"May be sent to a hosted engine", the mark under which the user lets that source's words leave this computer, and
+otherwise only the reference is kept. `get_node_links` is screened like every other read: for a hosted engine a node
+carrying a source not marked for it is withheld whole, and each link whose own sources, or its other end's, carry one.
+`suggest_links(context_id)` starts an ordinary conversation in the context with a message asking the engine to read
+its items and propose; no background job proposes links yet.
+
+Entities are documents of the search index too (`entity:<id>`, their name, kind and other names), placed in the
+contexts they are linked to, directly or through an item, so `search_index` finds them with their sources screened.
+
 ## The Thunderbird add-on
 
 `thunderbird/` is a WebExtension built by `vite.thunderbird.config.ts`. Its popup reads the email shown, lists the
@@ -122,8 +204,8 @@ the login entry.
 
 ## History
 
-`src/shared/history/store.ts` keeps a version of a context, its row and its memberships, after every write through
-X-Libs `create_history`. Versions sync; writes that arrive by sync are recorded by the device that made them.
+`src/shared/history/store.ts` keeps a version of a context, its row and its memberships, and of each entity and link of
+the graph, after every write through X-Libs `create_history`. Versions sync; writes that arrive by sync are recorded by the device that made them.
 
 ## The assistant
 
@@ -270,4 +352,4 @@ head badges the engine local or hosted.
 
 ### Still to come
 
-The Inbox and background queue, the knowledge graph, jobs and blueprints, in doc 4's order.
+The Inbox and background queue, the graph's views, jobs and blueprints, in doc 4's order.

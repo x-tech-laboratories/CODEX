@@ -28,7 +28,7 @@ import { read_desktop_settings, type DaemonMethods, type DesktopSettings } from 
 import { mcp_instructions } from "../shared/mcp.ts";
 import { stop_all_runs } from "../shared/conversations/run.ts";
 import { conversation_event, type DeviceMethods } from "../shared/page_api.ts";
-import { bind_methods, context_api, is_read_only, needs_upgrade, open_store, page_only, start_assistant, sync_engine } from "../shared/store.ts";
+import { after_index_change, bind_methods, context_api, is_read_only, needs_upgrade, open_store, page_only, start_assistant, sync_engine } from "../shared/store.ts";
 import { register_context_calls } from "../server/calls.ts";
 import { load_collectors } from "../server/collectors/index.ts";
 import { keep_refreshing } from "../server/refreshing.ts";
@@ -113,7 +113,7 @@ const refreshing = keep_refreshing(() => database, {
 const index = new DatabaseSync(join(profile, "codex-index.db"));
 index.exec("PRAGMA journal_mode = WAL");
 open_index(index);
-const indexing = keep_indexing({ database: () => database, index: () => index });
+const indexing = keep_indexing({ database: () => database, index: () => index, on_change: () => after_index_change(database) });
 
 // The schedule belongs to this device, so it is kept beside the database rather than in the synced settings.
 const schedule_file = join(profile, "backup-schedule.json");

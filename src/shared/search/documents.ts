@@ -1,6 +1,7 @@
 // What the index holds, read from the store: every context (its name and notes), every item some context keeps (its
-// title, snippet and the user's notes on it; a conversation's title and notes alone), and every message of the user
-// and the assistant, placed in the contexts holding its conversation. An item's text from its
+// title, snippet and the user's notes on it; a conversation's title and notes alone), every message of the user
+// and the assistant, placed in the contexts holding its conversation, and every entity of the graph not rejected (its
+// name, kind and other names), placed in the contexts it is linked to. An item's text from its
 // app is read by the indexer, through its collector, and held only in the index.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
@@ -12,6 +13,7 @@ import { context_items, contexts, items } from "../contexts/schema.ts";
 import { conversation_messages } from "../conversations/schema.ts";
 import { conversation_collector, conversation_item_id } from "../conversations/model.ts";
 import { drizzle_of } from "../feature.ts";
+import { graph_entities, graph_links } from "../graph/schema.ts";
 import { parse_sources } from "../privacy/sources.ts";
 import type { HitKind } from "./model.ts";
 import { text_hash } from "./text.ts";
@@ -19,7 +21,7 @@ import { text_hash } from "./text.ts";
 // ── Documents ────────────────────────────────────────────────────────────────
 
 export interface SourceDocument {
-  // "item:<id>", "context:<id>" or "message:<id>".
+  // "item:<id>", "context:<id>", "message:<id>" or "entity:<id>".
   key: string;
   kind: HitKind;
   ref_id: string;
@@ -79,7 +81,47 @@ export function read_documents(database: SqlDatabase): SourceDocument[] {
     const context_ids = [...(held.get(conversation_item_id(message.conversation_id))?.context_ids ?? [])].sort();
     documents.push({ key: `message:${message.id}`, kind: "message", ref_id: message.id, collector: "", source_id: "", title: message.role === "user" ? "You" : "Assistant", body: message.text, context_ids, sources: message.role === "user" ? [] : parse_sources(message.sources), source_hash: "" });
   }
+  documents.push(...entity_documents(database, held));
   return documents;
+}
+
+// Each entity not rejected, placed in the contexts it is linked to, directly or through an item they hold.
+function entity_documents(database: SqlDatabase, held: Map<string, { context_ids: string[] }>): SourceDocument[] {
+  const db = drizzle_of(database);
+  const entities = db.select().from(graph_entities).where(ne(graph_entities.status, "rejected")).all();
+  if (entities.length === 0) return [];
+  const places = new Map<string, Set<string>>();
+  const place = (entity_id: string, kind: string, id: string) => {
+    const found = places.get(entity_id) ?? new Set<string>();
+    if (kind === "context") found.add(id);
+    else if (kind === "item") for (const context_id of held.get(id)?.context_ids ?? []) found.add(context_id);
+    places.set(entity_id, found);
+  };
+  for (const link of db.select().from(graph_links).where(ne(graph_links.status, "rejected")).all()) {
+    if (link.from_kind === "entity") place(link.from_id, link.to_kind, link.to_id);
+    if (link.to_kind === "entity") place(link.to_id, link.from_kind, link.from_id);
+  }
+  return entities.map((entity) => ({
+    key: `entity:${entity.id}`,
+    kind: "entity",
+    ref_id: entity.id,
+    collector: "",
+    source_id: entity.kind,
+    title: entity.name,
+    body: [entity.kind, ...parse_names(entity.alt_names)].join("\n"),
+    context_ids: [...(places.get(entity.id) ?? [])].sort(),
+    sources: parse_sources(entity.sources),
+    source_hash: "",
+  }));
+}
+
+function parse_names(json: string): string[] {
+  try {
+    const value: unknown = JSON.parse(json);
+    return Array.isArray(value) ? value.map(String) : [];
+  } catch {
+    return [];
+  }
 }
 
 // ── Places ───────────────────────────────────────────────────────────────────

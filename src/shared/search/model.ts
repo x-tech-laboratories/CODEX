@@ -2,7 +2,7 @@
 
 // ── Search ───────────────────────────────────────────────────────────────────
 
-export type HitKind = "item" | "context" | "message";
+export type HitKind = "item" | "context" | "message" | "entity";
 
 // A context something sits in, by id and name.
 export interface HitPlace {
@@ -12,18 +12,20 @@ export interface HitPlace {
 
 export interface SearchHit {
   kind: HitKind;
-  // The item's, context's or message's id.
+  // The item's, context's, message's or entity's id.
   id: string;
-  // The item's title, the context's name, or who wrote the message.
+  // The item's title, the context's name, who wrote the message, or the entity's name.
   title: string;
   // A short piece of the text around what matched.
   excerpt: string;
-  // For an item: its collector, its kind such as "task", and where it opens; for a message, where its conversation opens.
+  // For an item: its collector, its kind such as "task", and where it opens; for a message, where its conversation
+  // opens; for an entity, its kind such as "person".
   collector: string;
   item_kind: string;
   uri: string;
-  // Where it is: the contexts holding an item, the context a context sits in, or the contexts holding the conversation
-  // a message is in (none for a top-level context or a conversation in no context).
+  // Where it is: the contexts holding an item, the context a context sits in, the contexts holding the conversation
+  // a message is in (none for a top-level context or a conversation in no context), or the contexts an entity is
+  // linked to, directly or through their items.
   where: HitPlace[];
   // The conversation a message is in, by id and title, which its uri opens; null for anything else.
   conversation: { id: string; title: string } | null;

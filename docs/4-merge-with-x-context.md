@@ -124,7 +124,9 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
    collector and held only in a local index file beside the database, never synced or backed up; FTS5 and vectors from
    an `embedder` plugin, fused by reciprocal rank and scoped to a context and those inside it; only changed documents
    indexed again, embedding in the background and waiting for replies; the engine searches it as a tool under the
-   source marks. The graph part (entities, links, their proposals and the graph view) is not built.*
+   source marks. Entities, links and their proposals built 2026-11-26 (`src/shared/graph/`, described in doc 1): rules on
+   exact keys and similarity of embeddings make links without a model, engines propose through two tools, and only the
+   user accepts or rejects. The graph view is not built.*
 5. **Workspace:** an editor per kind of item, writing back through collectors.
 6. **Jobs and blueprints.**
 7. **Self-maintenance:** jobs chosen by what changed, each with a budget, skipped when there is nothing to do.

@@ -58,6 +58,35 @@ export interface IndexHost {
   // The store's database, and the index's own.
   database: () => SqlDatabase;
   index: () => SqlDatabase;
+  // Told when a pass changed the store itself, such as links a rule made, so History records it and pages hear of it.
+  on_change?: () => void;
+}
+
+// ── Passes ───────────────────────────────────────────────────────────────────
+
+// What one pass did: the documents written because their text changed, whether every document was, and the documents
+// given vectors, with the embedder that made them.
+export interface IndexPass {
+  written: string[];
+  all: boolean;
+  embedded: string[];
+  embedder: { id: string; model: string } | null;
+}
+
+// Runs after a pass with what it did, such as the graph's rules; true when it changed the store.
+type PassListener = (database: SqlDatabase, index: SqlDatabase, pass: IndexPass) => boolean | Promise<boolean>;
+
+const pass_listeners: PassListener[] = [];
+
+export function when_indexed(listener: PassListener): void {
+  if (!pass_listeners.includes(listener)) pass_listeners.push(listener);
+}
+
+// Tells each listener what a pass did; true when any changed the store.
+export async function after_pass(database: SqlDatabase, index: SqlDatabase, pass: IndexPass): Promise<boolean> {
+  let changed = false;
+  for (const listener of pass_listeners) changed = (await listener(database, index, pass)) || changed;
+  return changed;
 }
 
 let current: IndexHost | null = null;
@@ -138,12 +167,12 @@ async function read_contents(database: SqlDatabase, wanted: SourceDocument[], pr
 
 // Brings the index in step with the store: new and changed documents written, gone ones removed, unchanged ones left
 // alone. Gives back how many were written and removed.
-export async function sync_documents(database: SqlDatabase, index: SqlDatabase, problems: string[] = []): Promise<{ written: number; removed: number }> {
+export async function sync_documents(database: SqlDatabase, index: SqlDatabase, problems: string[] = []): Promise<{ written: number; removed: number; written_keys: string[]; was_empty: boolean }> {
   const documents = read_documents(database);
   const indexed = new Map((index.prepare("SELECT key, content, context_ids, sources, source_hash, text_hash FROM docs").all() as unknown as IndexedRow[]).map((row) => [row.key, row]));
   const needs_text = documents.filter((document) => document.kind === "item" && indexed.get(document.key)?.source_hash !== document.source_hash);
   const contents = await read_contents(database, needs_text, problems);
-  let written = 0;
+  const written_keys: string[] = [];
   index.exec("BEGIN");
   try {
     for (const document of documents) {
@@ -158,13 +187,13 @@ export async function sync_documents(database: SqlDatabase, index: SqlDatabase, 
         continue;
       }
       write_document(index, document, content, hash);
-      written += 1;
+      written_keys.push(document.key);
     }
     const present = new Set(documents.map((document) => document.key));
     const gone = [...indexed.keys()].filter((key) => !present.has(key));
     for (const key of gone) remove_document(index, key);
     index.exec("COMMIT");
-    return { written, removed: gone.length };
+    return { written: written_keys.length, removed: gone.length, written_keys, was_empty: indexed.size === 0 };
   } catch (error) {
     index.exec("ROLLBACK");
     throw error;
@@ -225,7 +254,7 @@ async function yield_to_replies(signal: AbortSignal, wait_ms: number): Promise<v
 
 // Embeds every piece that has no vector from the embedder in use, in batches; vectors from any other embedder or
 // model are let go first, so changing either embeds everything again. Gives back how many pieces were embedded.
-export async function embed_pending(database: SqlDatabase, index: SqlDatabase, signal: AbortSignal, wait_ms = 250): Promise<number> {
+export async function embed_pending(database: SqlDatabase, index: SqlDatabase, signal: AbortSignal, wait_ms = 250, embedded_keys: Set<string> = new Set()): Promise<number> {
   const { found } = await find_embedder(database);
   if (!found) return 0;
   const { id, embedder } = found;
@@ -243,7 +272,10 @@ export async function embed_pending(database: SqlDatabase, index: SqlDatabase, s
       signal,
     );
     const insert = index.prepare("INSERT OR REPLACE INTO vectors (key, seq, embedder, model, vector) VALUES (?, ?, ?, ?, ?)");
-    batch.forEach((piece, at) => insert.run(piece.key, piece.seq, id, model, to_blob(unit(vectors[at]!))));
+    batch.forEach((piece, at) => {
+      insert.run(piece.key, piece.seq, id, model, to_blob(unit(vectors[at]!)));
+      embedded_keys.add(piece.key);
+    });
     embedded += batch.length;
   }
   return embedded;
@@ -296,8 +328,12 @@ export function index_now(): Promise<void> {
         again = false;
         const problems: string[] = [];
         try {
-          await sync_documents(host.database(), host.index(), problems);
-          await embed_pending(host.database(), host.index(), stopping.signal);
+          const synced = await sync_documents(host.database(), host.index(), problems);
+          const embedded = new Set<string>();
+          await embed_pending(host.database(), host.index(), stopping.signal, 250, embedded);
+          const { found } = await find_embedder(host.database());
+          const pass = { written: synced.written_keys, all: synced.was_empty, embedded: [...embedded], embedder: found ? { id: found.id, model: found.embedder.model() } : null };
+          if (await after_pass(host.database(), host.index(), pass)) host.on_change?.();
         } catch (error) {
           problems.push((error as Error).message);
         }
