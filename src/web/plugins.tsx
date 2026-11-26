@@ -16,6 +16,8 @@ import { embedder_manifests } from "../shared/embedders/manifests.ts";
 import { engine_manifests } from "../shared/engines/manifests.ts";
 import { calls } from "./api.ts";
 import { SourceMarks } from "./privacy/PrivacySettings.tsx";
+import { ItemSourceRows } from "./sources/ItemSources.tsx";
+import { item_sources_plugin_id } from "../shared/sources/model.ts";
 
 // ── Host ─────────────────────────────────────────────────────────────────────
 
@@ -64,7 +66,7 @@ export function status_of(manifest: PluginManifest, state: string, values: Recor
   return (manifest.settings ?? []).some((field) => field.type === "text" && needed(field.key, field.secret) && values[field.key] === "") ? "Not set up" : "On";
 }
 
-// A collector's row also holds its privacy and trust marks.
+// A collector's row also holds its privacy and trust marks, but for the apps' plugin, whose apps each have their own.
 function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<string>; with_marks?: boolean }) {
   const statuses = use_plugins(host).filter(({ manifest }) => ids.has(manifest.id));
   return (
@@ -72,7 +74,7 @@ function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<st
       {statuses.map(({ manifest, state }) => (
         <SettingsDialogRow key={manifest.id} name={manifest.name} status={status_of(manifest, state, host.settings(manifest.id))} about={manifest.description}>
           <PluginSettings host={host} plugin_id={manifest.id} heading={null} />
-          {with_marks && <SourceMarks plugin_id={manifest.id} />}
+          {with_marks && manifest.id !== item_sources_plugin_id && <SourceMarks plugin_id={manifest.id} />}
         </SettingsDialogRow>
       ))}
     </>
@@ -82,11 +84,18 @@ function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<st
 const engine_ids = new Set(engine_manifests.map((manifest) => manifest.id));
 const embedder_ids = new Set(embedder_manifests.map((manifest) => manifest.id));
 
-// A row for each plugin but the engines and embedders, each opening its own dialog.
+// A row for each plugin but the engines and embedders, each opening its own dialog, then the apps read through the
+// item calls, each marked on its own in its dialog.
 export function CollectorRows() {
   const host = use_page_plugins();
   const ids = host ? new Set(host.list().map((status) => status.manifest.id).filter((id) => !engine_ids.has(id) && !embedder_ids.has(id))) : null;
-  return host && ids ? <Rows host={host} ids={ids} with_marks /> : <Skeleton lines={2} />;
+  if (!host || !ids) return <Skeleton lines={2} />;
+  return (
+    <>
+      <Rows host={host} ids={ids} with_marks />
+      <ItemSourceRows />
+    </>
+  );
 }
 
 // A row for each engine, each opening its own dialog with the engine's model, endpoint and key command.

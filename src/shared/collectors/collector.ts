@@ -72,6 +72,8 @@ export interface Collector {
   // Each item's text as plain words, by source id, for the local search index alone; an id left out has none it can
   // give cheaply, such as a picture. Only read, never written back, and never kept in the store.
   content?: (source_ids: string[]) => Promise<Record<string, string>>;
+  // Marked for hosted engines and trust on its own rather than with its plugin, as each app the item calls read is.
+  marked_alone?: boolean;
 }
 
 // A collector as the page and other programs see it.

@@ -6,6 +6,7 @@
 
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
+import type { Collector } from "../collectors/collector.ts";
 import { open_plugin_host } from "../collectors/host.ts";
 import { conversation_collector } from "../conversations/model.ts";
 import { settings_feature } from "../settings.ts";
@@ -14,7 +15,7 @@ import { unrecorded_label, unrecorded_source } from "./sources.ts";
 
 // ── Marks ────────────────────────────────────────────────────────────────────
 
-// The setting holding each collector plugin's marks, by plugin id.
+// The setting holding each collector plugin's marks, by plugin id, and each collector marked on its own by its key.
 export const marks_setting = "source_marks";
 
 export function stored_marks(database: SqlDatabase): Record<string, SourceMark> {
@@ -26,6 +27,12 @@ export function stored_marks(database: SqlDatabase): Record<string, SourceMark> 
     marks[plugin_id] = Object.fromEntries(mark_names.map((name) => [name, given[name] === true])) as unknown as SourceMark;
   }
   return marks;
+}
+
+// Where a collector's marks are kept: under its plugin's id, or, for one marked on its own such as each app the item
+// calls read, under the plugin's id and its own, such as "codex.items/app.x-tasks".
+export function mark_key_of(collector: { id: string; plugin_id: string; value: Pick<Collector, "marked_alone"> }): string {
+  return collector.value.marked_alone ? `${collector.plugin_id}/${collector.id}` : collector.plugin_id;
 }
 
 // ── Screen ───────────────────────────────────────────────────────────────────
@@ -66,7 +73,7 @@ export function local_screen(): Screen {
 export async function open_screen(database: SqlDatabase, is_hosted: boolean): Promise<Screen> {
   const stored = stored_marks(database);
   const collectors = (await open_plugin_host(database)).providers("collector");
-  const marks = new Map(collectors.map(({ id, plugin_id }) => [id, stored[plugin_id] ?? unmarked]));
+  const marks = new Map(collectors.map((collector) => [collector.id, stored[mark_key_of(collector)] ?? unmarked]));
   return make_screen(is_hosted, marks, new Map(collectors.map(({ id, value }) => [id, value.label])));
 }
 

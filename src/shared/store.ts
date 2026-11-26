@@ -22,10 +22,13 @@ import { policy_feature } from "./policy/store.ts";
 import { privacy_feature } from "./privacy/store.ts";
 import { search_feature } from "./search/store.ts";
 import { settings_feature } from "./settings.ts";
+import { item_sources_setting } from "./sources/model.ts";
+import { hide_tokens, keep_tokens } from "./sources/records.ts";
+import { sources_feature } from "./sources/store.ts";
 
 // ── Features ─────────────────────────────────────────────────────────────────
 
-export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature];
+export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature];
 
 export const sync_engine = create_sync_engine({ tables: features.flatMap((feature) => feature.tables), after_apply: forget_synced_changes });
 
@@ -62,17 +65,20 @@ const all_methods = {
     typeof privacy_feature.methods &
     typeof search_feature.methods &
     typeof graph_feature.methods &
-    typeof items_feature.methods),
-  // Every setting, the ones never set at their defaults, with plugin keys hidden from the page and other programs.
+    typeof items_feature.methods &
+    typeof sources_feature.methods),
+  // Every setting, the ones never set at their defaults, with plugin keys and apps' tokens hidden from the page and other programs.
   get_settings: (database: SqlDatabase): Record<string, unknown> => {
     const settings: Record<string, unknown> = { ...setting_defaults, ...settings_feature.methods.get_settings(database) };
     const records = settings[plugins_setting] as PluginRecords | undefined;
-    return records ? { ...settings, [plugins_setting]: hide_secrets(bundled_manifests, records) } : settings;
+    const hidden = { ...settings, [item_sources_setting]: hide_tokens(settings[item_sources_setting]) };
+    return records ? { ...hidden, [plugins_setting]: hide_secrets(bundled_manifests, records) } : hidden;
   },
-  // A plugin key sent back hidden keeps the value stored.
+  // A plugin key or an app's token sent back hidden keeps the value stored.
   set_setting: (database: SqlDatabase, key: string, value: unknown): void => {
-    const stored = (settings_feature.methods.get_settings(database)[plugins_setting] ?? {}) as PluginRecords;
-    const kept = key === plugins_setting ? keep_secrets(bundled_manifests, stored, value as PluginRecords) : value;
+    const stored_settings = settings_feature.methods.get_settings(database);
+    const stored = (stored_settings[plugins_setting] ?? {}) as PluginRecords;
+    const kept = key === plugins_setting ? keep_secrets(bundled_manifests, stored, value as PluginRecords) : key === item_sources_setting ? keep_tokens(stored_settings[item_sources_setting], value) : value;
     settings_feature.methods.set_setting(database, key, kept);
   },
 };

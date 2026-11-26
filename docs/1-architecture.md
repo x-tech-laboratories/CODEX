@@ -54,6 +54,39 @@ the daemon hand the store every plugin at start with `load_collectors`, the plug
 adds the desktop plugins, Firefox bookmarks among them, since a server has no Firefox profile. The page runs
 its own plugin host over the same records only to show each plugin's settings (`src/web/plugins.tsx`).
 
+### Apps answering the item calls
+
+`src/shared/sources/` reads any app answering the Application Standard's four item calls, read-only, with no plugin of
+its own. The apps are the synced `item_sources` setting, a list of `{ id, name, address, token, kinds }`: the id is
+made once from the first name (`x-tasks`, `x-tasks-2`) and never changes, since kept items carry it; `kinds` is what
+`list_item_kinds` answered when the app was last saved. `add_item_source`, `change_item_source` and
+`remove_item_source` check the app answers before saving, and are page-only like `set_source_mark`, the setting being
+one of `user_only_settings` (it holds tokens and says what CODEX reads); `list_item_sources` and
+`get_item_source_status` read. `get_settings` puts the hidden mark in place of every token and `set_setting` keeps the
+stored token when the hidden one comes back, as for plugin keys (`records.ts`).
+
+The bundled plugin `codex.items` (`collector.ts`), which `open_plugin_host` adds for the database it opens beside the
+conversations' own, provides one collector per app, `app.<id>`, so its items are `app.<id>:<the app's id>` and two
+apps cannot collide; its label is the app's name and its kinds the app's. It is `marked_alone`: its marks are kept
+under `codex.items/app.<id>` rather than its plugin's id (`mark_key_of` in `privacy/screen.ts`, which every screen
+uses), and `list_source_marks` lists each app as an entry of its own; every other collector keeps its plugin's marks
+as before. `search` is `search_items`, `content` the snippet. `resolve` reads `list_item_changes` from the cursor kept
+in `item_source_cursors` (this device's alone, never synced), a page of 100 at a time up to 20 pages: an item changed
+is taken as the app now gives it, one deleted is left out so the refresh marks it missing, one unchanged is answered
+from what is kept (still missing if it was), and one not kept yet is read with `get_items`. With no cursor, or after
+20 full pages, every item asked about is read with `get_items`. The cursor moves on only when the refresh asked about
+every item kept from that app, so refreshing one context never skips a change to another's item.
+
+`client.ts` makes the calls with the arguments as a JSON list, which every X-app's API takes (an X-Libs call table
+takes nothing else), at `POST /api/call/<method>` (CODEX's form) or `POST /api/<method>` (X-Tasks', a plain X-Libs
+call table), remembering per address the one that answered. Its failures are plain: an address nothing answers at, or
+that does not answer in 15 seconds, named by host and port; a token refused (401, or 403 with no 404); a call missing
+(404, naming the call); an answer that is not a JSON list. The token goes only into the `Authorization` header.
+
+The Settings rows are `src/web/sources/ItemSources.tsx`: one `SettingsDialogRow` per app, its dialog holding the name,
+address and token (left empty to keep it), whether it answers now, its two marks and Remove, and an **Add an app…**
+row.
+
 A collector may also offer `feeds`: groups in its app a context can follow. `context_feeds` records what each context
 follows, and each membership's `via` names the feed that brought it, empty for one added by hand. Before a refresh
 resolves items, it brings each followed feed in step: new items join with `via` set, and items whose feed answered
@@ -338,7 +371,8 @@ screened reads give it the title and notes only, and the `conversation` collecto
 
 ### Sources: privacy and trust
 
-`src/shared/privacy/` gives each collector plugin two marks, kept by plugin id in the synced `source_marks` setting and
+`src/shared/privacy/` gives each collector plugin two marks, kept by plugin id in the synced `source_marks` setting
+(each app read through the item calls by its own key, `codex.items/app.<id>`; see "Apps answering the item calls") and
 set with `set_source_mark`, which answers only the page: `send_to_hosted` and `trusted`, both off until turned on.
 An `Engine` says whether it is local with `is_local()`; one that does not say is hosted. `codex.anthropic` is always
 hosted, and `codex.openai` is local while its endpoint's host is loopback or a private-network address
@@ -366,7 +400,7 @@ the index stores each document's sources, so `search_index` screens message hits
 is never sent them.
 
 The settings that keep the user in charge (`user_only_settings` in `page_api.ts`: `action_policy`, `source_marks`,
-`engine`, `embedder`, `hosted_log.keep_days` and `plugins`) are written only from the page: `is_user_only_setting_write`
+`engine`, `embedder`, `hosted_log.keep_days`, `plugins` and `item_sources`) are written only from the page: `is_user_only_setting_write`
 is the rule CODEX gives X-Libs `page_only_calls`, so the server's sign-in refuses `set_setting` on any of them to every
 token and both MCP endpoints refuse it, as they refuse the page-only calls. Sync honours the same list: the server's
 `register_sync_routes` takes a change to one of these rows (`device_only`) only from the user's own devices, a token

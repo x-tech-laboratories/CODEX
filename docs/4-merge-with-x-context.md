@@ -32,6 +32,9 @@ the conversations no other context holds.*
    - **Tool plugins:** prebuilt tools installed like any other plugin, beside collector and engine plugins.
    - **Tools the engine writes:** a script saved by proposal, read by the user before its first use, and run in a sandbox where it can call only CODEX's tools.
 6. **Sources are other apps' MCP servers,** chosen during setup, each marked for whether its content may be sent to a hosted engine. The X-apps follow one shared convention for this (proposed for the Application Standard), so one collector reads them all.
+   *Built 2026-11-26: the convention is the Application Standard's four item calls, and one collector reads every app
+   answering them, each app added in Settings with an address and read-only token and marked on its own
+   (`src/shared/sources/`, described in doc 1).*
    *Built 2026-11-26 for the collector plugins (`src/shared/privacy/`, described in doc 1): each has two marks in its
    row under Settings → Plugins, both off until turned on. "May be sent to a hosted engine": an engine is hosted unless
    it says it is local (Anthropic never is; an OpenAI-compatible endpoint is when its host is loopback or a
@@ -154,7 +157,12 @@ As of 2026-11-26 (CODEX answers the four standard item calls since 2026-11-26, c
   answered end to end on 2026-11-26: tool calls, proposals, trusted sources and stopping worked. What that run found
   (requests outgrowing the context, a large fixed prompt, unseen reasoning and raw provider errors) is fixed, but not
   yet tried on a real model again.
-- A generic collector for any app answering the standard item calls waits until more apps answer them.
+- The collector for apps answering the item calls gives the index only each item's 200-character snippet, as the four
+  calls carry nothing more; an app's full text would need a fifth, optional call in the standard.
+- An app read through the item calls is reached over HTTP with a token, not over its MCP server as decision 6 says;
+  the item calls are the shared convention it names, so MCP would add nothing for reading.
+- An app's kinds are read when it is saved, not on each refresh, so a kind an app adds later shows once the app is
+  saved again.
 - CODEX's own items (`codex://entity/<id>` among them) are not read by the index's `app_link` rule as links to
   entities, and the graph gives an entity node no `uri`; the item calls' links open entities on the Graph page.
 - A device still on the shape before conversations were items deletes, after any write of its own, the messages of
