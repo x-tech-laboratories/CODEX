@@ -441,7 +441,7 @@ such an item in the open context's instructions. Every call that changes somethi
 | `restricted` | refused; the engine is told it is not permitted |
 | `proposal` | kept in `proposals` with a plain-words summary, for the user to approve or reject; the engine is told it waits |
 | `auto` | run, recorded on the call as made by the engine at auto |
-| `background` | as auto; the only level a background job with nobody present may act on (no such jobs exist yet) |
+| `background` | as auto; the only level a background job with nobody present may act on |
 
 Once a run has read outside content, every change it asks for becomes a proposal whatever its level. Approving
 (`resolve_proposal`) runs the call through the store as the page would, so History records it, and adds an event to the
@@ -537,6 +537,61 @@ a line diff (`diff.ts`) of a change, with Accept and Reject, shown on both pages
 pane, whose ⋮ menu has **Save as blueprint**. A context's menu has **New blueprint…**, and its items list blueprints
 with their own icon.
 
+### Jobs and background runs
+
+Built 2026-11-26 on doc 4's decision 8. `src/shared/jobs/` keeps two synced tables (`schema.ts`): `jobs` (a title, the
+`instruction` each run sends, a `context_id` or none, a `schedule` as JSON, `{ kind: "every", every, unit }` or
+`{ kind: "at", time, weekdays }`, `only_when_changed`, the limits `max_rounds`, `max_tokens` and `max_runs_per_day`,
+`is_on`, `made_by` `user`, `engine` or `program`, and the conversation its runs are kept in), versioned in History, and
+`job_runs` (when, the device by name, engine, model, rounds, tokens, what it applied and proposed in plain words, its
+`outcome`, `running`, `done`, `error`, `limit` or `gave_way`, a note, the conversation and run, the context mark it saw
+and when it was set aside). Two tables are this device's alone, never synced: `job_device` (whether this device runs
+background work) and `job_checks` (when a job was last found unchanged here). The global switch and caps are the
+synced settings `background.enabled` (off), `background.daily_runs` (24) and `background.daily_tokens` (200,000),
+among `user_only_settings`.
+
+Calls: `list_jobs(context_id?)`, `get_job` (with its runs), `list_job_runs`, `get_background_state` (the switches, caps,
+today's use and whether a job runs), `add_job(fields)`, `change_job(id, fields)`, `remove_job`, `dismiss_job_runs(ids)`,
+and the page-only `set_job_on`, `run_job_now` and `set_background_device`. A job a program adds through a token or
+MCP starts off. Engines are offered `list_jobs` (CODEX's own words, not fenced), `add_job`, `change_job` and
+`remove_job`, changes at `proposal` until the user sets another level; their summaries say the job in plain words
+(`describe_schedule`). A change the engine applies itself runs as the `engine` caller (`caller.ts`), which `add_job`
+records as its maker.
+
+The runner (`runner.ts`), started by the server and the daemon with `keep_running_jobs` (a check every 30 seconds, the
+clock passed in), does nothing unless background work is on and this device runs it. A check takes the first job that
+is on and due (`schedule.ts`: "every" counts from its last run or check, "at" takes the latest slot at or before now
+on a chosen weekday; either way due once however much was missed), within its runs a day and the global caps
+(`counted_today`, every device's runs since local midnight, a run that gave way not counting), while no live reply is
+written (`has_live_runs`). A job that runs only on change hashes its context, the contexts inside it and what they hold,
+its own conversation left out (`context_mark`); the same mark as its last run or check is noted in `job_checks` and
+makes no engine call. A run makes or finds the job's conversation, named after it in its context, and calls `start_run`
+with the instruction as the message, presence `background` and its limits: rounds go to the engine as
+`request.limits.max_rounds`, which the direct loop honours, and the run stops itself past them or once its tokens reach
+the job's limit (lowered to what today's token cap leaves), ending with a plain note. One job runs at a time; Run now
+answers why not when it cannot. A live run, or the user writing in the job's conversation, makes a background run give
+way (`give_way`): it stops, is recorded as `gave_way` and runs again at its next check. The run's end (`on_end` in
+`RunOptions`) records what it applied (calls applied at the background level, with their undo summary) and proposed.
+The daemon is told whether a window is in front (`set_window_in_front`, from the main process on focus and blur) and,
+when a finished run proposed something, failed or stopped at a limit while none is, shows a notification keyed
+`inbox` linking `codex://inbox`, unless the device's `notify_inbox` is off (`notify_missing` likewise for missing items),
+both in Settings → This device → Notifications.
+
+The page: the **Jobs** page (`#/jobs`, `#/jobs/<id>` for one job's runs) with each job's schedule, next turn, latest
+run and device, an on switch, Run now, Change, History and Remove; a context's jobs under its notes; the job dialog
+(`JobDialog.tsx`); and Settings → Assistant → Background work (`BackgroundSettings.tsx`).
+
+### The Inbox
+
+`src/shared/inbox/` reads, and keeps nothing: `list_inbox()` gives every waiting proposal of the policy (with its
+evidence and conversation), every proposed graph link and entity, every proposed blueprint and blueprint change, and
+every job run that ended in an error or at a limit and was not set aside, newest first, each with plain words, who
+made it, the conversation and job it came from and the route that opens it; `get_inbox_count()` counts them. The
+**Inbox** page (`src/web/inbox/`) decides in place through the features' own page-only calls (`resolve_proposal`,
+`accept_graph_proposals`, `reject_graph_proposals`, `accept_blueprint_proposals`, `reject_blueprint_proposals`) and
+`dismiss_job_runs`, and ticked entries together after a confirmation. The sidebar's Inbox entry carries the count in its
+label, and the tray an Inbox row and tooltip with it.
+
 ### Still to come
 
-The Inbox and background queue, and jobs, in doc 4's order.
+Self-maintenance, mood and curiosity, in doc 4's order.
