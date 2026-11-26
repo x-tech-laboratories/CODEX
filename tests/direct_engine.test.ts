@@ -180,10 +180,13 @@ describe("the direct loop with a small model", () => {
 
   it("leaves out the oldest turns when the conversation outgrows the context, saying so, and keeps the newest message", async () => {
     const model = new ScriptedModel([answer("Sure.")]);
-    const old = "an old question ".repeat(400);
+    // Old turns too short to shorten, more of them than fit.
+    const old = [1, 2, 3, 4].flatMap(() => [
+      { role: "user" as const, text: "an old question ".repeat(100) },
+      { role: "assistant" as const, text: "an old answer ".repeat(110) },
+    ]);
     const conversation = [
-      { role: "user" as const, text: old },
-      { role: "assistant" as const, text: "an old answer ".repeat(400) },
+      ...old,
       { role: "user" as const, text: "a middle question" },
       { role: "assistant" as const, text: "a middle answer" },
       { role: "user" as const, text: "And now?" },
@@ -193,8 +196,8 @@ describe("the direct loop with a small model", () => {
 
     const sent = model.requests[0]!.messages;
     expect(sent[0]).toEqual({ role: "system", content: `You are CODEX.\n\n${left_out_note}` });
-    expect(sent.slice(1).map((message) => message.content)).toEqual(["a middle question", "a middle answer", "And now?"]);
-    expect(events).toContainEqual({ type: "notice", text: "2 earlier messages were left out of what the model read, to fit its context." });
+    expect(sent.slice(1).map((message) => message.content.slice(0, 8))).toEqual(["an old q", "an old a", "an old q", "an old a", "a middle", "a middle", "And now?"]);
+    expect(events).toContainEqual({ type: "notice", text: "The 4 oldest messages were left out of what the model read, to fit its context." });
     expect(events.at(-1)).toEqual({ type: "done", text: "Sure." });
   });
 

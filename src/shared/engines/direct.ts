@@ -4,7 +4,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import type { EngineEvent, EngineRequest, EngineTools, ToolDefinition, ToolSet } from "./engine.ts";
-import { calibrate, chars_per_token, fit_request, least_ratio, tighten, type Fit } from "./fitting.ts";
+import { calibrate, chars_per_token, fit_request, least_ratio, refused, type Fit } from "./fitting.ts";
 
 // ── Chat models ──────────────────────────────────────────────────────────────
 
@@ -170,7 +170,11 @@ function cut_off_message(max_tokens: number, said: boolean, thought: boolean): s
 
 function fit_notices(fit: Extract<Fit, { fits: true }>): [key: string, text: string][] {
   const notices: [string, string][] = [];
-  if (fit.left_out > 0) notices.push(["left_out", `${count(fit.left_out)} earlier message${fit.left_out === 1 ? " was" : "s were"} left out of what the model read, to fit its context.`]);
+  if (fit.shortened_earlier) {
+    const { messages, left_out } = fit.shortened_earlier;
+    notices.push(["shortened_earlier", `${count(messages)} earlier message${messages === 1 ? " was" : "s were"} shortened in the middle, ${count(left_out)} characters in all, in what the model read, to fit its context.`]);
+  }
+  if (fit.left_out > 0) notices.push(["left_out", `The ${fit.left_out === 1 ? "oldest message was" : `${count(fit.left_out)} oldest messages were`} left out of what the model read, to fit its context.`]);
   if (fit.shortened) {
     notices.push(["shortened", `Your message was too long for this model's context, so ${count(fit.shortened.left_out)} of its ${count(fit.shortened.length)} characters, from the middle, were left out of what the model read. Your message is kept whole.`]);
   }
@@ -234,8 +238,7 @@ export async function* run_direct(model: ChatModel, request: EngineRequest, sign
           completion = next.value;
         } catch (error) {
           if (!(error instanceof ContextOverflow) || attempt > 0 || started || signal.aborted) throw error;
-          if (error.prompt_tokens) calibrate(key, fitted.prompt_chars, error.prompt_tokens);
-          else tighten(key);
+          refused(key, fitted.prompt_chars, error.prompt_tokens);
           const measured = error.prompt_tokens ? (fitted.prompt_chars / error.prompt_tokens) * 0.9 : ratio * 0.75;
           ratio = Math.max(least_ratio, Math.min(key ? chars_per_token(key) : ratio, measured));
         }
