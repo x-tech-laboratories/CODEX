@@ -274,6 +274,16 @@ The desktop app serves the same tools on its own data once **Settings → MCP se
 `http://127.0.0.1:3922/mcp`. `get_context` gives an AI client everything a context holds in one call. Plugin keys,
 such as a Trilium token, are left out of what the API and MCP read.
 
+**Items for other apps.** Like every X-app, CODEX answers the four read-only item calls of the Application Standard,
+so another app or an assistant reads it with the same code it reads any X-app with, a read-only token being enough:
+`list_item_kinds`, `search_items(query, limit)`, `get_items(ids)` and `list_item_changes(since, limit)`. CODEX's own
+items are its contexts (name, notes as the snippet, `archived` as the status), its conversations (the title, the
+contexts holding it and when it was last used, never a message) and the entities of its graph (name, kind and other
+names, with `proposed`, `accepted` or `rejected` as the status). Ids carry their kind, such as `context:<id>`, and
+links are `codex://context/<id>`, `codex://conversation/<id>` and `codex://entity/<id>`, which the desktop app opens
+on the context, on the conversation in the pane, or on the Graph page at the entity. The tasks, notes and files a
+context points to are not CODEX's items; their own apps answer for them.
+
 ## Not yet
 
 - **More of the assistant:** the Inbox, background jobs and blueprints, in the order

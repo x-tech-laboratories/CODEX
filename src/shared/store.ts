@@ -16,6 +16,7 @@ import { assistant_host, use_assistant_host, type AssistantHost } from "./conver
 import { conversations_feature } from "./conversations/store.ts";
 import { graph_feature } from "./graph/store.ts";
 import { forget_synced_changes, history_feature, install_history, record_history } from "./history/store.ts";
+import { items_feature } from "./items/store.ts";
 import { is_read_only, is_user_only_setting_write, page_only_methods, page_only_refusal } from "./page_api.ts";
 import { policy_feature } from "./policy/store.ts";
 import { privacy_feature } from "./privacy/store.ts";
@@ -24,7 +25,7 @@ import { settings_feature } from "./settings.ts";
 
 // ── Features ─────────────────────────────────────────────────────────────────
 
-export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature];
+export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature];
 
 export const sync_engine = create_sync_engine({ tables: features.flatMap((feature) => feature.tables), after_apply: forget_synced_changes });
 
@@ -60,7 +61,8 @@ const all_methods = {
     typeof policy_feature.methods &
     typeof privacy_feature.methods &
     typeof search_feature.methods &
-    typeof graph_feature.methods),
+    typeof graph_feature.methods &
+    typeof items_feature.methods),
   // Every setting, the ones never set at their defaults, with plugin keys hidden from the page and other programs.
   get_settings: (database: SqlDatabase): Record<string, unknown> => {
     const settings: Record<string, unknown> = { ...setting_defaults, ...settings_feature.methods.get_settings(database) };
