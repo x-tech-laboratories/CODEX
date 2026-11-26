@@ -4,6 +4,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { Select, Switch } from "@x-tech-laboratories/x-libs/web/react/controls";
+import { SettingsDialogRow } from "@x-tech-laboratories/x-libs/web/react/dialog";
 import { SettingRow } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 
@@ -74,6 +75,24 @@ export function ToolPluginSettings({ plugin_id }: { plugin_id: string }) {
           ),
         );
       }}
+    </Loaded>
+  );
+}
+
+// A row for each tool plugin the page has no manifest of, such as one from the plugins folder, holding its marks and tools.
+export function OtherToolPluginRows({ known }: { known: ReadonlySet<string> }) {
+  const listed = use_data((api) => api.list_plugin_tools());
+  return (
+    <Loaded resource={listed} lines={1}>
+      {(entries) =>
+        entries
+          .filter((entry) => !known.has(entry.plugin_id))
+          .map((entry) => (
+            <SettingsDialogRow key={entry.key} name={entry.label} status={entry.problem ? "Not running" : "On"} about={`Tools from the plugin ${entry.plugin_id}.`}>
+              <ToolRows entry={entry} />
+            </SettingsDialogRow>
+          ))
+      }
     </Loaded>
   );
 }

@@ -18,7 +18,7 @@ import { tool_manifests } from "../shared/tools/manifests.ts";
 import { calls } from "./api.ts";
 import { SourceMarks } from "./privacy/PrivacySettings.tsx";
 import { ItemSourceRows } from "./sources/ItemSources.tsx";
-import { ToolPluginSettings } from "./tools/ToolSettings.tsx";
+import { OtherToolPluginRows, ToolPluginSettings } from "./tools/ToolSettings.tsx";
 import { item_sources_plugin_id } from "../shared/sources/model.ts";
 
 // ── Host ─────────────────────────────────────────────────────────────────────
@@ -89,8 +89,8 @@ const engine_ids = new Set(engine_manifests.map((manifest) => manifest.id));
 const embedder_ids = new Set(embedder_manifests.map((manifest) => manifest.id));
 const tool_ids = new Set(tool_manifests.map((manifest) => manifest.id));
 
-// A row for each plugin but the engines and embedders, each opening its own dialog, then the apps read through the
-// item calls, each marked on its own in its dialog.
+// A row for each plugin but the engines and embedders, each opening its own dialog, then each tool plugin the page has
+// no manifest of, then the apps read through the item calls, each marked on its own in its dialog.
 export function CollectorRows() {
   const host = use_page_plugins();
   const ids = host ? new Set(host.list().map((status) => status.manifest.id).filter((id) => !engine_ids.has(id) && !embedder_ids.has(id))) : null;
@@ -98,6 +98,7 @@ export function CollectorRows() {
   return (
     <>
       <Rows host={host} ids={ids} with_marks />
+      <OtherToolPluginRows known={new Set(host.list().map((status) => status.manifest.id))} />
       <ItemSourceRows />
     </>
   );

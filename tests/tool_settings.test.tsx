@@ -74,7 +74,7 @@ describe("the tool plugins in Settings", () => {
     await waitFor(async () => expect((await fixture.calls.list_plugin_tools())[0]!.tools.find((tool) => tool.tool === "web_fetch")!.small).toBe(true));
   });
 
-  it("list a plugin tool that changes something under Action policy, with its level", async () => {
+  it("list a plugin tool that changes something under Action policy, with its level, and a folder plugin's row", async () => {
     const fixture = start_fixture({ plugins: [poster] });
     open_settings(fixture);
     const policy = await waitFor(() => section("Action policy"));
@@ -83,6 +83,12 @@ describe("the tool plugins in Settings", () => {
     expect(within(policy).getByText("sends outside")).toBeTruthy();
     fireEvent.change(level, { target: { value: "auto" } });
     await waitFor(() => expect((fixture.calls.get_settings().action_policy as Record<string, string>).poster__post).toBe("auto"));
+
+    // A tool plugin the page has no manifest of, such as one from the plugins folder, has a row of its own under Plugins.
+    fireEvent.click(await screen.findByRole("button", { name: "Open Poster" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(await within(dialog).findByLabelText("Trusted content"));
+    await waitFor(() => expect(fixture.calls.get_settings().tool_plugins).toEqual({ "tests.poster/poster": { trusted: true } }));
   });
 
   it("say what a tool does in plain words", () => {
