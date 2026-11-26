@@ -12,8 +12,9 @@ import { use_follow_tail } from "@x-tech-laboratories/x-libs/web/react/following
 import { FormGroup } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Markdown } from "@x-tech-laboratories/x-libs/web/react/markdown";
 import { MenuButton } from "@x-tech-laboratories/x-libs/web/react/menu_button";
-import { open_context_menu } from "@x-tech-laboratories/x-libs/web/react/menus";
+import { Popover, open_context_menu } from "@x-tech-laboratories/x-libs/web/react/menus";
 import { Empty, Skeleton } from "@x-tech-laboratories/x-libs/web/react/states";
+import { use_now } from "@x-tech-laboratories/x-libs/web/react/time";
 import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
 import { use_watch } from "@x-tech-laboratories/x-libs/web/react/watch";
 import { Send, Square } from "lucide-react";
@@ -26,7 +27,7 @@ import { BlueprintProposalCard } from "../blueprints/ProposalCard.tsx";
 import { add_to_contexts, delete_conversation, move_to_context, rename_conversation } from "../contexts/item_actions.tsx";
 import { open_conversation, take_wanted, wanted_watch } from "./selection.ts";
 import { Mascot } from "./Mascot.tsx";
-import { lasting_mood, moment_after, type MascotMood } from "./mascot.ts";
+import { lasting_mood, moment_after, mood_summary, type MascotMood } from "./mascot.ts";
 import { use_conversation, type LiveRun } from "./use_conversation.ts";
 
 // ── Tool calls ───────────────────────────────────────────────────────────────
@@ -436,6 +437,23 @@ function use_shown(context_id: string | null, list: ConversationSummary[] | null
   return [shown, (id) => set_choice({ context_id, id }), () => set_choice(null)];
 }
 
+// The face, which shows its mood and why on hover, and in a note when tapped.
+function Face({ mood, moment, summary }: { mood: MascotMood; moment: { mood: MascotMood; key: number } | null; summary: string }) {
+  const [anchor, set_anchor] = useState<HTMLElement | null>(null);
+  return (
+    <>
+      <button type="button" className="link mascot-button" title={summary} aria-label={`CODEX's mood. ${summary}`} onClick={(event) => set_anchor(anchor ? null : event.currentTarget)}>
+        <Mascot mood={mood} moment={moment} />
+      </button>
+      {anchor && summary && (
+        <Popover anchor={anchor} label="CODEX's mood" on_close={() => set_anchor(null)}>
+          <p className="mood-note">{summary}</p>
+        </Popover>
+      )}
+    </>
+  );
+}
+
 export function AssistantPane({ context_id }: { context_id: string | null }) {
   const status = use_data((api) => api.get_assistant_status());
   const list = use_data((api) => api.list_conversations(context_id), [context_id]);
@@ -450,7 +468,11 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
   const list_end = useRef<HTMLDivElement>(null);
   const engine = status.data?.engine ?? null;
   const is_running = run !== null && !run.finished;
-  const mood = lasting_mood({ has_engine: engine !== null, is_reachable: status.status !== "failed" && conversation.status !== "failed", is_running });
+  // The mood fades, so it is read again each minute as well as when anything changes.
+  const minute = Math.floor(use_now(60_000).getTime() / 60_000);
+  const mood_state = use_data((api) => api.get_mood(), [minute]);
+  const mood_on = mood_state.data?.enabled === true;
+  const mood = lasting_mood({ has_engine: engine !== null, is_reachable: status.status !== "failed" && conversation.status !== "failed", is_running, mood: mood_on ? mood_state.data!.mood : "neutral" });
   const data = shown_id ? conversation.data : null;
   const shown = list.data?.find((each) => each.id === shown_id) ?? data ?? null;
   const waiting = data?.proposals.filter((proposal) => proposal.status === "waiting") ?? [];
@@ -471,7 +493,7 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
   return (
     <div className="assistant">
       <header className="assistant-head">
-        <Mascot mood={mood} moment={moment} />
+        <Face mood={mood} moment={mood_on ? moment : null} summary={mood_summary(mood_state.data)} />
         <p className="muted small">
           {engine ? [run?.engine || engine.label, run?.model || engine.model].filter(Boolean).join(" · ") : status.status === "failed" ? "CODEX cannot be reached." : "Asleep"}
           {engine && " "}

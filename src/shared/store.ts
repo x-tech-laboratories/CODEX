@@ -22,6 +22,7 @@ import { inbox_feature } from "./inbox/store.ts";
 import { items_feature } from "./items/store.ts";
 import { jobs_feature } from "./jobs/store.ts";
 import { maintenance_feature } from "./maintenance/store.ts";
+import { mood_feature } from "./mood/store.ts";
 import { is_read_only, is_user_only_setting_write, page_only_methods, page_only_refusal } from "./page_api.ts";
 import { policy_feature } from "./policy/store.ts";
 import { privacy_feature } from "./privacy/store.ts";
@@ -37,7 +38,7 @@ import { mcp_feature } from "./mcp/store.ts";
 
 // ── Features ─────────────────────────────────────────────────────────────────
 
-export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature, jobs_feature, maintenance_feature, inbox_feature, tools_feature, mcp_feature];
+export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature, jobs_feature, maintenance_feature, inbox_feature, tools_feature, mcp_feature, mood_feature];
 
 export const sync_engine = create_sync_engine({ tables: features.flatMap((feature) => feature.tables), after_apply: forget_synced_changes });
 
@@ -81,7 +82,8 @@ const all_methods = {
     typeof maintenance_feature.methods &
     typeof inbox_feature.methods &
     typeof tools_feature.methods &
-    typeof mcp_feature.methods),
+    typeof mcp_feature.methods &
+    typeof mood_feature.methods),
   // Every setting, the ones never set at their defaults, with plugin keys and apps' and MCP servers' tokens hidden from the page and other programs.
   get_settings: (database: SqlDatabase): Record<string, unknown> => {
     const settings: Record<string, unknown> = { ...setting_defaults, ...settings_feature.methods.get_settings(database) };

@@ -250,6 +250,8 @@ describe("background runs", () => {
     await fixture.calls.run_job_now(id);
     await wait_for_job();
     expect(fixture.calls.get_job(id).runs[0]).toMatchObject({ outcome: "error", note: "The engine could not answer." });
+    // A failed job leaves the assistant mildly concerned, and nothing more.
+    expect(fixture.calls.get_settings()["mood.current"]).toMatchObject({ mood: "concerned", strength: 0.4, by: "event" });
   });
 
   it("hold to today's caps, each job's and every job's together", async () => {

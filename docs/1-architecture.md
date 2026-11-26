@@ -598,7 +598,9 @@ variables before `move_mcp_server_here` runs.
 
 `src/web/assistant/` is the Shell's `side_pane`, titled Assistant, its open state kept by `use_side_pane`. At its head
 is RoboBuddy's face (`Mascot.tsx`, moods in `mascot.ts`: asleep with no engine or no store, thinking while a reply is
-written, happy or sad for three seconds when one ends), the engine and model answering, and the switcher: the title of
+written, happy or sad for three seconds when one ends while the mood is on, and otherwise the assistant's mood through
+`face_of`: neutral as RoboBuddy's `default`, happy, celebrating as `laughing`, sad, curious and concerned as `worried`,
+all RoboBuddy's own), a button whose hover text and tapped popover say the mood and why (`mood_summary`), the engine and model answering, and the switcher: the title of
 the conversation shown, opening a menu of the context's conversations (those in no context when none is open) with
 when each was used and which are being written, then Rename, New conversation and a menu to move it, add it to more
 contexts, copy its link or delete it, asking first; a background job's conversations (each summary's `job`) are listed
@@ -790,6 +792,36 @@ made it, the conversation and job it came from and the route that opens it; `get
 `dismiss_job_runs`, and ticked entries together after a confirmation. The sidebar's Inbox entry carries the count in its
 label, and the tray an Inbox row and tooltip with it.
 
+### Mood
+
+`src/shared/mood/` keeps one record in the synced setting `mood.current`: `{ mood, strength, reason, set_at, by,
+conversation_id, run_id, sources }`, the mood one of neutral, happy, celebrating, sad, curious and concerned, `by` the
+engine, a date or an event. Only CODEX's code writes it (`mood.ts`); `mood.enabled`, `mood.tone`, `mood.dates` and
+`mood.current` are all in `user_only_settings`, so no token or MCP client writes them and only the user's devices sync
+them. `record_in_force` fades the stored record to half each `half_life_minutes` (60) and sets it beside today's date
+mood (`date_mood`: a listed month and day gives celebrating, or sad for a `remember` date, at 0.9 all day), the stronger
+winning, neutral under 0.25; `get_mood` gives that as `MoodState`, neutral while the mood is off. `list_mood_dates` reads
+the dates and the page-only `set_mood_dates` checks and replaces them.
+
+Three things set it. `engine_tools` offers every run but one with a narrower `only` the tool `set_mood(mood, reason)`
+(and in the core set), handled in the run itself rather than as a store call, so no program can call it: it writes an
+`engine` record at strength 1 with the conversation, run and the sources read so far, and the call is kept with the
+reply as `ran`, with no level, proposal or undo. When a reply ends, `settle_reply_mood` gives a mood it set the sources
+the whole reply read, and ends a sad or celebrating mood an earlier reply in that conversation set. `note_event_mood`
+writes a mild `event` record (0.4) only when the mood in force is no stronger: the maintenance loop calls it when a run
+fails (concerned) and when Links from rules, Similar items, Tidy the graph or Suggest links applied or proposed
+something (curious), and the jobs' runner when a job's run ends in an error (concerned).
+
+`mood_part` adds to a run's instructions, while the mood is on, two lines of rules (a mood is a display, never a feeling
+claimed; it never changes a fact or an assessment, never flatters, never asks for attention, never blames the user, and
+is never a reason given to do something), and, while `mood.tone` is on and the mood is not neutral, "Your mood right now
+is X; let it colour your tone only. Why:" and the reason, fenced when it carries sources. Its sources join the
+instructions' sources, so they taint the run and reach the hosted log like any other; a hosted engine a source may not
+reach is told neither the mood nor why, and the log counts it withheld. The identity lines always say that agreeing with
+the user is not a mood. Nothing in `src/shared/mood/` imports the policy, the jobs, the Inbox, runs or a notifier (a test
+holds its imports to a list), the tool list and `decide()` are tested unchanged under every mood, and the Mood section
+under Settings → Assistant (`src/web/mood/MoodSettings.tsx`) has the two switches, the mood now and the dates.
+
 ### Still to come
 
-Mood and curiosity, in doc 4's order.
+Curiosity, in doc 4's order.

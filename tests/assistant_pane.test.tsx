@@ -14,7 +14,8 @@ import type { ContextMethods } from "../src/shared/store.ts";
 import { data_watch, set_page_api } from "../src/web/api.ts";
 import { AssistantPane, ProposalCard, Thinking } from "../src/web/assistant/AssistantPane.tsx";
 import { Mascot } from "../src/web/assistant/Mascot.tsx";
-import { lasting_mood, moment_after, screen_placement } from "../src/web/assistant/mascot.ts";
+import { lasting_mood, moment_after, mood_summary, screen_placement } from "../src/web/assistant/mascot.ts";
+import { moods as moods_of } from "../src/shared/mood/model.ts";
 import { want_conversation } from "../src/web/assistant/selection.ts";
 import { next_run } from "../src/web/assistant/use_conversation.ts";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
@@ -479,6 +480,41 @@ describe("the mascot's mood", () => {
     expect(lasting_mood({ has_engine: true, is_reachable: true, is_running: true })).toBe("thinking");
     expect(lasting_mood({ has_engine: true, is_reachable: true, is_running: false })).toBe("default");
     expect([moment_after(""), moment_after("Broken"), moment_after("Stopped.")]).toEqual(["happy", "sad", null]);
+  });
+
+  it("shows the assistant's own mood when idle, each through a face RoboBuddy has, and says why in words", () => {
+    const idle = { has_engine: true, is_reachable: true, is_running: false };
+    expect(moods_of.map((mood) => lasting_mood({ ...idle, mood }))).toEqual(["default", "happy", "laughing", "sad", "curious", "worried"]);
+    expect(lasting_mood({ ...idle, is_running: true, mood: "sad" })).toBe("thinking");
+    expect(lasting_mood({ ...idle, has_engine: false, mood: "celebrating" })).toBe("asleep");
+    const state = { enabled: true, tone: true, mood: "celebrating" as const, strength: 0.9, reason: "My birthday", set_at: "", by: "date" as const };
+    expect(mood_summary(state)).toBe("Celebrating: My birthday From a date you listed.");
+    expect(mood_summary({ ...state, mood: "concerned", reason: "The job “Tidy” failed.", by: "event" })).toBe("A little concerned: The job “Tidy” failed. From CODEX's own background work.");
+    expect(mood_summary({ ...state, mood: "neutral" })).toBe("Neutral: nothing in particular.");
+    expect(mood_summary({ ...state, enabled: false })).toBe("The mood is off, so the face stays neutral.");
+  });
+
+  it("shows on the pane's face, with why on hover and in a note when tapped, and stays neutral while off", async () => {
+    const fixture = open_page();
+    fixture.set_script(async function* (request) {
+      await request.tools.call("set_mood", { mood: "celebrating", reason: "The user's thesis is done." });
+      yield { type: "done", text: "Congratulations!" };
+    });
+    render(<AssistantPane context_id={null} />);
+    await screen.findByRole("textbox", { name: "Message" });
+    type_and_send("My thesis is done!");
+    await wait_for_runs();
+    data_watch.bump();
+    const face = await screen.findByRole("button", { name: /CODEX's mood\. Celebrating: The user's thesis is done\./ });
+    expect(face.getAttribute("title")).toBe("Celebrating: The user's thesis is done. Set in a reply.");
+    await waitFor(() => expect(moods.at(-1)).toBe("laughing"));
+    fireEvent.click(face);
+    expect(await screen.findByText("Celebrating: The user's thesis is done. Set in a reply.", { selector: ".mood-note" })).toBeTruthy();
+
+    fixture.calls.set_setting("mood.enabled", false);
+    data_watch.bump();
+    await waitFor(() => expect(moods.at(-1)).toBe("default"));
+    expect(screen.getByRole("button", { name: /The mood is off/ })).toBeTruthy();
   });
 });
 

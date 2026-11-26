@@ -17,6 +17,7 @@ import { device_id_of, register_device, runs_here } from "../src/shared/jobs/rec
 import { digest_lines } from "../src/shared/maintenance/jobs.ts";
 import { keep_maintaining, run_maintenance_job, settle_maintenance, tick, use_maintenance_host, type MaintenanceHost } from "../src/shared/maintenance/loop.ts";
 import { maintenance_jobs } from "../src/shared/maintenance/model.ts";
+import { mood_state } from "../src/shared/mood/mood.ts";
 import { page_only_methods, user_only_settings } from "../src/shared/page_api.ts";
 import { count_changed, open_index, settle_index, use_search_index } from "../src/shared/search/indexer.ts";
 import { page_only } from "../src/shared/store.ts";
@@ -399,6 +400,8 @@ describe("tidying the graph", () => {
     await tick();
     const proposed = setup.calls.list_graph_proposals().links;
     expect(proposed).toMatchObject([{ type: "same_as", made_by: "rule", rule: "same_name", status: "proposed" }]);
+    // Finding something new leaves the assistant mildly curious.
+    expect(mood_state(setup.database, setup.clock.now)).toMatchObject({ mood: "curious", reason: "Tidy the graph found something new.", strength: 0.4 });
     expect([proposed[0]!.from, proposed[0]!.to].sort()).toEqual([`entity:${first}`, `entity:${second}`].sort());
     setup.calls.reject_graph_proposals([proposed[0]!.id]);
     setup.clock.now += day;
@@ -529,6 +532,7 @@ describe("a job that fails", () => {
     setup.calls.add_context("Garden");
     await tick();
     expect(setup.calls.list_job_runs("maintenance:embed")[0]).toMatchObject({ outcome: "error", note: "the model is away" });
+    expect(mood_state(setup.database, setup.clock.now)).toMatchObject({ mood: "concerned", reason: "Embed documents failed.", by: "event" });
     expect(setup.calls.list_inbox()).toMatchObject([{ kind: "job_run", title: "Failed: Embed documents", made_by: "background maintenance", route: "#/settings" }]);
     // The Jobs page's list of the assistant's runs leaves them out.
     expect(setup.calls.list_job_runs()).toEqual([]);

@@ -101,6 +101,22 @@ conversation out of the last context holding it deletes it, after asking; deleti
 no other context holds.
 
 Its face sleeps until an engine is set up, thinks while it writes, and smiles or frowns for a moment when a reply ends.
+
+**Mood.** Between replies the face shows the assistant's mood: neutral, happy, celebrating, sad, curious or a little
+concerned. A reply may set it with its `set_mood` tool when the conversation gives a clear reason, such as celebrating
+your news or being sad with you about a loss; that runs at once, since it changes nothing of yours, and shows among the
+reply's tool calls. A date you list under **Settings → Assistant → Mood → Dates to remember** (a birthday, a day to
+celebrate, or a day to remember quietly) sets it all that day, under any mood a reply sets; background work finding
+something new leaves it mildly curious, and a job failing mildly concerned. A mood fades to half each hour and is
+neutral again within the hour or two; a sad or celebrating mood a reply set ends when a later reply in that
+conversation does not keep it. Hover over the face, or tap it, to see the mood and why. While **Mood colours the tone of
+replies** is on, the assistant is told its mood and why, to colour its tone only, with the rules that a mood never
+changes a fact or an assessment, never flatters, never asks for your attention, never blames you and is never a reason
+it gives you to do something, and that agreeing with you is not a mood. The mood is never an input to the action policy,
+what reaches a hosted engine, which tools are offered or any budget, and it never notifies you, adds to the Inbox or
+starts anything. Its reason is kept from a hosted engine when the reply that set it read a source not marked for one.
+Turn **Mood** off and the face stays neutral, showing only when it is thinking. These switches and the dates are yours
+alone, at CODEX's own page.
 Enter sends, Shift+Enter starts a new line, and **Stop** ends a reply early. Each tool call it made shows where in the reply it
 was made, and folds open to show its arguments and what came back. Wide tables and code in a reply scroll sideways on
 their own. While a reasoning model thinks, a folded **Thinking…** row opens to about ten lines of its
@@ -474,7 +490,7 @@ context points to are not CODEX's items; their own apps answer for them.
 
 ## Not yet
 
-- **More of the assistant:** self-maintenance, mood and curiosity, in the order
+- **More of the assistant:** curiosity, in the order
   [docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) gives.
 - **Notifications from the server** through X-Libs' channels; only the desktop app notifies so far.
 - **Android.** Collectors need Node, so a phone app would show what is kept but search nothing; it waits for collectors

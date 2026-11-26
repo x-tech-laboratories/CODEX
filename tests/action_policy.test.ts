@@ -118,6 +118,7 @@ const allowed_tools = [
   "set_context_archived",
   "set_context_notes",
   "set_item_note",
+  "set_mood",
   "stop_feed_group_news",
   "unfollow_feed",
 ];
@@ -140,6 +141,7 @@ const allowed_core_tools = [
   "search_index",
   "set_context_notes",
   "set_item_note",
+  "set_mood",
 ];
 
 describe("a run's tools", () => {
