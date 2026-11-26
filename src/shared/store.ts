@@ -12,8 +12,9 @@ import { plugins_setting } from "./collectors/collector.ts";
 import { bundled_manifests } from "./collectors/manifests.ts";
 
 import { contexts_feature } from "./contexts/store.ts";
-import { use_assistant_host, type AssistantHost } from "./conversations/host.ts";
+import { assistant_host, use_assistant_host, type AssistantHost } from "./conversations/host.ts";
 import { conversations_feature } from "./conversations/store.ts";
+import { graph_feature } from "./graph/store.ts";
 import { forget_synced_changes, history_feature, install_history, record_history } from "./history/store.ts";
 import { is_read_only, is_user_only_setting_write, page_only_methods, page_only_refusal } from "./page_api.ts";
 import { policy_feature } from "./policy/store.ts";
@@ -23,7 +24,7 @@ import { settings_feature } from "./settings.ts";
 
 // ── Features ─────────────────────────────────────────────────────────────────
 
-export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature];
+export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature];
 
 export const sync_engine = create_sync_engine({ tables: features.flatMap((feature) => feature.tables), after_apply: forget_synced_changes });
 
@@ -58,7 +59,8 @@ const all_methods = {
     typeof conversations_feature.methods &
     typeof policy_feature.methods &
     typeof privacy_feature.methods &
-    typeof search_feature.methods),
+    typeof search_feature.methods &
+    typeof graph_feature.methods),
   // Every setting, the ones never set at their defaults, with plugin keys hidden from the page and other programs.
   get_settings: (database: SqlDatabase): Record<string, unknown> => {
     const settings: Record<string, unknown> = { ...setting_defaults, ...settings_feature.methods.get_settings(database) };
@@ -126,4 +128,14 @@ export function start_assistant(options: Omit<AssistantHost, "call">): void {
       return bound[method]!(...args);
     },
   });
+}
+
+// After the index's own work changed the store, such as links a rule made: History records it and open pages hear of it.
+export function after_index_change(database: SqlDatabase): void {
+  record_history(database);
+  try {
+    assistant_host().announce();
+  } catch {
+    // No assistant host here, so no page to tell.
+  }
 }

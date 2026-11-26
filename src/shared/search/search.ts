@@ -10,6 +10,7 @@ import { items } from "../contexts/schema.ts";
 import { summaries_of } from "../conversations/records.ts";
 import { conversation_messages } from "../conversations/schema.ts";
 import { drizzle_of } from "../feature.ts";
+import { graph_entities } from "../graph/schema.ts";
 import { parse_sources } from "../privacy/sources.ts";
 import { context_tree, subtree } from "./documents.ts";
 import { find_embedder } from "./indexer.ts";
@@ -112,6 +113,8 @@ export async function search(database: SqlDatabase, index: SqlDatabase, query: s
   const message_ids = [...rows.values()].filter((row) => row.kind === "message").map((row) => row.ref_id);
   const conversation_of = new Map(message_ids.length > 0 ? drizzle_of(database).select({ id: conversation_messages.id, conversation_id: conversation_messages.conversation_id }).from(conversation_messages).where(inArray(conversation_messages.id, message_ids)).all().map((row) => [row.id, row.conversation_id]) : []);
   const conversations = new Map(summaries_of(database, [...new Set(conversation_of.values())]).map((summary) => [summary.id, summary]));
+  const entity_ids = [...rows.values()].filter((row) => row.kind === "entity").map((row) => row.ref_id);
+  const entity_kinds = new Map(entity_ids.length > 0 ? drizzle_of(database).select({ id: graph_entities.id, kind: graph_entities.kind }).from(graph_entities).where(inArray(graph_entities.id, entity_ids)).all().map((row) => [row.id, row.kind]) : []);
   const place = (id: string): HitPlace => ({ id, name: tree.get(id)?.name ?? id });
   return keys.flatMap((key): SearchHit[] => {
     const row = rows.get(key);
@@ -125,6 +128,7 @@ export async function search(database: SqlDatabase, index: SqlDatabase, query: s
     const item = item_rows.get(row.ref_id);
     const found_in = conversations.get(conversation_of.get(row.ref_id) ?? "");
     const conversation = found_in ? { id: found_in.id, title: found_in.title } : null;
-    return [{ kind: row.kind, id: row.ref_id, title: row.title, excerpt, collector: row.collector, item_kind: item?.kind ?? "", uri: item?.uri ?? found_in?.link ?? "", where, conversation, sources: parse_sources(row.sources), matched_by, score: scores.get(key)! }];
+    const item_kind = row.kind === "entity" ? (entity_kinds.get(row.ref_id) ?? "") : (item?.kind ?? "");
+    return [{ kind: row.kind, id: row.ref_id, title: row.title, excerpt, collector: row.collector, item_kind, uri: item?.uri ?? found_in?.link ?? "", where, conversation, sources: parse_sources(row.sources), matched_by, score: scores.get(key)! }];
   });
 }

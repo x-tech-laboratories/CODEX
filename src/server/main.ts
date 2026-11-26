@@ -13,7 +13,7 @@ import { sqlite_backups, take_staged_restore } from "@x-tech-laboratories/x-libs
 
 import { codex_backup_naming, read_schedule } from "../shared/backups.ts";
 import { keep_indexing, open_index } from "../shared/search/indexer.ts";
-import { needs_upgrade, open_store, sync_engine } from "../shared/store.ts";
+import { after_index_change, needs_upgrade, open_store, sync_engine } from "../shared/store.ts";
 import { build_app } from "./app.ts";
 import { load_collectors } from "./collectors/index.ts";
 import { keep_refreshing } from "./refreshing.ts";
@@ -88,7 +88,7 @@ const index_path = join(dirname(database_path), `${basename(database_path, extna
 const index = new DatabaseSync(index_path);
 index.exec("PRAGMA journal_mode = WAL");
 open_index(index);
-const indexing = keep_indexing({ database: () => database, index: () => index });
+const indexing = keep_indexing({ database: () => database, index: () => index, on_change: () => after_index_change(database) });
 
 // ── Server ───────────────────────────────────────────────────────────────────
 

@@ -8,6 +8,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { feed_key, item_id_of, type Feed, type FoundItem } from "../collectors/collector.ts";
 import type { ContextDetail, KeptItem, RefreshReport } from "../contexts/model.ts";
 import { contexts_feature } from "../contexts/store.ts";
+import type { NodeLinks } from "../graph/model.ts";
 import type { SearchHit } from "../search/model.ts";
 import { conversation_collector } from "../conversations/model.ts";
 import { merge_withheld, may_send, screen_entries, screen_sourced, type Screen, type Screened } from "./screen.ts";
@@ -84,6 +85,16 @@ function screen_hits(_database: SqlDatabase, screen: Screen, _args: unknown[], v
   return screen_sourced(screen, value as SearchHit[], (hit) => hit.sources, (hit) => (hit.kind === "item" ? hit.id : `${hit.kind}:${hit.id}`), (hit) => hit.kind);
 }
 
+// A node's links: the node itself withheld whole when its sources may not be sent, and each link when it or the node at
+// its other end carries a source that may not.
+function screen_node_links(_database: SqlDatabase, screen: Screen, _args: unknown[], value: unknown): Screened<unknown> {
+  const { node, links } = value as NodeLinks;
+  const own = screen_sourced(screen, [node], (each) => each.sources, (each) => `node:${each.key}`, () => "node");
+  if (own.value.length === 0) return { value: { node: { key: node.key, withheld: true }, links: [] }, sources: own.sources, ...merge_withheld([own]) };
+  const kept = screen_sourced(screen, links, (link) => [...link.sources, ...link.other.sources], (link) => `link:${link.id}`, () => "link");
+  return { value: { node, links: kept.value }, sources: new Set([...own.sources, ...kept.sources]), ...merge_withheld([own, kept]) };
+}
+
 // Every offered call that can answer with other apps' text; a test holds this to the calls the policy says bring it.
 export const result_screeners: Record<string, Screener> = {
   get_context: screen_context,
@@ -95,6 +106,7 @@ export const result_screeners: Record<string, Screener> = {
   refresh_items: screen_report,
   follow_feed: screen_report,
   search_index: screen_hits,
+  get_node_links: screen_node_links,
 };
 
 // The answer as the engine may read it. A call with no screener is held back whole from a hosted engine unless every

@@ -3,7 +3,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
-import { Layers, MessageSquare } from "lucide-react";
+import { Layers, MessageSquare, Shapes } from "lucide-react";
 import { Chip, Chips } from "@x-tech-laboratories/x-libs/web/react/badges";
 import { SearchBox } from "@x-tech-laboratories/x-libs/web/react/controls";
 import { AddIcon, Icon, type IconGlyph } from "@x-tech-laboratories/x-libs/web/react/icons";
@@ -21,7 +21,7 @@ import { look_of } from "./kinds.tsx";
 
 // ── Search ───────────────────────────────────────────────────────────────────
 
-const hit_icons: Record<Exclude<HitKind, "item">, IconGlyph> = { context: Layers, message: MessageSquare };
+const hit_icons: Record<Exclude<HitKind, "item">, IconGlyph> = { context: Layers, message: MessageSquare, entity: Shapes };
 
 function go_to(context_id: string): void {
   window.location.hash = context_href(context_id).slice(1);

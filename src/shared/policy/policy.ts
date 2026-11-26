@@ -7,6 +7,7 @@ import type { MethodSpec } from "@x-tech-laboratories/x-libs/api_spec";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { contexts_feature } from "../contexts/store.ts";
+import { graph_feature } from "../graph/store.ts";
 import { search_feature } from "../search/store.ts";
 import { is_read_only } from "../page_api.ts";
 import { settings_feature } from "../settings.ts";
@@ -20,11 +21,19 @@ export const policy_setting = "action_policy";
 // Contexts calls left out: moving data in or out whole, and how a page lays its cards out.
 const not_offered = new Set(["export_contexts", "import_contexts", "set_context_view", "set_card_places"]);
 
-// Only the contexts, items, collectors and feeds calls, and the search; never accounts, settings, plugins, sync,
-// backups, History, the conversations or this policy.
+// The graph's calls that only propose: what they make waits for the user, so they run without approval and are not
+// changes under the policy.
+export const proposing_calls: ReadonlySet<string> = new Set(["propose_entity", "propose_link"]);
+
+// Only the contexts, items, collectors and feeds calls, the search, what a node is linked to and the two proposing
+// calls; never accounts, settings, plugins, sync, backups, History, the conversations, this policy or any other change
+// to the graph.
 export const offered_api: Record<string, MethodSpec> = {
   ...Object.fromEntries(Object.entries(contexts_feature.api as Record<string, MethodSpec>).filter(([name]) => !not_offered.has(name))),
   search_index: search_feature.api.search_index as MethodSpec,
+  get_node_links: graph_feature.api.get_node_links as MethodSpec,
+  propose_entity: graph_feature.api.propose_entity as MethodSpec,
+  propose_link: graph_feature.api.propose_link as MethodSpec,
 };
 
 export function is_offered(method: string): boolean {
@@ -33,7 +42,7 @@ export function is_offered(method: string): boolean {
 
 // The offered calls that change something, each of which has a level.
 export function changing_calls(): string[] {
-  return Object.keys(offered_api).filter((method) => !is_read_only(method));
+  return Object.keys(offered_api).filter((method) => !is_read_only(method) && !proposing_calls.has(method));
 }
 
 // Reads that give back only what the user wrote in CODEX; every other offered read carries text from other apps, such

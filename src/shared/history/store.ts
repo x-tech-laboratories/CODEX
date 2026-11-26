@@ -1,4 +1,5 @@
-// Every change to a context, its name, notes and the items it holds, kept as versions through X-Libs history: any version can be restored, and a deleted item brought back. The versions sync.
+// Every change to a context, its name, notes and the items it holds, and to the graph's entities and links, kept as
+// versions through X-Libs history: any version can be restored, and a deleted item brought back. The versions sync.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -7,6 +8,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
 import { define_feature } from "../feature.ts";
+import { entity_history, link_history } from "../graph/history.ts";
 
 // ── Snapshots ────────────────────────────────────────────────────────────────
 
@@ -58,12 +60,15 @@ function apply_snapshot(database: SqlDatabase, levels: Level[], item_id: string,
 
 // ── Items ────────────────────────────────────────────────────────────────────
 
+// An item kept by levels of tables, or read and put back by its own functions, as the graph's are.
 interface ItemKind {
   kind: string;
   label: string;
   item_table: string;
   item_key?: string;
-  levels: Level[];
+  levels?: Level[];
+  read?: (database: SqlDatabase, item_id: string) => Snapshot | null;
+  apply?: (database: SqlDatabase, item_id: string, snapshot: Snapshot) => void;
   watches: HistoryWatch[];
   name_of: (snapshot: Snapshot) => string;
   summary: (snapshot: Snapshot) => string;
@@ -89,6 +94,8 @@ export const item_kinds: ItemKind[] = [
     name_of: (snapshot) => String(first(snapshot, "contexts")?.name ?? "Context"),
     summary: (snapshot) => count(snapshot, "context_items", "item"),
   },
+  entity_history,
+  link_history,
 ];
 
 const histories = new Map<string, History<Snapshot>>(
@@ -99,8 +106,8 @@ const histories = new Map<string, History<Snapshot>>(
       item_table: item.item_table,
       item_key: item.item_key,
       watches: item.watches,
-      read: (database, item_id) => read_snapshot(database, item.levels, item_id),
-      apply: (database, item_id, snapshot) => apply_snapshot(database, item.levels, item_id, snapshot),
+      read: item.read ?? ((database, item_id) => read_snapshot(database, item.levels ?? [], item_id)),
+      apply: item.apply ?? ((database, item_id, snapshot) => apply_snapshot(database, item.levels ?? [], item_id, snapshot)),
     }),
   ]),
 );
@@ -207,7 +214,7 @@ export const history_feature = define_feature({
       description: "Lists one item's versions, newest first: when each was made, whether it was created, edited, deleted or restored, and on this device or another.",
       params: [
         { name: "kind", schema: { type: "string", enum: kinds, description: "What the item is." } },
-        { name: "item_id", schema: { ...id_of("item"), description: "The context's id." } },
+        { name: "item_id", schema: { ...id_of("item"), description: "The context's, entity's or link's id." } },
       ],
     },
     list_recent_changes: {

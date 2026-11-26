@@ -40,6 +40,26 @@ writes a reply. A hosted embedder is never sent text from a source not marked **
 The index is a file of its own (`codex-index.db` in the desktop app's profile, `<database>-index.db` beside the
 server's), never synced and never in backups. It is safe to delete, and **Rebuild** builds it again from nothing.
 
+## The knowledge graph
+
+CODEX keeps a graph of what it holds: contexts, items (conversations among them) and entities, the people,
+organisations, topics and places found in them, joined by typed links (mentions, about, related to, part of, depends
+on, or same as for two entities that are one). Each link says who made it, where it came from, and when it was true; a
+link that stops being true is closed rather than deleted.
+
+- **Without a model:** an item whose text holds another kept item's address, or a `codex://` or other app's link to
+  something CODEX holds, is linked to it, and an X-Tasks subtask to its parent task. These links are made as the index
+  reads what changed, and accepted at once.
+- **By meaning:** with an embedder set up, items very close in meaning are proposed as related, a few per item.
+- **By the assistant:** **Suggest links** on a context starts a conversation asking the assistant to read its items
+  and propose entities and links, each with where it found it.
+- **Yours to decide:** a proposal waits until you accept or reject it, only from CODEX's own page; a rejection is
+  remembered, so the same link is never proposed again. Two entities found to be one are joined, never merged, and
+  the join can be undone.
+
+An excerpt of where a proposal came from is kept only when its source is marked **May be sent to a hosted engine**;
+otherwise the proposal names the item without quoting it.
+
 ## The assistant
 
 The **Assistant** pane on the right, opened and closed from the robot button in the top bar, holds conversations with
@@ -220,7 +240,7 @@ such as a Trilium token, are left out of what the API and MCP read.
 
 ## Not yet
 
-- **More of the assistant:** the Inbox, background jobs, the knowledge graph and blueprints, in the order
+- **More of the assistant:** the Inbox, background jobs, the knowledge graph's views and blueprints, in the order
   [docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) gives.
 - **Android.** Collectors need Node, so a phone app would show what is kept but search nothing; it waits for collectors
   that run on the server alone.
@@ -253,7 +273,7 @@ src/
   preload/     the desktop page's bridge
   web/         the React page: contexts/, assistant/, settings/, history/ and hosts/ for web and desktop
   shared/      the store every host runs: contexts/, collectors/, engines/, embedders/, conversations/, policy/, privacy/,
-               search/, history/ and settings
+               search/, graph/, history/ and settings
 thunderbird/   the Thunderbird add-on: its popup, options and manifest
 scripts/       seed.ts for sample data, icons.ts for the icons
 tests/         one *.test.ts per behaviour

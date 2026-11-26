@@ -69,7 +69,8 @@ function task_item(task: XTask): FoundItem {
     snippet: shorten(task.notes ?? ""),
     uri: `x-tasks://task/${task.id}`,
     status: task.is_done ? "done" : "",
-    detail: task.due_at ? { due: task.due_at } : {},
+    // The parent task, by its id, which the graph's rule makes a part_of link to.
+    detail: { ...(task.due_at ? { due: task.due_at } : {}), ...(task.parent_id ? { parent: task.parent_id } : {}) },
   };
 }
 

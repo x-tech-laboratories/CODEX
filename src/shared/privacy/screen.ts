@@ -164,7 +164,7 @@ export function taints(screen: Screen, sources: Iterable<string>): boolean {
 // What was withheld in plain words, such as "2 items and 1 message"; every one an item unless told otherwise.
 function withheld_words(total: number, kinds: Map<string, number> | undefined): string {
   const counted = [...(kinds ?? new Map([["item", total]]))].filter(([, count]) => count > 0);
-  const order = ["item", "message", "event", "feed", "followed feed", "group", "problem line"];
+  const order = ["item", "message", "event", "feed", "followed feed", "group", "problem line", "node", "link", "entity"];
   counted.sort(([first], [second]) => (order.indexOf(first) + 1 || order.length + 1) - (order.indexOf(second) + 1 || order.length + 1) || first.localeCompare(second));
   const words = counted.map(([kind, count]) => `${count} ${count === 1 ? kind : `${kind}s`}`);
   return words.length <= 1 ? (words[0] ?? `${total} items`) : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
