@@ -242,7 +242,7 @@ describe("a plugin tool that changes something", () => {
     const fake = fake_plugin();
     const fixture = start_fixture({ plugins: [fake.plugin] });
     const [entry] = await fixture.calls.list_plugin_tools();
-    expect(entry).toMatchObject({ key: "tests.fake-tools/fake", plugin_id: "tests.fake-tools", label: "Fake tools", trusted: false, after_private: false, problem: "" });
+    expect(entry).toMatchObject({ key: "tests.fake-tools/fake", plugin_id: "tests.fake-tools", label: "Fake tools", send_to_hosted: false, trusted: false, after_private: false, problem: "" });
     expect(entry!.tools.map((tool) => [tool.name, tool.level, tool.enabled, tool.small])).toEqual([
       ["fake__lookup", null, true, false],
       ["fake__post", "proposal", true, false],
@@ -252,7 +252,7 @@ describe("a plugin tool that changes something", () => {
     await expect(fixture.calls.set_plugin_tool_level("fake__nothing", "auto")).rejects.toThrow("There is no plugin tool named fake__nothing");
     await expect(fixture.calls.set_plugin_tool_level("fake__post", "always" as never)).rejects.toThrow("A level is one of");
     expect(() => fixture.calls.set_tool_plugin_mark("nokey", "trusted", true)).toThrow("Name the tool plugin by its key");
-    expect(() => fixture.calls.set_tool_plugin_mark("a/b", "loud" as never, true)).toThrow("A mark is one of trusted, after_private.");
+    expect(() => fixture.calls.set_tool_plugin_mark("a/b", "loud" as never, true)).toThrow("A mark is one of send_to_hosted, trusted, after_private.");
     expect(() => fixture.calls.set_plugin_tool_offer("a/b", "t", "loud" as never, true)).toThrow("An offer is enabled or small.");
   });
 });
@@ -261,7 +261,9 @@ describe("a plugin tool that sends outside", () => {
   it("runs while nothing private was read, and is kept in the hosted log without its arguments", async () => {
     const fake = fake_plugin();
     const fixture = start_fixture({ plugins: [fake.plugin] });
-    const { tools } = await tools_of(fixture);
+    // Marked for hosted engines, its own answers are not private.
+    fixture.calls.set_tool_plugin_mark("tests.fake-tools/fake", "send_to_hosted", true);
+    const { tools } = await tools_of(fixture, { screen: await open_screen(fixture.database, false) });
     expect((await tools.call("fake__ask_out", { q: "weather in a city" })).is_error).toBe(false);
     // Its own answer is not private, so a second use runs too.
     expect((await tools.call("fake__ask_out", { q: "again" })).is_error).toBe(false);
@@ -366,7 +368,7 @@ describe("running a tool", () => {
     own_words: true,
     enabled: true,
     small: false,
-    marks: { trusted: false, after_private: false },
+    marks: { send_to_hosted: false, trusted: false, after_private: false },
     call: () => new Promise(() => undefined),
   };
 

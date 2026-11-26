@@ -88,14 +88,14 @@ export const tools_feature = define_feature({
   api: {
     list_plugin_tools: {
       description:
-        "Lists each tool plugin running, such as Web, with its two marks (trusted: what its tools give back does not make the assistant's changes wait; after_private: its tools that send their arguments outside this machine may still be used after the conversation read a source not marked for hosted engines), and each of its tools: the name the assistant sees, what it does, whether it changes something or sends its arguments outside, whether it is offered, whether small models are offered it too, and the level of one that changes something.",
+        "Lists each tool plugin running, such as Web, with its three marks (send_to_hosted: what its tools give back may be sent to a hosted engine, which without it is not offered them, on until set for a plugin whose tools all send their arguments outside this machine; trusted: what its tools give back does not make the assistant's changes wait; after_private: its tools that send their arguments outside this machine may still be used after the conversation read a source not marked for hosted engines), and each of its tools: the name the assistant sees, what it does, whether it changes something or sends its arguments outside, whether it is offered, whether small models are offered it too, and the level of one that changes something.",
       params: [],
     },
     set_tool_plugin_mark: {
-      description: "Turns one of a tool plugin's two marks on or off. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
+      description: "Turns one of a tool plugin's three marks on or off. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         { name: "key", schema: key_schema },
-        { name: "mark", schema: { type: "string", enum: tool_mark_names, description: "trusted or after_private." } },
+        { name: "mark", schema: { type: "string", enum: tool_mark_names, description: "send_to_hosted, trusted or after_private." } },
         { name: "on", schema: { type: "boolean", description: "True to turn it on, false to turn it off." } },
       ],
     },

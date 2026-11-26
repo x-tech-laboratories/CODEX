@@ -20,8 +20,19 @@ export function stored_tool_plugins(database: SqlDatabase): Record<string, ToolP
   return saved as Record<string, ToolPluginRecord>;
 }
 
-export function marks_of(record: ToolPluginRecord | undefined): ToolMarks {
-  return { trusted: record?.trusted === true, after_private: record?.after_private === true };
+// Whether a plugin's results may go to a hosted engine before the user says: only when it has tools and every one
+// sends what it is given outside this computer, as the Web plugin's do, so what they read is outside already.
+export function sends_all_outside(tools: Pick<PluginTool, "sends_outside">[]): boolean {
+  return tools.length > 0 && tools.every((tool) => tool.sends_outside);
+}
+
+// The marks the user set, and send_to_hosted from the plugin's tools where the user has not set it.
+export function marks_of(record: ToolPluginRecord | undefined, tools: Pick<PluginTool, "sends_outside">[] = []): ToolMarks {
+  return {
+    send_to_hosted: typeof record?.send_to_hosted === "boolean" ? record.send_to_hosted : sends_all_outside(tools),
+    trusted: record?.trusted === true,
+    after_private: record?.after_private === true,
+  };
 }
 
 // ── Names ────────────────────────────────────────────────────────────────────
@@ -110,8 +121,7 @@ export async function open_tool_plugins(database: SqlDatabase, host?: PluginHost
     const value: ToolPlugin = provided.value;
     const key = `${provided.plugin_id}/${provided.id}`;
     const record = stored[key];
-    const marks = marks_of(record);
-    const plugin: OpenedPlugin = { key, plugin_id: provided.plugin_id, label: value.label, marks, tools: [], problem: "" };
+    const plugin: OpenedPlugin = { key, plugin_id: provided.plugin_id, label: value.label, marks: marks_of(record), tools: [], problem: "" };
     plugins.push(plugin);
     const namespace = namespace_of(provided.id);
     let listed: unknown;
@@ -121,8 +131,10 @@ export async function open_tool_plugins(database: SqlDatabase, host?: PluginHost
       plugin.problem = error instanceof Error ? error.message : String(error);
       continue;
     }
-    for (const tool of (Array.isArray(listed) ? listed : []).map(checked_tool)) {
-      if (!tool) continue;
+    const checked = (Array.isArray(listed) ? listed : []).map(checked_tool).filter((tool): tool is PluginTool => tool !== null);
+    const marks = marks_of(record, checked);
+    plugin.marks = marks;
+    for (const tool of checked) {
       const name = tool_name_of(namespace, tool.name);
       // Two plugins under one namespace, or two tools made alike, keep the first.
       if (taken.has(name)) continue;
