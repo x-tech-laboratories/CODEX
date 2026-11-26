@@ -6,6 +6,7 @@
 import { confirm_dialog, open_dialog } from "@x-tech-laboratories/x-libs/web/react/dialog";
 import { pick_list_dialog, type PickableList } from "@x-tech-laboratories/x-libs/web/react/list_picker";
 
+import { blueprint_collector } from "../../shared/blueprints/model.ts";
 import { conversation_collector } from "../../shared/conversations/model.ts";
 import { attempt, calls, succeeds } from "../api.ts";
 import { NameDialog } from "./actions.tsx";
@@ -88,11 +89,23 @@ export function delete_conversation(conversation: { id: string; title: string },
   });
 }
 
-// Takes an item out of a context; a conversation this is the last context of is deleted, once the user agrees.
+// Takes an item out of a context; a conversation or blueprint this is the last context of is deleted, once the user agrees.
 export function remove_from_context(context_id: string, item: { id: string; title: string; collector: string; source_id: string }, other_holders: number): void {
   if (item.collector === conversation_collector && other_holders === 0) {
     delete_conversation({ id: item.source_id, title: item.title });
     return;
   }
-  void attempt(() => calls().remove_item(context_id, item.id), item.collector === conversation_collector ? "Removed; it stays in its other contexts." : "Removed; the item stays in its app.");
+  if (item.collector === blueprint_collector && other_holders === 0) {
+    confirm_dialog({
+      title: `Delete ${item.title}?`,
+      message: "This is the last context it applies in; taking it out deletes it, as it would otherwise apply everywhere. History keeps its versions.",
+      confirm_label: "Delete",
+      busy_label: "Deleting…",
+      danger: true,
+      run: async () => void (await succeeds(() => calls().remove_blueprint(item.source_id))),
+    });
+    return;
+  }
+  const own = item.collector === conversation_collector || item.collector === blueprint_collector;
+  void attempt(() => calls().remove_item(context_id, item.id), own ? "Removed; it stays in its other contexts." : "Removed; the item stays in its app.");
 }

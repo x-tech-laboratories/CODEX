@@ -7,7 +7,9 @@ import { and, eq, inArray, ne } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { context_items, contexts, items } from "../contexts/schema.ts";
+import { blueprint_collector } from "../blueprints/model.ts";
 import { conversation_collector } from "../conversations/model.ts";
+import { item_sources } from "../privacy/screen.ts";
 import { conversation_messages } from "../conversations/schema.ts";
 import { drizzle_of } from "../feature.ts";
 import { app_link } from "../links.ts";
@@ -135,9 +137,11 @@ export function read_nodes(database: SqlDatabase, keys: Iterable<string>, joins:
   }
   if (wanted.item.length > 0) {
     for (const row of db.select().from(items).where(inArray(items.id, wanted.item)).all()) {
-      const is_own = row.collector === conversation_collector;
+      const is_own = row.collector === conversation_collector || row.collector === blueprint_collector;
       if (is_own && row.status === "missing") continue;
-      found.set(node_key("item", row.id), { ...blank_node("item", row.id), type: row.kind, label: row.title, uri: row.uri, state: row.status, sources: is_own ? [] : [row.collector] });
+      // A blueprint written during a run carries what that run read until the user makes it theirs.
+      const sources = row.collector === blueprint_collector ? item_sources({ collector: row.collector, detail: parsed_detail(row.detail) }).slice(1) : is_own ? [] : [row.collector];
+      found.set(node_key("item", row.id), { ...blank_node("item", row.id), type: row.kind, label: row.title, uri: row.uri, state: row.status, sources });
     }
   }
   if (wanted.entity.length > 0) {
@@ -191,11 +195,20 @@ export function resolve_node(database: SqlDatabase, text: string): string {
   return key;
 }
 
-// The contexts, the items they hold and the conversations still kept: what the whole graph draws besides entities.
+// The contexts, the items they hold and the conversations and blueprints still kept: what the whole graph draws besides entities.
+function parsed_detail(text: string): Record<string, string> {
+  try {
+    const value: unknown = JSON.parse(text);
+    return value && typeof value === "object" ? (value as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export function held_item_ids(database: SqlDatabase): Set<string> {
   const db = drizzle_of(database);
   const held = new Set(db.selectDistinct({ item_id: context_items.item_id }).from(context_items).all().map((row) => row.item_id));
-  for (const row of db.select({ id: items.id }).from(items).where(and(eq(items.collector, conversation_collector), ne(items.status, "missing"))).all()) held.add(row.id);
+  for (const row of db.select({ id: items.id }).from(items).where(and(inArray(items.collector, [conversation_collector, blueprint_collector]), ne(items.status, "missing"))).all()) held.add(row.id);
   return held;
 }
 

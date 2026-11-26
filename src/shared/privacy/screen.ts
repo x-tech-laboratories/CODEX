@@ -8,6 +8,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import type { Collector } from "../collectors/collector.ts";
 import { open_plugin_host } from "../collectors/host.ts";
+import { blueprint_collector } from "../blueprints/model.ts";
 import { conversation_collector } from "../conversations/model.ts";
 import { settings_feature } from "../settings.ts";
 import { mark_names, unmarked, type SourceCount, type SourceMark } from "./model.ts";
@@ -50,13 +51,14 @@ export interface Screen {
   withheld: Map<string, Set<string>>;
 }
 
-// CODEX's own conversations as items: their titles are the user's words, and a run is never shown their exchanges.
+// CODEX's own conversations and blueprints as items: their titles are the user's words, a run is never shown a
+// conversation's exchanges, and a proposed blueprint carries the sources its run read as well (`item_sources`).
 const own_mark: SourceMark = { send_to_hosted: true, trusted: true };
 
 function make_screen(is_hosted: boolean, marks: Map<string, SourceMark>, labels: Map<string, string>): Screen {
   return {
     is_hosted,
-    mark_of: (collector) => (collector === conversation_collector ? own_mark : (marks.get(collector) ?? unmarked)),
+    mark_of: (collector) => (collector === conversation_collector || collector === blueprint_collector ? own_mark : (marks.get(collector) ?? unmarked)),
     label_of: (collector) => (collector === unrecorded_source ? unrecorded_label : (labels.get(collector) ?? collector)),
     collectors: [...labels.keys()],
     included: new Map(),
@@ -75,6 +77,17 @@ export async function open_screen(database: SqlDatabase, is_hosted: boolean): Pr
   const collectors = (await open_plugin_host(database)).providers("collector");
   const marks = new Map(collectors.map((collector) => [collector.id, stored[mark_key_of(collector)] ?? unmarked]));
   return make_screen(is_hosted, marks, new Map(collectors.map(({ id, value }) => [id, value.label])));
+}
+
+// The sources a kept item carries: its collector, and for a blueprint written during a run, what that run had read.
+export function item_sources(item: { collector: string; detail: Record<string, string> }): string[] {
+  if (item.collector !== blueprint_collector || !item.detail.sources) return [item.collector];
+  try {
+    const sources: unknown = JSON.parse(item.detail.sources);
+    return Array.isArray(sources) ? [item.collector, ...sources.map(String)] : [item.collector, "*"];
+  } catch {
+    return [item.collector, "*"];
+  }
 }
 
 export function may_send(screen: Screen, collector: string): boolean {
@@ -171,7 +184,7 @@ export function taints(screen: Screen, sources: Iterable<string>): boolean {
 // What was withheld in plain words, such as "2 items and 1 message"; every one an item unless told otherwise.
 function withheld_words(total: number, kinds: Map<string, number> | undefined): string {
   const counted = [...(kinds ?? new Map([["item", total]]))].filter(([, count]) => count > 0);
-  const order = ["item", "message", "event", "feed", "followed feed", "group", "problem line", "node", "link", "entity"];
+  const order = ["item", "message", "event", "feed", "followed feed", "group", "problem line", "node", "link", "entity", "blueprint", "blueprint change"];
   counted.sort(([first], [second]) => (order.indexOf(first) + 1 || order.length + 1) - (order.indexOf(second) + 1 || order.length + 1) || first.localeCompare(second));
   const words = counted.map(([kind, count]) => `${count} ${count === 1 ? kind : `${kind}s`}`);
   return words.length <= 1 ? (words[0] ?? `${total} items`) : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;

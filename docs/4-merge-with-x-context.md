@@ -113,6 +113,13 @@ A blueprint is a workflow the user has taught. When the user and the assistant w
 - **Recalled at the start of a task** by matching the request against each blueprint's description.
 - **The user's to edit:** opened in the workspace like any note, versioned in History, attached to a context or global.
 
+*Built 2026-11-26 (`src/shared/blueprints/`, described in doc 1): blueprints are items of kind `blueprint`, written by
+the user (active at once) or proposed by an engine through `propose_blueprint` and `propose_blueprint_change` (and by a
+program through a token or MCP), accepted or rejected only at the page after reading the whole text or the change's
+diff; **Save as blueprint** in the pane asks for one. CODEX recalls them itself at the start of each run, by words and,
+with an embedder, by meaning, at most three in 4,000 characters, and puts them in the instructions unfenced, with a
+notice naming each.*
+
 ## Mood and curiosity
 
 RoboBuddy is the face. The mood is a small state the user can see and switch off.
@@ -179,6 +186,8 @@ removed context back with its links):
   with the context, but an item row a change made stays, as items always do.
 - A change applied while another write runs at the same moment (an index pass or sync on the desktop) could count that
   write's context versions as its own; changes are synchronous, so only a slow call, such as following a feed, can.
+- No real model has written, amended or followed a blueprint; a scripted fake engine has. Recall by words is a rule of
+  shared content words with an English stop list, so a blueprint written in another language matches by meaning only.
 - Search's meaning rule (`meaning_floor`) was set on one real run's scores, with the unrelated documents' scores filled
   in from the range it gave; a run with a real model should check it on a larger set.
 

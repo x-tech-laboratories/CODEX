@@ -328,7 +328,7 @@ stored messages never change, so an over-long message cannot keep a conversation
 
 Tools offered: below 16,384 tokens of context, or when the plugin's **Tools offered** is **Core set**, the engine offers
 the core set (`core_tools` in `policy.ts`: the four reads `list_contexts`, `get_context`, `get_item`, `search_index`,
-seven changes and the graph's two proposing calls, each with a one-line description and its fields' descriptions left
+seven changes, the graph's two proposing calls, `get_blueprint` and the blueprints' two proposing calls, each with a one-line description and its fields' descriptions left
 out); otherwise every offered call.
 The core set is the same calls under the same policy, and a test holds it to a written list as it does the whole set.
 
@@ -484,6 +484,59 @@ in its row), Action policy (each change's level, the two riskier levels badged) 
 Each collector's row under Plugins holds its two marks, explained in plain words (`src/web/privacy/`), and the pane's
 head badges the engine local or hosted.
 
+### Blueprints
+
+Built 2026-11-26 on doc 4's "Blueprints". `src/shared/blueprints/` keeps three synced tables (`schema.ts`):
+`blueprints` (a title, `applies_when`, a Markdown `body`, a `status` of `proposed`, `active` or `retired`, `made_by`
+`user`, `engine` or `program` with the engine and model, the `sources` the run that wrote it had read, and the
+conversation it was proposed in), `blueprint_changes` (a proposed new version with its reason, `waiting`, `accepted`
+or `rejected`) and `blueprint_uses` (each run given it, kept apart so a use leaves no version in History).
+
+A blueprint is an item as a conversation is (`records.ts`): `items` holds `blueprint:<id>` from the internal
+`blueprint` collector (`codex.blueprints`, `collector.ts`, never listed under Plugins and without marks), kind
+`blueprint`, its title, `applies_when` as the snippet, `codex://blueprint/<id>` as where it opens, its status when not
+active, and in its detail the uses and, for one carrying sources, those sources. Its memberships say where it applies:
+a context and those inside it, or, with none, everywhere. `remove_item` refuses to take it out of its last context,
+which would widen it to everywhere; `place_blueprint` does that on purpose, and a removed context deletes the
+blueprints no other context holds. History keeps its row and memberships (`history.ts`), and the item calls answer
+for it as kind `blueprint`.
+
+Calls: `list_blueprints(context_id?, status?)` (all, those applying everywhere for null, or those applying in a context:
+its own, the contexts above it and the global ones), `get_blueprint`, `list_blueprint_proposals(conversation_id?)` (new
+ones and changes, each with its whole text and a change with the blueprint as it reads), `add_blueprint`,
+`change_blueprint`, `retire_blueprint`, `remove_blueprint`, `save_as_blueprint(conversation_id)` (a message in that
+conversation asking the engine to propose one), and the page-only `restore_blueprint`, `place_blueprint`,
+`accept_blueprint_proposals` and `reject_blueprint_proposals`. The user's `add_blueprint` and `change_blueprint` hold
+at once and make a proposed blueprint active; from a token or MCP they only propose, made by a program. Accepting
+puts the text in place and clears its `sources`, so it is the user's own; rejecting deletes a proposed blueprint
+(History keeps it) or sets a change aside.
+
+Engines are offered `list_blueprints`, `get_blueprint`, `propose_blueprint` and `propose_blueprint_change`; the core
+set takes the last three. The proposing calls are in `proposing_calls`, so they run without approval and carry the
+engine, model, sources read and conversation, as the graph's do. Both reads are screened (`privacy/results.ts`): a
+blueprint or change carrying a source not marked for hosted engines is withheld from one, and an active blueprint
+carries no source, so it is neither fenced nor tainting. Kept items are screened by `item_sources`, which gives a
+blueprint's item its sources as well as its collector.
+
+Recall (`recall.ts`), at the start of every run, by CODEX before the engine is called: the active blueprints applying
+in the open context are matched against the user's message by words (two content words shared with the title and
+"applies when", stop words left out and endings such as -ing taken off; one when the message or the description has
+hardly any more) and, through `meaning_matches` in `search.ts`, by meaning (each blueprint's vectors in the index,
+judged by `meaning_floor` against every document's score for the message), fused by reciprocal rank, at most three and
+4,000 characters, the last cut short with a line naming `get_blueprint`. Their whole text goes after the instructions
+under "Blueprints to follow", unfenced, asking the engine to follow the steps in order and to say which it follows;
+the run keeps a notice per blueprint recalled and a use each. The index holds each blueprint as an item document of
+its own (title, applies when, body, notes), held in its contexts or none, with its sources. The instructions also
+ask the engine to offer to save or amend a blueprint when the user has just taught it rules or an order of steps.
+
+The page (`src/web/blueprints/`): the **Blueprints** page (`#/blueprints`) with what waits, those that apply
+everywhere and those in contexts, and **New blueprint**; a blueprint in the workspace (`#/blueprint/<id>`) with its
+fields (the title, "applies when" and the body in X-Libs' `RichText`), Save (Save and make active for a proposed one),
+where it applies, Retire or Bring back, Delete and History; and `BlueprintProposalCard`, the whole text of a new one or
+a line diff (`diff.ts`) of a change, with Accept and Reject, shown on both pages and under its conversation in the
+pane, whose ⋮ menu has **Save as blueprint**. A context's menu has **New blueprint…**, and its items list blueprints
+with their own icon.
+
 ### Still to come
 
-The Inbox and background queue, jobs and blueprints, in doc 4's order.
+The Inbox and background queue, and jobs, in doc 4's order.

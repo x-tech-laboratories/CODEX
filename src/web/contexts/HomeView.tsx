@@ -11,6 +11,7 @@ import { Card, Cards, PageHeading, Section } from "@x-tech-laboratories/x-libs/w
 import { Empty, Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 
 import type { ContextSummary } from "../../shared/contexts/model.ts";
+import { blueprint_collector, blueprint_of_item, blueprint_route } from "../../shared/blueprints/model.ts";
 import { conversation_of_item, conversation_route } from "../../shared/conversations/model.ts";
 import type { HitKind, SearchHit } from "../../shared/search/model.ts";
 import { open_conversation } from "../assistant/selection.ts";
@@ -119,7 +120,9 @@ function Hit({ hit }: { hit: SearchHit }) {
   const icon = hit.kind === "item" ? look_of(hit.item_kind).icon : hit_icons[hit.kind];
   const where = hit.kind === "message" && hit.where.length === 0 ? [{ id: "", name: "In no context" }] : hit.where;
   const title =
-    hit.kind === "item" && hit.uri ? (
+    hit.kind === "item" && hit.collector === blueprint_collector ? (
+      <a href={blueprint_route(blueprint_of_item(hit.id) ?? "")}>{hit.title}</a>
+    ) : hit.kind === "item" && hit.uri ? (
       <a href={hit.uri} target="_blank" rel="noreferrer">
         {hit.title}
       </a>

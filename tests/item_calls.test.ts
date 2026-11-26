@@ -34,6 +34,7 @@ describe("the item calls", () => {
       { kind: "context", label: "Context" },
       { kind: "conversation", label: "Conversation" },
       { kind: "entity", label: "Entity" },
+      { kind: "blueprint", label: "Blueprint" },
     ]);
   });
 
@@ -166,7 +167,7 @@ describe("the item calls on the server", () => {
     expect(by_name.statusCode).toBe(200);
     expect(by_name.json<{ title: string }[]>().map((item) => item.title)).toEqual(["Garden"]);
     const kinds = await app.inject({ method: "POST", url: "/api/call/list_item_kinds", headers: reader, payload: [] });
-    expect(kinds.json<unknown[]>()).toHaveLength(3);
+    expect(kinds.json<unknown[]>()).toHaveLength(4);
     const changes = await app.inject({ method: "POST", url: "/api/call/list_item_changes", headers: reader, payload: { since: null, limit: 5 } });
     expect(changes.json<unknown[]>()).toHaveLength(1);
     expect((await app.inject({ method: "POST", url: "/api/call/add_context", headers: reader, payload: ["Nope"] })).statusCode).toBe(403);

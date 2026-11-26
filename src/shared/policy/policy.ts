@@ -6,6 +6,7 @@
 import type { MethodSpec } from "@x-tech-laboratories/x-libs/api_spec";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
+import { blueprints_feature } from "../blueprints/store.ts";
 import { contexts_feature } from "../contexts/store.ts";
 import { graph_feature } from "../graph/store.ts";
 import { search_feature } from "../search/store.ts";
@@ -21,23 +22,28 @@ export const policy_setting = "action_policy";
 // Contexts calls left out: moving data in or out whole, and how a page lays its cards out.
 const not_offered = new Set(["export_contexts", "import_contexts", "set_context_view", "set_card_places"]);
 
-// The graph's calls that only propose: what they make waits for the user, so they run without approval and are not
-// changes under the policy.
-export const proposing_calls: ReadonlySet<string> = new Set(["propose_entity", "propose_link"]);
+// The graph's and the blueprints' calls that only propose: what they make waits for the user, so they run without
+// approval and are not changes under the policy.
+export const proposing_calls: ReadonlySet<string> = new Set(["propose_entity", "propose_link", "propose_blueprint", "propose_blueprint_change"]);
 
-// Only the contexts, items, collectors and feeds calls, the search, what a node is linked to and the two proposing
-// calls; never accounts, settings, plugins, sync, backups, History, the conversations, this policy or any other change
-// to the graph.
+// Only the contexts, items, collectors and feeds calls, the search, what a node is linked to, the blueprints' reads and
+// the four proposing calls; never accounts, settings, plugins, sync, backups, History, the conversations, this policy,
+// any other change to the graph or to a blueprint.
 export const offered_api: Record<string, MethodSpec> = {
   ...Object.fromEntries(Object.entries(contexts_feature.api as Record<string, MethodSpec>).filter(([name]) => !not_offered.has(name))),
   search_index: search_feature.api.search_index as MethodSpec,
   get_node_links: graph_feature.api.get_node_links as MethodSpec,
   propose_entity: graph_feature.api.propose_entity as MethodSpec,
   propose_link: graph_feature.api.propose_link as MethodSpec,
+  list_blueprints: blueprints_feature.api.list_blueprints as MethodSpec,
+  get_blueprint: blueprints_feature.api.get_blueprint as MethodSpec,
+  propose_blueprint: blueprints_feature.api.propose_blueprint as MethodSpec,
+  propose_blueprint_change: blueprints_feature.api.propose_blueprint_change as MethodSpec,
 };
 
-// The core set offered to a model with a small context, each briefly described: the reads, the most-used changes and
-// the graph's two proposing calls, so Suggest links works on a small model too.
+// The core set offered to a model with a small context, each briefly described: the reads, the most-used changes, the
+// graph's two proposing calls, so Suggest links works on a small model too, and reading one blueprint whole and the
+// two blueprint proposing calls, so a small model can save and amend what the user teaches it; recall lists the rest.
 export const core_tools: Record<string, string> = {
   list_contexts: "Lists the contexts as a tree, with their ids.",
   get_context: "Gets one context: its notes and the items it holds.",
@@ -52,6 +58,9 @@ export const core_tools: Record<string, string> = {
   remove_item: "Takes an item out of a context; it stays in its own app.",
   propose_entity: "Proposes a person, organisation, topic or place found in the items.",
   propose_link: "Proposes a typed link between two contexts, items or entities.",
+  get_blueprint: "Gets one blueprint whole.",
+  propose_blueprint: "Proposes a blueprint: the rules and steps of a task the user taught you.",
+  propose_blueprint_change: "Proposes a new version of a blueprint, with why.",
 };
 
 export function is_offered(method: string): boolean {

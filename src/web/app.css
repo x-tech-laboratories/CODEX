@@ -444,3 +444,23 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* A proposed change to a blueprint: its body's lines, each kept, added or taken away, scrolling sideways when wide. */
+.blueprint-diff {
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.blueprint-body {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+/* The blueprint's fields stacked, its rich text field as wide as the page. */
+.blueprint-editor .rich-text,
+.blueprint-editor textarea,
+.blueprint-editor input {
+  width: 100%;
+}

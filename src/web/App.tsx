@@ -14,6 +14,8 @@ import { use_watch } from "@x-tech-laboratories/x-libs/web/react/watch";
 
 import { attempt, calls, data_watch, page } from "./api.ts";
 import { AssistantPane } from "./assistant/AssistantPane.tsx";
+import { BlueprintsPage } from "./blueprints/BlueprintsPage.tsx";
+import { BlueprintView } from "./blueprints/BlueprintView.tsx";
 import { open_conversation, wanted_watch } from "./assistant/selection.ts";
 import { ContextTree } from "./contexts/ContextTree.tsx";
 import { ContextView } from "./contexts/ContextView.tsx";
@@ -66,10 +68,10 @@ function SignedInApp() {
 function Pages({ me, on_sign_out }: { me: Me | null; on_sign_out?: () => void }) {
   const route = use_route();
   const [named_section = "overview", ...rest] = route.parts;
-  const is_own = named_section === "settings" || named_section === "history" || named_section === "graph" || named_section === "context" || (me !== null && own_sections.includes(named_section));
+  const is_own = named_section === "settings" || named_section === "history" || named_section === "graph" || named_section === "context" || named_section === "blueprints" || named_section === "blueprint" || (me !== null && own_sections.includes(named_section));
   const section = is_own ? named_section : "overview";
   const context_id = section === "context" ? (rest[0] ?? null) : null;
-  const own_labels: Record<string, string> = { settings: "Settings", history: "History", graph: "Graph", account: "Your account", users: "Users", context: "Context" };
+  const own_labels: Record<string, string> = { settings: "Settings", history: "History", graph: "Graph", blueprints: "Blueprints", blueprint: "Blueprint", account: "Your account", users: "Users", context: "Context" };
   const label = own_labels[section] ?? "Contexts";
   const view_key = route.parts.join("/");
   const is_admin = me !== null && me.role === me.roles.at(-1);
@@ -103,6 +105,8 @@ function Pages({ me, on_sign_out }: { me: Me | null; on_sign_out?: () => void })
     if (me && section === "account") return <AccountView client={accounts} />;
     if (me && section === "users") return <UsersView client={accounts} me={me} />;
     if (section === "history") return <HistoryView />;
+    if (section === "blueprints") return <BlueprintsPage />;
+    if (section === "blueprint" && rest[0]) return <BlueprintView id={decodeURIComponent(rest[0])} />;
     if (section === "graph") return <GraphPage focus={rest[0] ? decodeURIComponent(rest[0]) : null} />;
     return section === "settings" ? <SettingsView /> : <HomeView />;
   };
@@ -112,7 +116,7 @@ function Pages({ me, on_sign_out }: { me: Me | null; on_sign_out?: () => void })
       brand="CODEX"
       brand_icon={brand_icon}
       views={sidebar_views}
-      active={section}
+      active={section === "blueprint" ? "blueprints" : section}
       sidebar={<ContextTree active_id={context_id} />}
       sidebar_foot={<SidebarFoot section={section} show_users={is_admin} />}
       theme={theme}

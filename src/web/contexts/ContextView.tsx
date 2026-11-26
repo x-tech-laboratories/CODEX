@@ -18,6 +18,7 @@ import { Age } from "@x-tech-laboratories/x-libs/web/react/time";
 import type { MenuItem } from "@x-tech-laboratories/x-libs/web/menus";
 
 import type { CardPlace, ContextDetail, ContextItem, ContextSummary, ContextView as ViewName } from "../../shared/contexts/model.ts";
+import { blueprint_collector, blueprint_route } from "../../shared/blueprints/model.ts";
 import { conversation_collector, conversation_route } from "../../shared/conversations/model.ts";
 import { open_conversation } from "../assistant/selection.ts";
 import { attempt, calls, succeeds, use_data } from "../api.ts";
@@ -101,6 +102,10 @@ function is_conversation(item: ContextItem): boolean {
   return item.collector === conversation_collector;
 }
 
+function is_blueprint(item: ContextItem): boolean {
+  return item.collector === blueprint_collector && item.status !== "missing";
+}
+
 function open_item_conversation(context_id: string, item: ContextItem): void {
   open_conversation(item.source_id, holders_of(context_id, item), context_id);
 }
@@ -115,12 +120,13 @@ function item_menu(context_id: string, item: ContextItem): MenuItem[] {
           { label: "Rename…", run: () => rename_conversation(conversation) },
         ]
       : []),
+    ...(is_blueprint(item) ? [{ label: "Open", run: () => (window.location.hash = blueprint_route(item.source_id).slice(1)) }] : []),
     { label: item.note ? "Edit note…" : "Add note…", run: () => edit_note(context_id, item) },
     { label: "Move to…", disabled: item.status === "missing" && is_conversation(item), run: () => move_to_context(item, context_id, holders_of(context_id, item)) },
     { label: "Also add to…", disabled: item.status === "missing" && is_conversation(item), run: () => add_to_contexts(item, holders_of(context_id, item)) },
     { label: "Copy address", disabled: !item.uri, run: () => void navigator.clipboard.writeText(item.uri).then(() => toast("Address copied.")) },
     {
-      label: is_conversation(item) && is_last && item.status !== "missing" ? "Delete conversation…" : "Remove from context",
+      label: is_conversation(item) && is_last && item.status !== "missing" ? "Delete conversation…" : is_blueprint(item) && is_last ? "Delete blueprint…" : "Remove from context",
       danger: true,
       separator_before: true,
       run: () => (item.status === "missing" ? void succeeds(() => calls().remove_item(context_id, item.id), "Removed.") : remove_from_context(context_id, item, item.also_in.length)),
@@ -143,7 +149,8 @@ function ItemTitle({ context_id, item }: { context_id: string; item: ContextItem
       </a>
     );
   }
-  return item.uri && !is_conversation(item) ? (
+  if (is_blueprint(item)) return <a href={blueprint_route(item.source_id)}>{item.title}</a>;
+  return item.uri && !is_conversation(item) && item.collector !== blueprint_collector ? (
     <a href={item.uri} target="_blank" rel="noreferrer">
       {item.title}
     </a>
@@ -204,7 +211,12 @@ function ItemActions({ context_id, item }: { context_id: string; item: ContextIt
           <Icon icon={ExternalLinkIcon} />
         </button>
       )}
-      {item.uri && !is_conversation(item) && (
+      {is_blueprint(item) && (
+        <a className="button" href={blueprint_route(item.source_id)} aria-label={`Open ${item.title}`} title="Open the blueprint">
+          <Icon icon={ExternalLinkIcon} />
+        </a>
+      )}
+      {item.uri && !is_conversation(item) && item.collector !== blueprint_collector && (
         <a className="button" href={item.uri} target="_blank" rel="noreferrer" aria-label={`Open ${item.title}`} title="Open in its app">
           <Icon icon={ExternalLinkIcon} />
         </a>

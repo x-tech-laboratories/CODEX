@@ -126,8 +126,8 @@ name and its context size. The model has to support tool calls to read or change
 `num_ctx`); CODEX fits every request into it. It counts its instructions, the tools as sent and a reply, estimates
 tokens cautiously at first and more closely once the server has reported what a request cost, and when the
 conversation is too long it leaves out the oldest messages, then shortens the middle of your newest one for that
-request alone, saying so in the pane. Below 16,384 tokens of context it offers the model a core set of eleven tools
-(the reads and the most-used changes, briefly described) instead of all of them, which keeps the prompt to about a
+request alone, saying so in the pane. Below 16,384 tokens of context it offers the model a core set of sixteen tools
+(the reads, the most-used changes and the proposing calls, briefly described) instead of all of them, which keeps the prompt to about a
 quarter; **Tools offered** in the engine's settings chooses **Automatic**, **Core set** or **All tools**. Expect a
 4B model on a CPU at 8,192 tokens to spend a minute or more reading the prompt before its first word, longer on a
 cold start, and a reasoning model to think for a while first, which the pane shows as it goes. If the context is too
@@ -146,6 +146,23 @@ History and is noted in the conversation, and only you can do it, from CODEX's o
 of, such as a refresh, says on its row that it cannot be undone. Once a reply
 has read text that came from another app, such as an item's title or a search, every change it asks for waits for you,
 whatever its level, since that text could carry someone else's instructions.
+
+**Blueprints** are the workflows you teach it. When you work through a task together, such as sorting mail, and give
+it rules and an order of steps, ask it to save them (or pick **Save as blueprint** from the pane's ⋮ menu): it proposes
+a blueprint, a title, a sentence saying when it applies, and the rules and steps in Markdown. A proposed blueprint, or
+a proposed change to one, shows as a card in its conversation and on the **Blueprints** page with its whole text, or,
+for a change, what it adds and takes away, and does nothing until you **Accept** it; only you can, from CODEX's own
+page. Each time you send a message, CODEX itself matches it against the active blueprints that apply where you are
+(the open context, the contexts above it, and those that apply everywhere): by its words, and by meaning too once an
+embedder is set up, picking only those that stand out, at most three and about 4,000 characters. The ones that match
+are put in the assistant's instructions with a note above the reply saying which were recalled, and the assistant is
+asked to say which it follows. A blueprint is an item: it lists in its context with its own icon, moves like any other
+item, opens in the workspace at `codex://blueprint/<id>`, where you edit its title, "applies when" and steps, choose
+where it applies, retire it so it is no longer recalled, or delete it; History keeps each version. Those that apply
+everywhere are on the **Blueprints** page in the sidebar, and **New blueprint…** in a context's menu writes one there.
+What you write or edit yourself is active at once; one added through a token or MCP is only proposed. A proposed
+blueprint written after reading another app's text carries that app as its source, so a hosted engine is not shown it
+until you accept it, after which it is your own.
 
 **Privacy and trust by source:** each collector's row under **Settings → Plugins**, and each app's row under **Apps**,
 has two switches, both off at first.
@@ -318,7 +335,7 @@ context points to are not CODEX's items; their own apps answer for them.
 
 ## Not yet
 
-- **More of the assistant:** the Inbox, background jobs and blueprints, in the order
+- **More of the assistant:** the Inbox and background jobs, in the order
   [docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) gives.
 - **Android.** Collectors need Node, so a phone app would show what is kept but search nothing; it waits for collectors
   that run on the server alone.

@@ -8,6 +8,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { text } from "../api_schemas.ts";
 import { open_plugin_host } from "../collectors/host.ts";
+import { blueprints_plugin_id } from "../blueprints/collector.ts";
 import { conversations_plugin_id } from "../conversations/collector.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { settings_feature } from "../settings.ts";
@@ -18,7 +19,7 @@ import { mark_key_of, marks_setting, stored_marks } from "./screen.ts";
 
 // ── Marks ────────────────────────────────────────────────────────────────────
 
-// Every collector plugin running, with its marks; CODEX's own conversations are never an outside source, so have none.
+// Every collector plugin running, with its marks; CODEX's own conversations and blueprints are never an outside source, so have none.
 async function list_source_marks(database: SqlDatabase): Promise<SourceMarkEntry[]> {
   const host = await open_plugin_host(database);
   const stored = stored_marks(database);
@@ -26,7 +27,7 @@ async function list_source_marks(database: SqlDatabase): Promise<SourceMarkEntry
   // A collector marked on its own, such as each app the item calls read, is an entry of its own, named by its label.
   const by_key = new Map<string, { name: string; collectors: string[] }>();
   for (const collector of host.providers("collector")) {
-    if (collector.plugin_id === conversations_plugin_id) continue;
+    if (collector.plugin_id === conversations_plugin_id || collector.plugin_id === blueprints_plugin_id) continue;
     const key = mark_key_of(collector);
     const name = collector.value.marked_alone ? collector.value.label : (names.get(collector.plugin_id) ?? collector.plugin_id);
     by_key.set(key, { name, collectors: [...(by_key.get(key)?.collectors ?? []), collector.id] });
