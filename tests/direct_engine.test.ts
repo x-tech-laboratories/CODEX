@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { dropped_result, fit_messages, run_direct, stopped_message, type ChatCompletion, type ChatMessage, type ChatRequest, type ToolCall } from "../src/shared/engines/direct.ts";
+import { ContextOverflow, offered_tools, run_direct, stopped_message, too_large_message, type ChatCompletion, type ChatRequest, type ToolCall } from "../src/shared/engines/direct.ts";
+import { chars_per_token, default_chars_per_token, forget_calibrations, left_out_note } from "../src/shared/engines/fitting.ts";
 import type { EngineEvent, EngineRequest, EngineTools } from "../src/shared/engines/engine.ts";
 import { redacted_instruction, remove_instructions, untrusted_block, untrusted_close, untrusted_open } from "../src/shared/engines/untrusted.ts";
 
@@ -149,20 +150,164 @@ describe("the direct loop", () => {
   });
 });
 
-describe("fitting the context", () => {
-  it("drops the oldest tool results first until the conversation fits", () => {
-    const messages: ChatMessage[] = [
-      { role: "system", content: "s" },
-      { role: "tool", tool_call_id: "a", content: "x".repeat(300) },
-      { role: "tool", tool_call_id: "b", content: "y".repeat(300) },
-      { role: "user", content: "question" },
+describe("the direct loop with a small model", () => {
+  afterEach(() => forget_calibrations());
+
+  // A model that streams its thinking before each reply, and keeps every request.
+  class ThinkingModel extends ScriptedModel {
+    override async complete(request: ChatRequest): Promise<ChatCompletion> {
+      request.on_reasoning?.("Hmm, ");
+      request.on_reasoning?.("let me see.");
+      await Promise.resolve();
+      return super.complete(request);
+    }
+  }
+
+  it("streams the model's thinking as reasoning, never in the answer or sent back", async () => {
+    const model = new ThinkingModel([calling("", ["list_contexts", {}]), answer("Kitchen.")]);
+
+    const events = await collect(run_direct(model, request(), new AbortController().signal, options));
+
+    expect(events.filter((event) => event.type === "reasoning")).toEqual([
+      { type: "reasoning", text: "Hmm, " },
+      { type: "reasoning", text: "let me see." },
+      { type: "reasoning", text: "Hmm, " },
+      { type: "reasoning", text: "let me see." },
+    ]);
+    expect(events.at(-1)).toEqual({ type: "done", text: "Kitchen." });
+    expect(JSON.stringify(model.requests[1]!.messages)).not.toContain("let me see");
+  });
+
+  it("leaves out the oldest turns when the conversation outgrows the context, saying so, and keeps the newest message", async () => {
+    const model = new ScriptedModel([answer("Sure.")]);
+    const old = "an old question ".repeat(400);
+    const conversation = [
+      { role: "user" as const, text: old },
+      { role: "assistant" as const, text: "an old answer ".repeat(400) },
+      { role: "user" as const, text: "a middle question" },
+      { role: "assistant" as const, text: "a middle answer" },
+      { role: "user" as const, text: "And now?" },
     ];
 
-    fit_messages(messages, 150);
+    const events = await collect(run_direct(model, { ...request(), conversation }, new AbortController().signal, { ...options, context_size: 4096, max_tokens: 512 }));
 
-    expect(messages.map((message) => message.content.slice(0, 5))).toEqual(["s", dropped_result.slice(0, 5), "yyyyy", "quest"]);
-    fit_messages(messages, 10_000);
-    expect(messages[2]!.content).toBe("y".repeat(300));
+    const sent = model.requests[0]!.messages;
+    expect(sent[0]).toEqual({ role: "system", content: `You are CODEX.\n\n${left_out_note}` });
+    expect(sent.slice(1).map((message) => message.content)).toEqual(["a middle question", "a middle answer", "And now?"]);
+    expect(events).toContainEqual({ type: "notice", text: "2 earlier messages were left out of what the model read, to fit its context." });
+    expect(events.at(-1)).toEqual({ type: "done", text: "Sure." });
+  });
+
+  it("shortens an over-long newest message in its middle for this request alone, and tells the user", async () => {
+    const model = new ScriptedModel([answer("That is long.")]);
+    const long = `START ${"x".repeat(45_000)} END`;
+    const conversation = [{ role: "user" as const, text: "earlier" }, { role: "assistant" as const, text: "noted" }, { role: "user" as const, text: long }];
+
+    const events = await collect(run_direct(model, { ...request(), conversation }, new AbortController().signal, { ...options, context_size: 8192, max_tokens: 1024 }));
+
+    const sent = model.requests[0]!.messages.at(-1)!.content;
+    expect(sent.startsWith("START ")).toBe(true);
+    expect(sent.endsWith(" END")).toBe(true);
+    expect(sent).toMatch(/\[… [\d,]+ characters left out here: the message was too long for this model's context …\]/);
+    expect(sent.length).toBeLessThan(long.length / 2);
+    expect(conversation[2]!.text).toBe(long);
+    const notice = events.find((event) => event.type === "notice" && event.text.startsWith("Your message"));
+    expect(notice).toMatchObject({ text: expect.stringMatching(/^Your message was too long for this model's context, so [\d,]+ of its 45,010 characters, from the middle, were left out of what the model read\. Your message is kept whole\.$/) });
+    expect(model.requests[0]!.max_tokens).toBeGreaterThanOrEqual(512);
+  });
+
+  it("sends nothing when the context is too small for the instructions, the tools and a reply, and says what to do", async () => {
+    const model = new ScriptedModel([answer("Never.")]);
+    const big: EngineTools = { ...tools(), definitions: [{ name: "big", description: "d".repeat(12_000), parameters: { type: "object", properties: {} } }] };
+
+    const events = await collect(run_direct(model, request(big), new AbortController().signal, { ...options, context_size: 4096 }));
+
+    expect(model.requests).toEqual([]);
+    expect(events).toEqual([
+      {
+        type: "error",
+        message: expect.stringMatching(/^This conversation does not fit the model's context of 4,096 tokens: CODEX's instructions and tools take about [\d,]+ of them, and a reply needs at least 512\. Raise the engine's context size under Settings → Assistant → Engine \(and on the model's server\), or start a new conversation\.$/),
+      },
+    ]);
+  });
+
+  it("asks for the reply that fits: the most wanted, less what the request leaves", async () => {
+    const roomy = new ScriptedModel([answer("Hi.")]);
+    await collect(run_direct(roomy, request(), new AbortController().signal, { ...options, context_size: 200_000, max_tokens: 4096 }));
+    expect(roomy.requests[0]!.max_tokens).toBe(4096);
+
+    const tight = new ScriptedModel([answer("Hi.")]);
+    const conversation = [{ role: "user" as const, text: "y".repeat(6000) }];
+    await collect(run_direct(tight, { ...request(), conversation }, new AbortController().signal, { ...options, context_size: 4096, max_tokens: 4096 }));
+    expect(tight.requests[0]!.max_tokens).toBeLessThan(4096);
+    expect(tight.requests[0]!.max_tokens).toBeGreaterThanOrEqual(512);
+  });
+
+  it("fails a reply cut off at its limit in plain words, keeping what it wrote, and one that only thought", async () => {
+    const cut = await collect(run_direct(new ScriptedModel([{ content: "Half", tool_calls: [], finish_reason: "length" }]), request(), new AbortController().signal, options));
+    expect(cut.filter((event) => event.type === "text").map((event) => (event as { text: string }).text).join("")).toBe("Half");
+    expect(cut.at(-1)).toEqual({ type: "error", message: expect.stringMatching(/^The reply was cut off at its limit of [\d,]+ tokens\. Ask for a shorter answer, or raise the engine's context size to leave more room for replies\.$/) });
+
+    const thought = await collect(run_direct(new ThinkingModel([{ content: "", tool_calls: [], finish_reason: "length" }]), request(), new AbortController().signal, options));
+    expect(thought.at(-1)).toEqual({ type: "error", message: expect.stringMatching(/^The model spent its whole reply allowance of [\d,]+ tokens thinking, and wrote no answer\./) });
+  });
+
+  it("fits again once, with the size the engine counted, when the engine finds the request too large", async () => {
+    const replies: (ChatCompletion | Error)[] = [new ContextOverflow("400 request (9000 tokens) exceeds the available context size (8192 tokens)", 9000), answer("Fits now.")];
+    const sizes: number[] = [];
+    const model = {
+      complete: async (given: ChatRequest) => {
+        sizes.push(JSON.stringify(given.messages).length);
+        const next = replies.shift()!;
+        if (next instanceof Error) throw next;
+        given.on_text?.(next.content);
+        return next;
+      },
+    };
+    const conversation = [{ role: "user" as const, text: "old ".repeat(3000) }, { role: "assistant" as const, text: "ok" }, { role: "user" as const, text: "q ".repeat(2000) }];
+
+    const events = await collect(run_direct(model, { ...request(), conversation }, new AbortController().signal, { ...options, calibration_key: "fake\nmodel" }));
+
+    expect(events.at(-1)).toEqual({ type: "done", text: "Fits now." });
+    expect(sizes).toHaveLength(2);
+    expect(sizes[1]).toBeLessThan(sizes[0]!);
+    expect(chars_per_token("fake\nmodel")).toBeLessThan(default_chars_per_token);
+
+    const again = { complete: async () => Promise.reject(new ContextOverflow("400 too large")) };
+    expect((await collect(run_direct(again, request(), new AbortController().signal, options))).at(-1)).toEqual({ type: "error", message: too_large_message, detail: "400 too large" });
+  });
+
+  it("calibrates its estimate from the usage the engine reports, for that engine and model alone", async () => {
+    const model = new ScriptedModel([{ ...answer("Hi."), usage: { input_tokens: 400, output_tokens: 3 } }]);
+    const conversation = [{ role: "user" as const, text: "z".repeat(1600) }];
+
+    await collect(run_direct(model, { ...request(), conversation }, new AbortController().signal, { ...options, calibration_key: "local\nsmall" }));
+
+    // About 1,700 characters read as 400 tokens: a little over four characters a token, used a little under that.
+    expect(chars_per_token("local\nsmall")).toBeGreaterThan(default_chars_per_token);
+    expect(chars_per_token("local\nsmall")).toBeLessThan(1800 / 400);
+    expect(chars_per_token("another\nmodel")).toBe(default_chars_per_token);
+  });
+
+  it("puts failures it does not know in plain words through the engine's own explanation, and keeps its own as they are", async () => {
+    const broken = { complete: async () => Promise.reject(new Error("socket hang up")) };
+    const events = await collect(run_direct(broken, request(), new AbortController().signal, { ...options, explain: (error) => ({ message: "The engine could not answer.", detail: (error as Error).message }) }));
+    expect(events).toEqual([{ type: "error", message: "The engine could not answer.", detail: "socket hang up" }]);
+    const looping = await collect(run_direct(new ScriptedModel([{ content: "", tool_calls: [], finish_reason: "repetition" }]), request(), new AbortController().signal, { ...options, explain: () => ({ message: "wrong" }) }));
+    expect(looping.at(-1)).toEqual({ type: "error", message: "The model kept repeating itself, so it was stopped." });
+  });
+
+  it("offers the core tools below 16,384 tokens of context when automatic, and the set chosen otherwise", async () => {
+    const both: EngineTools = { ...tools(), core: [{ name: "get_context", description: "Gets one.", parameters: { type: "object", properties: {} } }] };
+    expect(offered_tools(both, "auto", 8192).map((tool) => tool.name)).toEqual(["get_context"]);
+    expect(offered_tools(both, "auto", 16_384).map((tool) => tool.name)).toEqual(["list_contexts"]);
+    expect(offered_tools(both, "core", 200_000).map((tool) => tool.name)).toEqual(["get_context"]);
+    expect(offered_tools(both, "all", 4096).map((tool) => tool.name)).toEqual(["list_contexts"]);
+    expect(offered_tools(tools(), "core", 4096).map((tool) => tool.name)).toEqual(["list_contexts"]);
+
+    const model = new ScriptedModel([answer("Hi.")]);
+    await collect(run_direct(model, request(both), new AbortController().signal, options));
+    expect(model.requests[0]!.tools?.map((tool) => tool.name)).toEqual(["get_context"]);
   });
 });
 

@@ -7,6 +7,7 @@ import OpenAI from "openai";
 import type { ChatCompletionChunk, ChatCompletionCreateParamsStreaming, ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 import type { ChatCompletion, ChatMessage, ChatModel, ChatRequest, FinishReason, ToolCall } from "../../shared/engines/direct.ts";
+import { overflow_of } from "./errors.ts";
 import { repetition_watch } from "./repetition.ts";
 
 // ── Conversions ──────────────────────────────────────────────────────────────
@@ -44,6 +45,10 @@ function finish_reason(reason: string | null, tool_calls: ToolCall[]): FinishRea
   if (tool_calls.length > 0) return "tool_calls";
   return reason === "length" ? "length" : "stop";
 }
+
+// A reasoning model's thinking, which llama-server and others stream as `reasoning_content` beside the answer; the
+// SDK's types name no such field.
+type ReasoningDelta = { reasoning_content?: string | null };
 
 // ── Model ────────────────────────────────────────────────────────────────────
 
@@ -87,6 +92,8 @@ export class OpenAiModel implements ChatModel {
           call.name += delta.function?.name ?? "";
           call.arguments += delta.function?.arguments ?? "";
         }
+        const thinking = (choice.delta as ReasoningDelta).reasoning_content;
+        if (thinking) request.on_reasoning?.(thinking);
         const text = choice.delta.content ?? "";
         if (!text) continue;
         content += text;
@@ -98,7 +105,7 @@ export class OpenAiModel implements ChatModel {
       }
     } catch (error) {
       abort.abort();
-      throw request.signal?.aborted ? (request.signal.reason ?? error) : error;
+      throw request.signal?.aborted ? (request.signal.reason ?? error) : (overflow_of(error) ?? error);
     } finally {
       request.signal?.removeEventListener("abort", stop_from_outside);
     }

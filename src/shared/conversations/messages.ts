@@ -22,6 +22,15 @@ function parsed_calls(text: string): ToolCallRecord[] {
   }
 }
 
+function parsed_notices(text: string): string[] {
+  try {
+    const value: unknown = JSON.parse(text);
+    return Array.isArray(value) ? value.filter((each): each is string => typeof each === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export function list_messages(database: SqlDatabase, conversation_id: string): ConversationMessage[] {
   return drizzle_of(database)
     .select()
@@ -29,10 +38,10 @@ export function list_messages(database: SqlDatabase, conversation_id: string): C
     .where(eq(conversation_messages.conversation_id, conversation_id))
     .orderBy(asc(conversation_messages.created_at), asc(conversation_messages.id))
     .all()
-    .map((row) => ({ ...row, role: row.role as ConversationMessage["role"], tool_calls: parsed_calls(row.tool_calls), sources: parse_sources(row.sources) }));
+    .map((row) => ({ ...row, role: row.role as ConversationMessage["role"], tool_calls: parsed_calls(row.tool_calls), notices: parsed_notices(row.notices), sources: parse_sources(row.sources) }));
 }
 
-export type NewMessage = Pick<ConversationMessage, "conversation_id" | "role" | "text"> & Partial<Pick<ConversationMessage, "engine" | "model" | "tool_calls" | "error" | "input_tokens" | "output_tokens" | "sources">>;
+export type NewMessage = Pick<ConversationMessage, "conversation_id" | "role" | "text"> & Partial<Pick<ConversationMessage, "engine" | "model" | "tool_calls" | "error" | "error_detail" | "notices" | "input_tokens" | "output_tokens" | "sources">>;
 
 // Adds a message after every one before it, even one written in the same millisecond; without sources given, its
 // sources count as not recorded. The conversation's item takes the new exchange.
@@ -45,14 +54,16 @@ export function add_message(database: SqlDatabase, message: NewMessage): Convers
     engine: "",
     model: "",
     error: "",
+    error_detail: "",
     input_tokens: 0,
     output_tokens: 0,
     ...message,
     tool_calls: JSON.stringify(message.tool_calls ?? []),
+    notices: JSON.stringify(message.notices ?? []),
     sources: JSON.stringify(message.sources ?? [unrecorded_source]),
     created_at,
   };
   drizzle_of(database).insert(conversation_messages).values(row).run();
   refresh_conversation_items(database, has_conversation(database, message.conversation_id) ? [message.conversation_id] : []);
-  return { ...row, tool_calls: message.tool_calls ?? [], sources: message.sources ?? [unrecorded_source] };
+  return { ...row, tool_calls: message.tool_calls ?? [], notices: message.notices ?? [], sources: message.sources ?? [unrecorded_source] };
 }

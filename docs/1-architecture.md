@@ -216,19 +216,47 @@ an engine plugin that reaches CODEX's data only through CODEX's own calls, under
 
 An engine is an X-Libs plugin providing an `engine` (`src/shared/engines/engine.ts`), beside the collectors in the
 same plugin host. It has a label and a `model()`, and `run(request, signal)` gives back an async iterable of events:
-text, a tool call started, its result, usage, done with the final text, or an error. The request holds CODEX's
-instructions, the conversation so far as user and assistant turns, and the tools: their definitions and a
+text, reasoning (a reasoning model's thinking, shown while it streams), a notice for the user (such as their message
+shortened to fit), a tool call started, its result, usage, done with the final text, or an error with a plain message
+and the raw `detail` behind it. The request holds CODEX's instructions, the conversation so far as user and assistant
+turns, and the tools: their definitions, a `core` set of the same calls for a small context, and a
 `call(name, args)`. An engine never touches the store, MCP or the settings; it may run its own tool loop, as long as
 every tool call goes through that `call`. The `engine` setting names the one that answers, by the id it is provided
 under.
 
 Both bundled engines (`src/server/engines/`) run on one direct loop (`src/shared/engines/direct.ts`), ported from the
-pre-merge assistant: it streams each round, drops the oldest tool results when the conversation outgrows the context
-size, gives up after 20 rounds with a last one offered no tools, and fails a reply that repeats itself. `codex.anthropic`
-reaches Claude through the official SDK, never sends a temperature, and turns a refusal into an error; `codex.openai`
-reaches any OpenAI-compatible endpoint. Each plugin's settings hold its model, context size and an API key command,
-whose first line of output is the key, read for each run and kept nowhere. They need Node, so they are bundled where
-the store runs, by `load_collectors`, and never in the page.
+pre-merge assistant: it streams each round, gives up after 20 rounds with a last one offered no tools, and fails a reply
+that repeats itself. `codex.anthropic` reaches Claude through the official SDK, never sends a temperature (nor asks
+for thinking, so it streams no reasoning), and turns a refusal into an error; `codex.openai` reaches any
+OpenAI-compatible endpoint and streams a reasoning model's `reasoning_content` as reasoning. Each plugin's settings hold
+its model, context size, the tools offered and an API key command, whose first line of output is the key, read for
+each run and kept nowhere. They need Node, so they are bundled where the store runs, by `load_collectors`, and never in
+the page.
+
+Fitting (`src/shared/engines/fitting.ts`), before every round: the room for the conversation is the context size, less
+the instructions, the tool definitions as sent, a reserve for the reply (the most wanted, 4,096 tokens, or a quarter of
+the context, never under 512) and a margin (5%, at least 256 tokens). Tokens are estimated at 2.5 characters each until
+the engine reports what a request cost; that engine and model's measured ratio, a little under what was measured and
+never above the most cautious seen, is used from then on, in memory while the store runs (engine settings are the
+user's alone, so it is not written there). When the conversation does not fit: tool results of earlier rounds are
+blanked, oldest first; then whole turns are left out, oldest first, with one line added to the instructions saying so;
+then the latest round's tool results; then the newest user message is shortened in its middle, with a marker saying how
+much, for that request alone. The reply asked for is the most wanted capped by what is left. Below 512 tokens left, or
+when the newest message would keep under 200 characters, nothing is sent and the user is told to raise the context size
+or start a new conversation. A request the engine still refuses as too large is fitted again once, with the size the
+engine counted (or a quarter fewer characters a token); the loop tells the user, as notices, what was left out. The
+stored messages never change, so an over-long message cannot keep a conversation failing.
+
+Tools offered: below 16,384 tokens of context, or when the plugin's **Tools offered** is **Core set**, the engine offers
+the core set (`core_tools` in `policy.ts`: the four reads `list_contexts`, `get_context`, `get_item`, `search_index` and
+seven changes, each with a one-line description and its fields' descriptions left out); otherwise every offered call.
+The core set is the same calls under the same policy, and a test holds it to a written list as it does the whole set.
+
+Failures (`src/server/engines/errors.ts`) are put in plain words with the raw text as `detail`, shown under Details:
+an endpoint that cannot be reached or does not answer in time (named by host and port only), a request too large, an
+unknown model, a refused key, rate limiting, a key command that failed (never what it printed) and a reply cut off at
+its limit (or one that spent it all thinking); anything else says the engine could not answer, with the raw text behind
+Details. Text shaped like an API key, and the key itself, never reach a message.
 
 ### Conversations and runs
 
@@ -239,7 +267,9 @@ conversation is an item (`records.ts`): `items` holds `conversation:<id>` from t
 when it was last used in its detail, rewritten whenever a message is kept or it is renamed; `context_items` holds its
 place in each context, with a note, so every view, History, "also in" and search take it as they take any item. One in
 no context has no membership. A message is the user's, an answer (with the engine, model, tool calls with their
-results, error and token counts) or an event, such as an approved change.
+results, error in plain words and its raw detail, notices and token counts) or an event, such as an approved change. A
+reasoning model's thinking streams to open pages as `reasoning` events and lives in the run's state while it writes;
+it is never kept, sent back to the engine or indexed.
 
 The calls: `list_conversations(context_id?)` lists a context's conversations, or for null those in no context, most
 recently used first, each with whether a reply is being written in it; `get_conversation(id)` gives the messages, the
@@ -265,7 +295,8 @@ or in no context, so the general one and those of removed contexts are kept and 
 adoption takes in what a device still on that shape syncs.
 
 The instructions (`instructions.ts`) say who the engine is, today's date and the context the pane is open on: its
-name, its place in the tree, its notes, the contexts inside it and its items, whose titles, snippets and notes go inside
+name, its place in the tree, its notes, the contexts inside it (at most 20, in 1,000 characters) and its items (at most
+30, in 3,000 characters), each listing ending with how many more there are and which call lists them, whose titles, snippets and notes go inside
 an `<untrusted-data>` fence (`src/shared/engines/untrusted.ts`, which also blanks sentences that give orders), then its
 other conversations by title alone, as CODEX's own items. A run never sees a conversation item's latest exchange: the
 screened reads give it the title and notes only, and the `conversation` collector counts as sendable and trusted.
@@ -344,7 +375,9 @@ unless one was picked or asked for (`selection.ts`: an item's title, a search hi
 which a `codex://conversation/<id>` link opens, go to a context holding it and open the pane on it); New
 conversation leaves the box sending to a new one. `use_conversation` loads the one shown and lays the streamed events
 over it until the kept answer arrives; a reply keeps being written while the user looks at another. Tool calls are
-folded rows; waiting proposals are cards with Approve and Reject; the message box sends on Enter. Settings gains an
+folded rows, a proposed one reading as the user decided it; waiting proposals are cards with Approve and Reject; the message box sends on Enter. While a reasoning model
+thinks, a folded Thinking row opens to its thinking streaming, and the answer replaces it; a reply's notices show as
+banners above it, and an error says what happened in plain words with the raw detail under Details. Settings gains an
 Assistant category: Engine (which engine answers, whether it is local or hosted, and each engine plugin's own settings
 in its row), Action policy (each change's level, the two riskier levels badged) and Sent to hosted engines (the log).
 Each collector's row under Plugins holds its two marks, explained in plain words (`src/web/privacy/`), and the pane's

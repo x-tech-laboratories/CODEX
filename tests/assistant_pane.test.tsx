@@ -122,6 +122,54 @@ describe("the assistant's pane", () => {
     await waitFor(() => expect(moods).toContain("happy"));
   });
 
+  it("shows a reasoning model's thinking folded under a Thinking row that opens to it streaming, replaced by the answer", async () => {
+    const fixture = open_page();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    fixture.set_script(async function* () {
+      yield { type: "reasoning", text: "The user wants " };
+      yield { type: "reasoning", text: "a greeting." };
+      await held;
+      yield { type: "text", text: "Hello there." };
+      yield { type: "done", text: "Hello there." };
+    });
+    render(<AssistantPane context_id={null} />);
+    await screen.findByRole("textbox", { name: "Message" });
+    type_and_send("Hi");
+
+    const row = (await screen.findByText("Thinking…")).closest("details")!;
+    expect(row.open).toBe(false);
+    await waitFor(() => expect(within(row).getByText("The user wants a greeting.")).toBeTruthy());
+    expect(screen.getByRole("img", { name: "CODEX, thinking" })).toBeTruthy();
+    await act(async () => {
+      release();
+      await wait_for_runs();
+    });
+
+    expect(await screen.findByText("Hello there.")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText("Thinking…")).toBeNull());
+    expect(screen.queryByText(/a greeting/)).toBeNull();
+  });
+
+  it("puts a failure in plain words with its raw detail behind Details, and shows what was left out to fit", async () => {
+    const fixture = open_page();
+    fixture.set_script(async function* () {
+      yield { type: "notice", text: "Your message was too long for this model's context, so 30,000 of its 45,000 characters, from the middle, were left out of what the model read. Your message is kept whole." };
+      yield { type: "error", message: "The engine at 127.0.0.1:8080 cannot be reached.", detail: "Connection error. (ECONNREFUSED)" };
+    });
+    render(<AssistantPane context_id={null} />);
+    await screen.findByRole("textbox", { name: "Message" });
+    type_and_send("A very long message");
+    await act(() => wait_for_runs());
+
+    expect(await screen.findByText("The engine at 127.0.0.1:8080 cannot be reached.")).toBeTruthy();
+    const details = screen.getByText("Details").closest("details")!;
+    expect(details.open).toBe(false);
+    expect(within(details).getByText("Connection error. (ECONNREFUSED)")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toMatch(/^Your message was too long for this model's context/);
+    await waitFor(() => expect(moods).toContain("sad"));
+  });
+
   it("stops a reply, keeping what it had written", async () => {
     const fixture = open_page();
     fixture.set_script(async function* (_request, signal) {
@@ -175,7 +223,8 @@ describe("the assistant's pane", () => {
 
     expect(await screen.findByText("Approved and done: Rename the context “Kitchen” to “Cooking”.")).toBeTruthy();
     expect(fixture.calls.get_context(kitchen).name).toBe("Cooking");
-    expect(screen.getByText("approved by you")).toBeTruthy();
+    // The proposed call's row and the approval's row both say who decided.
+    expect(screen.getAllByText("approved by you")).toHaveLength(2);
     await waitFor(() => expect(screen.queryByRole("article", { name: "Proposed change" })).toBeNull());
   });
 
@@ -198,6 +247,9 @@ describe("the assistant's pane", () => {
     await act(() => wait_for_runs());
     fireEvent.click(within(await screen.findByRole("article", { name: "Proposed change" })).getByRole("button", { name: "Reject" }));
     expect(await screen.findByText(/^Rejected: Delete the context/)).toBeTruthy();
+    // A rejection reads as the user's, never as the policy refusing it.
+    await waitFor(() => expect(screen.getAllByText("rejected by you")).toHaveLength(2));
+    expect(screen.queryByText("not permitted")).toBeNull();
     expect(fixture.calls.list_contexts().map((context) => context.name)).toEqual(["Kitchen"]);
 
     fireEvent.click(screen.getByRole("button", { name: "More for this conversation" }));

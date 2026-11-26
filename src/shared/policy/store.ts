@@ -56,7 +56,7 @@ async function resolve_proposal(database: SqlDatabase, id: string, decision: "ap
   const call_record = { id: proposal.id, name: proposal.method, arguments: proposal.arguments, proposal_id: proposal.id };
   if (decision === "reject") {
     settle_proposal(database, id, "rejected", "");
-    add_event(database, { conversation_id: proposal.conversation_id, role: "event", text: `Rejected: ${proposal.summary}`, tool_calls: [{ ...call_record, result: "", is_error: false, outcome: "refused" }], sources: proposal.sources });
+    add_event(database, { conversation_id: proposal.conversation_id, role: "event", text: `Rejected: ${proposal.summary}`, tool_calls: [{ ...call_record, result: "", is_error: false, outcome: "rejected" }], sources: proposal.sources });
     return proposal_of(database, id);
   }
   const host = assistant_host();

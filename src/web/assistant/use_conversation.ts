@@ -16,11 +16,18 @@ export interface LiveRun extends RunState {
   finished: boolean;
 }
 
-// The reply after one event; events for another run start it afresh.
+function empty_run(run_id: string, engine = "", model = "", started_at = ""): LiveRun {
+  return { run_id, engine, model, started_at, text: "", reasoning: "", tool_calls: [], notices: [], finished: false };
+}
+
+// The reply after one event; events for another run start it afresh. The thinking shown is the latest, since text
+// written after it ends it.
 export function next_run(run: LiveRun | null, event: ConversationEvent): LiveRun | null {
-  if (event.type === "started") return { run_id: event.run_id, engine: event.engine, model: event.model, started_at: new Date().toISOString(), text: "", tool_calls: [], finished: false };
-  const current = run && run.run_id === event.run_id ? run : { run_id: event.run_id, engine: "", model: "", started_at: "", text: "", tool_calls: [], finished: false };
-  if (event.type === "text") return { ...current, text: current.text + event.text };
+  if (event.type === "started") return empty_run(event.run_id, event.engine, event.model, new Date().toISOString());
+  const current = run && run.run_id === event.run_id ? run : empty_run(event.run_id);
+  if (event.type === "text") return { ...current, text: current.text + event.text, reasoning: "" };
+  if (event.type === "reasoning") return { ...current, reasoning: current.reasoning + event.text };
+  if (event.type === "notice") return { ...current, notices: [...current.notices, event.text] };
   if (event.type === "tool_call") return { ...current, tool_calls: [...current.tool_calls, event.call] };
   if (event.type === "tool_result") return { ...current, tool_calls: current.tool_calls.map((call) => (call.id === event.call.id ? event.call : call)) };
   return { ...current, finished: true };

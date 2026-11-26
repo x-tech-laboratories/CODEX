@@ -142,7 +142,10 @@ As of 2026-11-26:
 - Proposals carry no evidence and no undo beyond History.
 - A reply's tool-call rows show above its text instead of where in the reply each call was made.
 - The Claude-subscription engine and the SmartHarness engine are not built.
-- No real hosted or local model has answered yet; only fakes have.
+- No hosted model has been tried. A local 4B reasoning model (llama.cpp's server, 8,192 tokens of context, on a CPU)
+  answered end to end on 2026-11-26: tool calls, proposals, trusted sources and stopping worked. What that run found
+  (requests outgrowing the context, a large fixed prompt, unseen reasoning and raw provider errors) is fixed, but not
+  yet tried on a real model again.
 - A generic collector for any app answering the standard item calls waits until more apps answer them.
 - CODEX does not yet answer the standard four item calls (`list_item_kinds`, `search_items`, `get_items`,
   `list_item_changes`) itself, so other apps cannot read its conversations or contexts as items.
