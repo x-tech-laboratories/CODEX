@@ -12,6 +12,9 @@ import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 import { app_info, type Feed } from "../src/shared/collectors/collector.ts";
 import { links_plugin } from "../src/shared/collectors/bundled.ts";
 import { use_plugins, type ContextPluginApi } from "../src/shared/collectors/host.ts";
+import { add_message } from "../src/shared/conversations/messages.ts";
+import { add_conversation_record } from "../src/shared/conversations/records.ts";
+import { route_of_link } from "../src/shared/links.ts";
 import { bind_methods, open_store, type ContextMethods } from "../src/shared/store.ts";
 import { set_page_api } from "../src/web/api.ts";
 import { App } from "../src/web/App.tsx";
@@ -20,8 +23,7 @@ import { groups_of, kinds_of, plural_of } from "../src/web/contexts/FeedDialogs.
 import { forget_page_plugins } from "../src/web/plugins.tsx";
 
 // The page's calls answered by a real store on a throwaway database, as the desktop app would, which needs no sign-in.
-function fake_page(): ContextMethods {
-  const database = new DatabaseSync(":memory:");
+function fake_page(database = new DatabaseSync(":memory:")): ContextMethods {
   open_store(database);
   const methods = bind_methods(() => database, () => undefined);
   const calls = Object.fromEntries(Object.entries(methods).map(([name, call]) => [name, async (...args: unknown[]) => (call as (...args: unknown[]) => unknown)(...args)]));
@@ -145,6 +147,102 @@ describe("the card view", () => {
     fireEvent.keyDown(within(grid).getByRole("button", { name: "Move Links" }), { key: "ArrowDown" });
     await waitFor(() => expect(store.get_context(garden).card_places.map((place) => place.id).sort()).toEqual(["kind:link", "kind:task", "x-tasks:t1"]));
     expect(store.get_context(garden).card_places.find((place) => place.id === "x-tasks:t1")).toEqual({ id: "x-tasks:t1", x: 4, y: 0, w: 4, h: 4 });
+  });
+});
+
+// A conversation kept in the contexts given, with a question and its answer.
+function conversation_in(database: DatabaseSync, context_ids: string[], id: string, question: string): string {
+  add_conversation_record(database, context_ids[0] ?? null, id);
+  for (const context_id of context_ids.slice(1)) bind_methods(() => database, () => undefined).add_item_to_contexts(`conversation:${id}`, [context_id]);
+  add_message(database, { conversation_id: id, role: "user", text: question, sources: [] });
+  add_message(database, { conversation_id: id, role: "assistant", text: "Here it is.", sources: [] });
+  return id;
+}
+
+describe("conversations in a context", () => {
+  it("list with the other items in every view, each with its icon, title, latest exchange and when it was used, opening in the pane", async () => {
+    const database = new DatabaseSync(":memory:");
+    const store = fake_page(database);
+    const garden = store.add_context("Garden", null);
+    store.add_item([garden], "x-tasks", { source_id: "t1", kind: "task", title: "Order seeds", uri: "x-tasks://task/t1" }, "");
+    conversation_in(database, [garden], "c1", "Which seeds first?");
+    go(`#/context/${garden}`);
+    render(<App />);
+
+    const main = await waitFor(() => document.querySelector<HTMLElement>(".main-pane")!);
+    expect(await within(main).findByRole("heading", { level: 2, name: "Conversations · 1" })).toBeTruthy();
+    const title = within(main).getByRole("link", { name: "Which seeds first?" });
+    expect(title.getAttribute("href")).toBe("#/conversation/c1");
+    expect(within(main).getByText("You: Which seeds first? · CODEX: Here it is.")).toBeTruthy();
+    expect(within(main).getByText(/Last used/)).toBeTruthy();
+
+    fireEvent.click(title);
+    const pane = await screen.findByRole("complementary", { name: "Assistant" });
+    await waitFor(() => expect(within(pane).getByRole("button", { name: "Conversations" }).textContent).toContain("Which seeds first?"));
+    expect(within(pane).getByText("Here it is.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Cards" }));
+    const cards = await screen.findByRole("list", { name: "Items" });
+    expect(within(cards).getByText("Conversation")).toBeTruthy();
+    expect(within(cards).getByRole("link", { name: "Which seeds first?" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Grouped" }));
+    const kinds = await screen.findByRole("list", { name: "Kinds" });
+    expect(within(kinds).getByText("Conversations · 1")).toBeTruthy();
+  });
+
+  it("asks before deleting one from its last context, and takes a shared one out of this context alone", async () => {
+    const database = new DatabaseSync(":memory:");
+    const store = fake_page(database);
+    const garden = store.add_context("Garden", null);
+    const shed = store.add_context("Shed", null);
+    conversation_in(database, [garden], "only", "Only here");
+    conversation_in(database, [garden, shed], "shared", "In both");
+    go(`#/context/${garden}`);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "More for In both" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Remove from context" }));
+    await waitFor(() => expect(store.list_conversations(garden).map((each) => each.id)).toEqual(["only"]));
+    expect(store.list_conversations(shed).map((each) => each.id)).toEqual(["shared"]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "More for Only here" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete conversation…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete Only here?" });
+    expect(store.list_conversations(garden)).toHaveLength(1);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(() => store.get_conversation("only")).toThrow("There is no conversation"));
+  });
+
+  it("moves one to another context, picked from a list", async () => {
+    const database = new DatabaseSync(":memory:");
+    const store = fake_page(database);
+    const garden = store.add_context("Garden", null);
+    const shed = store.add_context("Shed", null);
+    conversation_in(database, [garden], "c1", "Tools");
+    go(`#/context/${garden}`);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "More for Tools" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Move to…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Move Tools to" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Shed" }));
+    await waitFor(() => expect(store.list_conversations(shed).map((each) => each.id)).toEqual(["c1"]));
+    expect(store.list_conversations(garden)).toEqual([]);
+  });
+
+  it("opens one by its codex://conversation link on a context holding it, the pane showing it", async () => {
+    const database = new DatabaseSync(":memory:");
+    const store = fake_page(database);
+    const garden = store.add_context("Garden", null);
+    conversation_in(database, [garden], "c1", "Seeds");
+    conversation_in(database, [garden], "c2", "Fence");
+    database.prepare("UPDATE conversation_messages SET created_at = '2030-01-01T00:00:00.000Z' WHERE conversation_id = 'c2' AND role = 'assistant'").run();
+    go(route_of_link("codex://conversation/c1")!);
+    render(<App />);
+
+    await waitFor(() => expect(window.location.hash).toBe(`#/context/${garden}`));
+    const pane = await screen.findByRole("complementary", { name: "Assistant" });
+    await waitFor(() => expect(within(pane).getByRole("button", { name: "Conversations" }).textContent).toContain("Seeds"));
   });
 });
 

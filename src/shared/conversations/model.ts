@@ -3,6 +3,8 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
+import { item_link } from "@x-tech-laboratories/x-libs/items";
+
 import type { Proposal } from "../policy/model.ts";
 
 // ── Messages ─────────────────────────────────────────────────────────────────
@@ -57,10 +59,28 @@ export interface RunState {
   tool_calls: ToolCallRecord[];
 }
 
-export interface Conversation {
-  // The context's id, or "general".
+// ── Conversations ────────────────────────────────────────────────────────────
+
+// A conversation as a switcher lists it.
+export interface ConversationSummary {
   id: string;
-  context_id: string | null;
+  // The name the user gave it, or its first message clipped, or "New conversation" before it has one.
+  title: string;
+  // The user named it, rather than it going by its first message.
+  is_named: boolean;
+  created_at: string;
+  // When its last message was kept, or when it was made.
+  last_used_at: string;
+  message_count: number;
+  // A reply is being written in it now.
+  is_running: boolean;
+  // The contexts holding it, by id and name; none for a conversation in no context.
+  contexts: { id: string; name: string }[];
+  // Where it opens, such as codex://conversation/<id>.
+  link: string;
+}
+
+export interface Conversation extends ConversationSummary {
   messages: ConversationMessage[];
   proposals: Proposal[];
   run: RunState | null;
@@ -96,9 +116,31 @@ export interface AssistantStatus {
   engines: EngineSummary[];
 }
 
-// The conversation held when no context is open.
-export const general_conversation = "general";
+// ── Items ────────────────────────────────────────────────────────────────────
 
-export function conversation_id_of(context_id: string | null | undefined): string {
-  return context_id || general_conversation;
+// The collector, and the kind, a conversation is kept under as an item; CODEX's own, so never an outside source.
+export const conversation_collector = "conversation";
+export const conversation_kind = "conversation";
+
+// The id of the general conversation kept before conversations were items; it became a conversation in no context.
+export const old_general_conversation = "general";
+
+export function conversation_item_id(conversation_id: string): string {
+  return `${conversation_collector}:${conversation_id}`;
 }
+
+// The conversation an item id names, or null for any other item.
+export function conversation_of_item(item_id: string): string | null {
+  return item_id.startsWith(`${conversation_collector}:`) ? item_id.slice(conversation_collector.length + 1) : null;
+}
+
+export function conversation_link(conversation_id: string): string {
+  return item_link("codex", conversation_kind, conversation_id);
+}
+
+// The page's route that opens a conversation in the pane.
+export function conversation_route(conversation_id: string): string {
+  return `#/conversation/${encodeURIComponent(conversation_id)}`;
+}
+
+export const untitled_conversation = "New conversation";

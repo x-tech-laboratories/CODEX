@@ -212,6 +212,7 @@ describe("server", () => {
 
     const sent = await fetch(`${base}/api/call/send_message`, { method: "POST", headers, body: JSON.stringify({ context_id: null, message: "hi" }) });
     expect(sent.status).toBe(200);
+    const { conversation_id } = (await sent.json()) as { conversation_id: string };
     await read_until('"type":"finished"');
     await reader.cancel();
     await wait_for_runs();
@@ -219,7 +220,7 @@ describe("server", () => {
     const pieces = [...seen.matchAll(/event: conversation\ndata: (.+)/g)].map((match) => JSON.parse(match[1]!) as { type: string; text?: string });
     expect(pieces.map((piece) => piece.type)).toEqual(["started", "text", "text", "finished"]);
     expect(pieces.filter((piece) => piece.type === "text").map((piece) => piece.text).join("")).toBe("You said hi");
-    const conversation = (await signed({ method: "POST", url: "/api/call/get_conversation", payload: [] })).json() as { messages: { text: string; engine: string }[] };
+    const conversation = (await signed({ method: "POST", url: "/api/call/get_conversation", payload: [conversation_id] })).json() as { messages: { text: string; engine: string }[] };
     expect(conversation.messages.map((message) => [message.text, message.engine])).toEqual([
       ["hi", ""],
       ["You said hi", "Echo"],

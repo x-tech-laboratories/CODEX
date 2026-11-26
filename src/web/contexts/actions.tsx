@@ -25,6 +25,10 @@ function go_to(id: string): void {
 
 interface NameDialogProps {
   title: string;
+  // The field's label; "Name" unless given.
+  label?: string;
+  // Lets the name be left empty, such as a conversation's, which then goes by its first message.
+  allow_empty?: boolean;
   initial: string;
   submit_label: string;
   on_close: () => void;
@@ -32,7 +36,7 @@ interface NameDialogProps {
   on_name: (name: string) => Promise<boolean>;
 }
 
-function NameDialog({ title, initial, submit_label, on_close, on_name }: NameDialogProps) {
+export function NameDialog({ title, label = "Name", allow_empty = false, initial, submit_label, on_close, on_name }: NameDialogProps) {
   const [name, set_name] = useState(initial);
   return (
     <Dialog
@@ -40,7 +44,7 @@ function NameDialog({ title, initial, submit_label, on_close, on_name }: NameDia
       on_close={on_close}
       form={{
         submit_label,
-        submit_disabled: !name.trim(),
+        submit_disabled: !allow_empty && !name.trim(),
         on_submit: (event) => {
           event.preventDefault();
           void on_name(name).then((done) => done && on_close());
@@ -48,7 +52,7 @@ function NameDialog({ title, initial, submit_label, on_close, on_name }: NameDia
       }}
       buttons={<button type="button" onClick={on_close}>Cancel</button>}
     >
-      <FormRow label="Name" id="context-name">
+      <FormRow label={label} id="context-name">
         <input id="context-name" value={name} autoFocus onChange={(event) => set_name(event.target.value)} />
       </FormRow>
     </Dialog>
@@ -79,7 +83,7 @@ export function rename_context(context: { id: string; name: string }): void {
 export function delete_context(context: { id: string; name: string }, on_deleted?: () => void): void {
   confirm_dialog({
     title: `Delete ${context.name}?`,
-    message: "The context and every context inside it go. The items stay in their own apps, and History can bring the context back.",
+    message: "The context and every context inside it go, with the conversations no other context holds. The items stay in their own apps, and History can bring the context back without those conversations.",
     confirm_label: "Delete",
     danger: true,
     run: async () => {

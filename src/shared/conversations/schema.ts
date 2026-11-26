@@ -6,12 +6,21 @@ import { index, integer, sqliteTable, text } from "@x-tech-laboratories/x-libs/d
 
 // ── Tables ───────────────────────────────────────────────────────────────────
 
+// A conversation with the assistant, kept as an item of kind "conversation" in the contexts that hold it, or in none.
+export const conversations = sqliteTable("conversations", {
+  // A new id, or for one kept before conversations were items, the id of the context it belonged to, or "general".
+  id: text().primaryKey(),
+  // The name the user gave it; empty while it goes by its first message.
+  title: text().notNull().default(""),
+  created_at: text().notNull(),
+});
+
 // One message of a conversation: the user's, the engine's answer, or an event such as an approved change.
 export const conversation_messages = sqliteTable(
   "conversation_messages",
   {
     id: text().primaryKey(),
-    // The open context's id, or "general" for the conversation held with no context open.
+    // The conversation's id.
     conversation_id: text().notNull(),
     // "user", "assistant" or "event".
     role: text().notNull(),
@@ -34,4 +43,4 @@ export const conversation_messages = sqliteTable(
   (table) => [index("conversation_messages_by_conversation").on(table.conversation_id, table.created_at)],
 );
 
-export const conversation_tables = [conversation_messages];
+export const conversation_tables = [conversations, conversation_messages];

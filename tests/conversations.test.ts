@@ -3,14 +3,34 @@ import { afterEach, describe, expect, it } from "vitest";
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { build_instructions } from "../src/shared/conversations/instructions.ts";
 import { add_message } from "../src/shared/conversations/messages.ts";
+import { title_from } from "../src/shared/conversations/records.ts";
 import { turns_of, wait_for_runs } from "../src/shared/conversations/run.ts";
 import { offered_api } from "../src/shared/policy/policy.ts";
-import { start_fixture } from "./assistant_fixture.ts";
+import { start_fixture, type Fixture } from "./assistant_fixture.ts";
 
 afterEach(async () => {
   await wait_for_runs();
   use_assistant_host(null);
 });
+
+// Sends a message and waits for the reply; gives the conversation's id.
+async function talk(fixture: Fixture, context_id: string | null, text: string, conversation_id?: string | null): Promise<string> {
+  const { conversation_id: id } = await fixture.calls.send_message(context_id, text, conversation_id);
+  await wait_for_runs();
+  return id;
+}
+
+// A reply that waits until it is stopped, and the promise that it has started.
+function hold_replies(fixture: Fixture): Promise<void> {
+  let started!: () => void;
+  const is_started = new Promise<void>((resolve) => (started = resolve));
+  fixture.set_script(async function* (_request, signal) {
+    yield { type: "text", text: "Part" };
+    started();
+    await new Promise((resolve) => signal.addEventListener("abort", resolve));
+  });
+  return is_started;
+}
 
 describe("a conversation", () => {
   it("keeps the user's message, streams the reply to pages and keeps it with its engine, model and tool calls", async () => {
@@ -26,12 +46,12 @@ describe("a conversation", () => {
       yield { type: "done", text: "Looking at it." };
     });
 
-    const { run_id } = await fixture.calls.send_message(kitchen, "What is here?");
-    expect(fixture.calls.get_conversation(kitchen).run).toMatchObject({ run_id, engine: "Fake", model: "fake-model" });
+    const { conversation_id, run_id } = await fixture.calls.send_message(kitchen, "What is here?");
+    expect(fixture.calls.get_conversation(conversation_id).run).toMatchObject({ run_id, engine: "Fake", model: "fake-model" });
     await wait_for_runs();
 
-    const conversation = fixture.calls.get_conversation(kitchen);
-    expect(conversation).toMatchObject({ id: kitchen, context_id: kitchen, run: null, proposals: [] });
+    const conversation = fixture.calls.get_conversation(conversation_id);
+    expect(conversation).toMatchObject({ id: conversation_id, title: "What is here?", is_named: false, contexts: [{ id: kitchen, name: "Kitchen" }], run: null, proposals: [], link: `codex://conversation/${conversation_id}` });
     expect(conversation.messages.map((message) => [message.role, message.text, message.engine, message.model])).toEqual([
       ["user", "What is here?", "", ""],
       ["assistant", "Looking at it.", "Fake", "fake-model"],
@@ -40,19 +60,18 @@ describe("a conversation", () => {
     expect(answer).toMatchObject({ input_tokens: 100, output_tokens: 20, error: "" });
     expect(answer.tool_calls).toEqual([{ id: "t1", name: "list_contexts", arguments: {}, result: expect.stringContaining("Kitchen"), is_error: false, outcome: "ran" }]);
     expect(fixture.events.map((event) => event.type)).toEqual(["started", "text", "tool_call", "tool_result", "text", "finished"]);
-    expect(fixture.events.every((event) => event.run_id === run_id && event.conversation_id === kitchen)).toBe(true);
+    expect(fixture.events.every((event) => event.run_id === run_id && event.conversation_id === conversation_id)).toBe(true);
     expect(fixture.requests[0]!.conversation).toEqual([{ role: "user", text: "What is here?" }]);
     expect(fixture.requests[0]!.instructions).toContain('The open context is "Kitchen"');
   });
 
-  it("holds a general conversation when no context is open, and gives the engine the conversation so far", async () => {
+  it("is held in no context when none is open, and the engine is given the conversation so far", async () => {
     const fixture = start_fixture();
-    await fixture.calls.send_message(null, "Hi");
-    await wait_for_runs();
-    await fixture.calls.send_message(null, "Again");
-    await wait_for_runs();
+    const id = await talk(fixture, null, "Hi");
+    expect(await talk(fixture, null, "Again")).toBe(id);
 
-    expect(fixture.calls.get_conversation().messages.map((message) => message.text)).toEqual(["Hi", "Hello.", "Again", "Hello."]);
+    expect(fixture.calls.get_conversation(id).messages.map((message) => message.text)).toEqual(["Hi", "Hello.", "Again", "Hello."]);
+    expect(fixture.calls.list_conversations(null).map((each) => each.id)).toEqual([id]);
     expect(fixture.requests[1]!.conversation).toEqual([
       { role: "user", text: "Hi" },
       { role: "assistant", text: "Hello." },
@@ -63,24 +82,18 @@ describe("a conversation", () => {
 
   it("writes one reply at a time, and stops one, keeping what it had written", async () => {
     const fixture = start_fixture();
-    let started!: () => void;
-    const is_started = new Promise<void>((resolve) => (started = resolve));
-    fixture.set_script(async function* (_request, signal) {
-      yield { type: "text", text: "Part" };
-      started();
-      await new Promise((resolve) => signal.addEventListener("abort", resolve));
-      yield { type: "text", text: " never kept" };
-    });
+    const is_started = hold_replies(fixture);
 
-    await fixture.calls.send_message(null, "Talk");
+    const { conversation_id } = await fixture.calls.send_message(null, "Talk");
     await is_started;
+    await expect(fixture.calls.send_message(null, "More", conversation_id)).rejects.toThrow("still being written");
     await expect(fixture.calls.send_message(null, "More")).rejects.toThrow("still being written");
-    expect(() => fixture.calls.clear_conversation(null)).toThrow("stop it first");
-    expect(fixture.calls.stop_reply(null)).toBe(true);
+    expect(fixture.calls.list_conversations(null)[0]).toMatchObject({ id: conversation_id, is_running: true });
+    expect(fixture.calls.stop_reply(conversation_id)).toBe(true);
     await wait_for_runs();
 
-    expect(fixture.calls.stop_reply(null)).toBe(false);
-    const answer = fixture.calls.get_conversation().messages.at(-1)!;
+    expect(fixture.calls.stop_reply(conversation_id)).toBe(false);
+    const answer = fixture.calls.get_conversation(conversation_id).messages.at(-1)!;
     expect(answer).toMatchObject({ role: "assistant", text: "Part", error: "Stopped." });
     expect(fixture.events.at(-1)).toMatchObject({ type: "finished", error: "Stopped." });
   });
@@ -90,31 +103,28 @@ describe("a conversation", () => {
     fixture.set_script(async function* () {
       yield { type: "error", message: "The model declined the request." };
     });
-    await fixture.calls.send_message(null, "One");
-    await wait_for_runs();
+    const id = await talk(fixture, null, "One");
     fixture.set_script(async function* () {
       yield { type: "text", text: "Half" };
     });
-    await fixture.calls.send_message(null, "Two");
-    await wait_for_runs();
+    await talk(fixture, null, "Two", id);
     fixture.set_script(async function* () {
       yield* [];
       throw new Error("Broken engine");
     });
-    await fixture.calls.send_message(null, "Three");
-    await wait_for_runs();
+    await talk(fixture, null, "Three", id);
 
-    const errors = fixture.calls.get_conversation().messages.filter((message) => message.role === "assistant").map((message) => [message.text, message.error]);
+    const errors = fixture.calls.get_conversation(id).messages.filter((message) => message.role === "assistant").map((message) => [message.text, message.error]);
     expect(errors).toEqual([
       ["", "The model declined the request."],
       ["Half", "The engine stopped without an answer."],
       ["", "Broken engine"],
     ]);
     // A failed answer with no text is left out of what the engine reads next.
-    expect(turns_of(fixture.database, "general").map((turn) => turn.text)).toEqual(["One", "Two", "Half", "Three"]);
+    expect(turns_of(fixture.database, id).map((turn) => turn.text)).toEqual(["One", "Two", "Half", "Three"]);
   });
 
-  it("refuses an empty message, an unknown context, and sending with no engine set up", async () => {
+  it("refuses an empty message, an unknown context or conversation, and sending with no engine set up, keeping nothing", async () => {
     const fixture = start_fixture({ choose_engine: false });
     await expect(fixture.calls.send_message(null, "Hi")).rejects.toThrow("No engine is set up; choose one under Settings → Engine.");
     fixture.calls.set_setting("engine", "gone");
@@ -122,20 +132,9 @@ describe("a conversation", () => {
     fixture.calls.set_setting("engine", "fake");
     await expect(fixture.calls.send_message(null, "  ")).rejects.toThrow("Write a message first.");
     await expect(fixture.calls.send_message("nowhere", "Hi")).rejects.toThrow("There is no context nowhere.");
-    expect(fixture.calls.get_conversation().messages).toEqual([]);
-  });
-
-  it("clears a conversation's messages and proposals, leaving the others", async () => {
-    const fixture = start_fixture();
-    const kitchen = fixture.calls.add_context("Kitchen");
-    await fixture.calls.send_message(kitchen, "Hi");
-    await fixture.calls.send_message(null, "Hi");
-    await wait_for_runs();
-
-    fixture.calls.clear_conversation(kitchen);
-
-    expect(fixture.calls.get_conversation(kitchen).messages).toEqual([]);
-    expect(fixture.calls.get_conversation(null).messages).toHaveLength(2);
+    await expect(fixture.calls.send_message(null, "Hi", "nothing")).rejects.toThrow("There is no conversation nothing.");
+    expect(() => fixture.calls.get_conversation("nothing")).toThrow("There is no conversation nothing.");
+    expect(fixture.calls.list_conversations(null)).toEqual([]);
   });
 
   it("says which engine answers, and why none does", async () => {
@@ -148,12 +147,12 @@ describe("a conversation", () => {
 
   it("tells the engine what became of its proposals at the start of the next message", () => {
     const fixture = start_fixture();
-    add_message(fixture.database, { conversation_id: "general", role: "user", text: "Rename it" });
-    add_message(fixture.database, { conversation_id: "general", role: "assistant", text: "Proposed." });
-    add_message(fixture.database, { conversation_id: "general", role: "event", text: "Approved and done: Rename." });
-    add_message(fixture.database, { conversation_id: "general", role: "user", text: "Thanks" });
+    add_message(fixture.database, { conversation_id: "c1", role: "user", text: "Rename it" });
+    add_message(fixture.database, { conversation_id: "c1", role: "assistant", text: "Proposed." });
+    add_message(fixture.database, { conversation_id: "c1", role: "event", text: "Approved and done: Rename." });
+    add_message(fixture.database, { conversation_id: "c1", role: "user", text: "Thanks" });
 
-    expect(turns_of(fixture.database, "general").at(-1)).toEqual({ role: "user", text: "(Since your last answer: Approved and done: Rename.)\n\nThanks" });
+    expect(turns_of(fixture.database, "c1").at(-1)).toEqual({ role: "user", text: "(Since your last answer: Approved and done: Rename.)\n\nThanks" });
   });
 
   it("is refused where no host runs the assistant", async () => {
@@ -163,8 +162,112 @@ describe("a conversation", () => {
   });
 });
 
+describe("conversations as items", () => {
+  it("lets a context hold several, most recently used first, each an item with its title, latest exchange and when it was used", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const tiles = await talk(fixture, kitchen, "Which tiles did we pick for the floor by the window in the end, the blue ones or the grey?");
+    const oven = await talk(fixture, kitchen, "Find the oven manual", null);
+    expect(oven).not.toBe(tiles);
+    // Left out, a message goes to the context's most recently used conversation.
+    expect(await talk(fixture, kitchen, "And the warranty?")).toBe(oven);
+
+    expect(fixture.calls.list_conversations(kitchen).map((each) => [each.id, each.title, each.message_count])).toEqual([
+      [oven, "Find the oven manual", 4],
+      [tiles, "Which tiles did we pick for the floor by the window in the end, the blue ones…", 2],
+    ]);
+    expect(fixture.calls.list_conversations(null)).toEqual([]);
+    const items = fixture.calls.get_context(kitchen).items.filter((item) => item.kind === "conversation");
+    expect(items.map((item) => item.id).sort()).toEqual([`conversation:${oven}`, `conversation:${tiles}`].sort());
+    const item = items.find((each) => each.id === `conversation:${oven}`)!;
+    expect(item).toMatchObject({ collector: "conversation", source_id: oven, title: "Find the oven manual", snippet: "You: And the warranty? · CODEX: Hello.", uri: `codex://conversation/${oven}`, status: "" });
+    expect(item.detail.last_used_at).toBe(fixture.calls.get_conversation(oven).last_used_at);
+  });
+
+  it("is renamed, and goes back to its first message when the title is emptied", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const id = await talk(fixture, kitchen, "Tiles");
+    fixture.calls.rename_conversation(id, "  Floor   tiles ");
+    expect(fixture.calls.get_conversation(id)).toMatchObject({ title: "Floor tiles", is_named: true });
+    expect(fixture.calls.get_context(kitchen).items[0]!.title).toBe("Floor tiles");
+    fixture.calls.rename_conversation(id, "");
+    expect(fixture.calls.get_conversation(id)).toMatchObject({ title: "Tiles", is_named: false });
+    expect(() => fixture.calls.rename_conversation("nothing", "x")).toThrow("There is no conversation nothing.");
+    expect(title_from("# Plan\nthe rest")).toBe("Plan");
+    expect(title_from("x".repeat(100))).toBe(`${"x".repeat(79)}…`);
+  });
+
+  it("moves to another context, sits in more than one with a note each, and shows where else it is", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const garden = fixture.calls.add_context("Garden");
+    const shed = fixture.calls.add_context("Shed");
+    const id = await talk(fixture, kitchen, "Tools");
+    const item_id = `conversation:${id}`;
+    fixture.calls.set_item_note(kitchen, item_id, "for the drawer");
+
+    fixture.calls.move_item(kitchen, item_id, garden);
+    expect(fixture.calls.list_conversations(kitchen)).toEqual([]);
+    expect(fixture.calls.get_context(garden).items[0]).toMatchObject({ id: item_id, note: "for the drawer" });
+
+    fixture.calls.add_item_to_contexts(item_id, [shed], "the big ones");
+    expect(fixture.calls.get_context(shed).items[0]).toMatchObject({ id: item_id, note: "the big ones", also_in: [{ id: garden, name: "Garden" }] });
+    expect(fixture.calls.get_conversation(id).contexts.map((each) => each.name)).toEqual(["Garden", "Shed"]);
+    expect(fixture.calls.search_kept_items("Tools").map((item) => item.id)).toEqual([item_id]);
+    // Taking it out of one context leaves it in the other; the last context cannot let it go but by deleting it.
+    fixture.calls.remove_item(shed, item_id);
+    expect(() => fixture.calls.remove_item(garden, item_id)).toThrow("last context holding that conversation");
+    expect(() => fixture.calls.move_item(kitchen, item_id, shed)).toThrow("does not hold that item");
+    expect(() => fixture.calls.add_item([kitchen], "conversation", { source_id: id, kind: "conversation", title: "Forged" })).toThrow("started in the Assistant pane");
+    // History keeps each membership change.
+    expect(fixture.calls.list_item_history("context", shed).length).toBeGreaterThan(1);
+  });
+
+  it("goes from no context into one, and a context's conversations are what its pane offers", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const id = await talk(fixture, null, "Ideas");
+    fixture.calls.add_item_to_contexts(`conversation:${id}`, [kitchen]);
+    expect(fixture.calls.list_conversations(null)).toEqual([]);
+    expect(fixture.calls.list_conversations(kitchen).map((each) => each.id)).toEqual([id]);
+  });
+
+  it("is deleted outright by a call, from every context, with its messages and proposals, and stops its reply", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const garden = fixture.calls.add_context("Garden");
+    const is_started = hold_replies(fixture);
+    const { conversation_id: id } = await fixture.calls.send_message(kitchen, "Talk");
+    await is_started;
+    fixture.calls.add_item_to_contexts(`conversation:${id}`, [garden]);
+
+    fixture.calls.delete_conversation(id);
+    await wait_for_runs();
+
+    expect(() => fixture.calls.get_conversation(id)).toThrow("There is no conversation");
+    expect(fixture.calls.get_context(kitchen).items).toEqual([]);
+    expect(fixture.calls.get_context(garden).items).toEqual([]);
+    expect(fixture.database.prepare("SELECT COUNT(*) AS total FROM conversation_messages").get()).toEqual({ total: 0 });
+    expect(fixture.calls.get_item(`conversation:${id}`)).toMatchObject({ status: "missing", snippet: "Deleted." });
+    expect(() => fixture.calls.add_item_to_contexts(`conversation:${id}`, [kitchen])).toThrow("was deleted");
+  });
+
+  it("is kept fresh by a refresh, through CODEX's own collector, which has no marks and is not added by hand", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const id = await talk(fixture, kitchen, "Tiles");
+    fixture.database.prepare("UPDATE items SET title = 'stale' WHERE id = ?").run(`conversation:${id}`);
+    const report = await fixture.calls.refresh_items(kitchen);
+    expect(report).toMatchObject({ checked: 1, updated: 1, missing: 0 });
+    expect(fixture.calls.get_context(kitchen).items[0]!.title).toBe("Tiles");
+    expect((await fixture.calls.list_collectors()).at(-1)).toMatchObject({ id: "conversation", label: "CODEX conversations", can_search: false, can_refresh: true });
+    expect((await fixture.calls.list_source_marks()).map((each) => each.plugin_id)).not.toContain("codex.conversations");
+  });
+});
+
 describe("removing a context", () => {
-  it("removes its conversation and proposals, and those of the contexts inside it, leaving the rest; History brings back the context alone", async () => {
+  it("removes the conversations no other context holds, with their messages and proposals, leaving the shared ones; History brings back the context alone", async () => {
     const fixture = start_fixture();
     const home = fixture.calls.add_context("Home");
     const kitchen = fixture.calls.add_context("Kitchen", home);
@@ -173,42 +276,42 @@ describe("removing a context", () => {
       await request.tools.call("rename_context", { id: kitchen, name: "Cooking" });
       yield { type: "done", text: "Proposed." };
     });
-    for (const id of [kitchen, garden, null]) {
-      await fixture.calls.send_message(id, "Rename the kitchen");
-      await wait_for_runs();
-    }
-    expect(fixture.calls.list_proposals(kitchen)).toHaveLength(1);
+    const only_kitchen = await talk(fixture, kitchen, "Rename the kitchen");
+    const shared = await talk(fixture, kitchen, "Rename it too", null);
+    fixture.calls.add_item_to_contexts(`conversation:${shared}`, [garden]);
+    const in_garden = await talk(fixture, garden, "Rename the kitchen", null);
+    const in_none = await talk(fixture, null, "Rename the kitchen");
+    expect(fixture.calls.list_proposals(only_kitchen)).toHaveLength(1);
 
     fixture.calls.remove_context(home);
 
-    expect(fixture.calls.get_conversation(kitchen)).toMatchObject({ messages: [], proposals: [] });
-    expect(fixture.calls.get_conversation(garden).messages).toHaveLength(2);
-    expect(fixture.calls.get_conversation(null).messages).toHaveLength(2);
-    expect(fixture.calls.list_proposals().map((proposal) => proposal.conversation_id).sort()).toEqual([garden, "general"].sort());
+    expect(() => fixture.calls.get_conversation(only_kitchen)).toThrow("There is no conversation");
+    expect(fixture.calls.get_conversation(shared).messages).toHaveLength(2);
+    expect(fixture.calls.get_conversation(in_garden).messages).toHaveLength(2);
+    expect(fixture.calls.get_conversation(in_none).messages).toHaveLength(2);
+    expect(fixture.calls.list_conversations(garden).map((each) => each.id).sort()).toEqual([shared, in_garden].sort());
+    expect(fixture.calls.list_proposals().map((proposal) => proposal.conversation_id).sort()).toEqual([shared, in_garden, in_none].sort());
 
-    const removed = fixture.calls.list_recent_changes(10).find((change) => change.item_id === kitchen)!;
+    const removed = fixture.calls.list_recent_changes(20).find((change) => change.item_id === kitchen)!;
     fixture.calls.restore_item_version("context", removed.id);
     expect(fixture.calls.get_context(kitchen).name).toBe("Kitchen");
-    expect(fixture.calls.get_conversation(kitchen).messages).toEqual([]);
+    expect(fixture.calls.list_conversations(kitchen).map((each) => each.id)).toEqual([shared]);
+    // The deleted one comes back as an item marked missing, which opens nothing.
+    expect(fixture.calls.get_context(kitchen).items.find((item) => item.source_id === only_kitchen)).toMatchObject({ status: "missing" });
   });
 
   it("stops a reply being written there and keeps nothing of it", async () => {
     const fixture = start_fixture();
     const kitchen = fixture.calls.add_context("Kitchen");
-    let started!: () => void;
-    const is_started = new Promise<void>((resolve) => (started = resolve));
-    fixture.set_script(async function* (_request, signal) {
-      yield { type: "text", text: "Part" };
-      started();
-      await new Promise((resolve) => signal.addEventListener("abort", resolve));
-    });
-    await fixture.calls.send_message(kitchen, "Talk");
+    const is_started = hold_replies(fixture);
+    const { conversation_id } = await fixture.calls.send_message(kitchen, "Talk");
     await is_started;
 
     fixture.calls.remove_context(kitchen);
     await wait_for_runs();
 
-    expect(fixture.calls.get_conversation(kitchen)).toMatchObject({ messages: [], run: null });
+    expect(() => fixture.calls.get_conversation(conversation_id)).toThrow("There is no conversation");
+    expect(fixture.database.prepare("SELECT COUNT(*) AS total FROM conversation_messages").get()).toEqual({ total: 0 });
   });
 });
 
@@ -238,6 +341,24 @@ describe("what the engine is told", () => {
     expect(build_instructions(fixture.database, home, "2026-11-26")).toContain("It holds no items.");
   });
 
+  it("lists the context's other conversations by title alone, as CODEX's own, and never their exchanges", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const tiles = await talk(fixture, kitchen, "Tiles");
+    fixture.set_script(async function* () {
+      yield { type: "done", text: "A secret answer." };
+    });
+    const oven = await talk(fixture, kitchen, "Oven", null);
+    fixture.calls.rename_conversation(oven, "Oven manual");
+
+    const instructions = build_instructions(fixture.database, kitchen, "2026-11-26", undefined, tiles);
+    expect(instructions).toContain(`Its other conversations with you, CODEX's own items, by the titles the user gave or began them with: "Oven manual" (id conversation:${oven}).`);
+    expect(instructions).toContain("It holds no items.");
+    expect(instructions).not.toContain("A secret answer.");
+    expect(instructions).not.toContain(`conversation:${tiles}`);
+    expect(fixture.requests.at(-1)!.instructions).toContain(`"Tiles" (id conversation:${tiles})`);
+  });
+
   it("offers the contexts, items, collectors and feeds calls, and nothing else", () => {
     const fixture = start_fixture();
     void fixture;
@@ -246,7 +367,7 @@ describe("what the engine is told", () => {
     expect(offered).toContain("rename_context");
     expect(offered).toContain("search_collector");
     expect(offered).toContain("follow_feed");
-    for (const hidden of ["get_settings", "set_setting", "export_contexts", "import_contexts", "restore_item_version", "send_message", "clear_conversation", "set_action_level", "resolve_proposal", "set_card_places"]) {
+    for (const hidden of ["get_settings", "set_setting", "export_contexts", "import_contexts", "restore_item_version", "send_message", "list_conversations", "get_conversation", "rename_conversation", "delete_conversation", "stop_reply", "set_action_level", "resolve_proposal", "set_card_places"]) {
       expect(offered).not.toContain(hidden);
     }
   });

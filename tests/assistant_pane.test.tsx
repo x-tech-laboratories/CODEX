@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Client } from "@x-tech-laboratories/x-libs/electron/bridge";
 import { Dialogs } from "@x-tech-laboratories/x-libs/web/react/dialog";
+import { ContextMenus } from "@x-tech-laboratories/x-libs/web/react/menus";
 
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import type { ConversationEvent } from "../src/shared/conversations/model.ts";
@@ -14,6 +15,7 @@ import { data_watch, set_page_api } from "../src/web/api.ts";
 import { AssistantPane } from "../src/web/assistant/AssistantPane.tsx";
 import { Mascot } from "../src/web/assistant/Mascot.tsx";
 import { lasting_mood, moment_after, screen_placement } from "../src/web/assistant/mascot.ts";
+import { want_conversation } from "../src/web/assistant/selection.ts";
 import { next_run } from "../src/web/assistant/use_conversation.ts";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
 
@@ -99,7 +101,7 @@ describe("the assistant's pane", () => {
     const box = await screen.findByRole("textbox", { name: "Message" });
     fireEvent.change(box, { target: { value: "first line" } });
     fireEvent.keyDown(box, { key: "Enter", shiftKey: true });
-    expect(fixture.calls.get_conversation(kitchen).messages).toEqual([]);
+    expect(fixture.calls.list_conversations(kitchen)).toEqual([]);
     type_and_send("What is here?");
 
     expect(await screen.findByText("Kitchen", { selector: "strong" })).toBeTruthy();
@@ -111,7 +113,7 @@ describe("the assistant's pane", () => {
     });
 
     expect(await screen.findByText(/it is empty/)).toBeTruthy();
-    expect(screen.getByText("What is here?")).toBeTruthy();
+    expect(screen.getByText("What is here?", { selector: ".from-user p" })).toBeTruthy();
     const call = screen.getByText("list_contexts").closest("details")!;
     expect(call.open).toBe(false);
     expect(within(call).getByText("done")).toBeTruthy();
@@ -177,7 +179,7 @@ describe("the assistant's pane", () => {
     await waitFor(() => expect(screen.queryByRole("article", { name: "Proposed change" })).toBeNull());
   });
 
-  it("rejects a proposal, and clears the conversation after asking in its own dialog", async () => {
+  it("rejects a proposal, and deletes the conversation after asking in its own dialog", async () => {
     const fixture = open_page();
     const kitchen = fixture.calls.add_context("Kitchen");
     fixture.set_script(async function* (request) {
@@ -188,6 +190,7 @@ describe("the assistant's pane", () => {
       <>
         <AssistantPane context_id={kitchen} />
         <Dialogs />
+        <ContextMenus />
       </>,
     );
     await screen.findByRole("textbox", { name: "Message" });
@@ -197,12 +200,79 @@ describe("the assistant's pane", () => {
     expect(await screen.findByText(/^Rejected: Delete the context/)).toBeTruthy();
     expect(fixture.calls.list_contexts().map((context) => context.name)).toEqual(["Kitchen"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear the conversation" }));
+    fireEvent.click(screen.getByRole("button", { name: "More for this conversation" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete…" }));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Clear" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
 
-    await waitFor(() => expect(fixture.calls.get_conversation(kitchen).messages).toEqual([]));
-    expect(await screen.findByText("Ask about this context, or ask CODEX to change it.")).toBeTruthy();
+    await waitFor(() => expect(fixture.calls.list_conversations(kitchen)).toEqual([]));
+    expect(await screen.findByText("A new conversation about this context: ask about it, or ask CODEX to change it.")).toBeTruthy();
+    expect(fixture.calls.list_contexts().map((context) => context.name)).toEqual(["Kitchen"]);
+  });
+
+  it("starts another conversation, switches between them while one is written, shows which are running, and renames one from its head", async () => {
+    const fixture = open_page();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    render(
+      <>
+        <AssistantPane context_id={kitchen} />
+        <Dialogs />
+        <ContextMenus />
+      </>,
+    );
+    await screen.findByRole("textbox", { name: "Message" });
+    type_and_send("Tiles");
+    expect(await screen.findByText("Hello.")).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Conversations" }).textContent).toContain("Tiles"));
+
+    // A second conversation, whose reply is held while the user looks at the first.
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
+    await waitFor(() => expect(screen.queryByText("Hello.")).toBeNull());
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    fixture.set_script(async function* () {
+      yield { type: "text", text: "Reading the manual" };
+      await held;
+      yield { type: "done", text: "Page 4." };
+    });
+    type_and_send("Oven");
+    expect(await screen.findByText("Reading the manual")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Conversations" }));
+    const oven_row = await screen.findByRole("menuitemradio", { name: /Oven/ });
+    expect(oven_row.textContent).toContain("writing…");
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /Tiles/ }));
+    expect(await screen.findByText("Hello.")).toBeTruthy();
+    expect(screen.queryByText("Reading the manual")).toBeNull();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Conversations" }).textContent).toContain("1 writing"));
+
+    await act(async () => {
+      release();
+      await wait_for_runs();
+    });
+    const [oven] = fixture.calls.list_conversations(kitchen);
+    expect(fixture.calls.get_conversation(oven!.id).messages.at(-1)!.text).toBe("Page 4.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename the conversation" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "Floor tiles" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Conversations" }).textContent).toContain("Floor tiles"));
+    expect(fixture.calls.list_conversations(kitchen).map((each) => each.title).sort()).toEqual(["Floor tiles", "Oven"]);
+  });
+
+  it("shows a conversation asked for by an item or a link once it is open on that context", async () => {
+    const fixture = open_page();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const { conversation_id: first } = await fixture.calls.send_message(kitchen, "First");
+    await wait_for_runs();
+    await fixture.calls.send_message(kitchen, "Second", null);
+    await wait_for_runs();
+    render(<AssistantPane context_id={kitchen} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Conversations" }).textContent).toContain("Second"));
+
+    act(() => want_conversation(kitchen, first));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Conversations" }).textContent).toContain("First"));
   });
 });
 

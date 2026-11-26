@@ -2,7 +2,7 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { Fragment, useEffect } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { create_accounts_client, type Me } from "@x-tech-laboratories/x-libs/web/accounts";
 import { AccountView, UsersView } from "@x-tech-laboratories/x-libs/web/react/accounts";
 import { SyncCertificatePrompt } from "@x-tech-laboratories/x-libs/web/react/certificates";
@@ -10,9 +10,11 @@ import { Shell, use_route, use_side_pane } from "@x-tech-laboratories/x-libs/web
 import { Bot } from "lucide-react";
 import { SignInForm, use_account } from "@x-tech-laboratories/x-libs/web/react/sign_in";
 import { theme_choice } from "@x-tech-laboratories/x-libs/web/theme";
+import { use_watch } from "@x-tech-laboratories/x-libs/web/react/watch";
 
-import { data_watch, page } from "./api.ts";
+import { attempt, calls, data_watch, page } from "./api.ts";
 import { AssistantPane } from "./assistant/AssistantPane.tsx";
+import { open_conversation, wanted_watch } from "./assistant/selection.ts";
 import { ContextTree } from "./contexts/ContextTree.tsx";
 import { ContextView } from "./contexts/ContextView.tsx";
 import { HomeView } from "./contexts/HomeView.tsx";
@@ -71,10 +73,29 @@ function Pages({ me, on_sign_out }: { me: Me | null; on_sign_out?: () => void })
   const view_key = route.parts.join("/");
   const is_admin = me !== null && me.role === me.roles.at(-1);
   const [assistant_open, set_assistant_open] = use_side_pane("codex-assistant-open", true);
+  const asked = use_watch(wanted_watch);
+  // The context last open, so a conversation it holds opens there.
+  const last_context = useRef<string | null>(null);
+  if (context_id) last_context.current = context_id;
 
   useEffect(() => {
     document.title = `${label} · CODEX`;
   }, [label]);
+
+  // A conversation asked for opens the pane.
+  useEffect(() => {
+    if (asked > 0) set_assistant_open(true);
+  }, [asked]);
+
+  // A codex://conversation/<id> link, from another program or a message, shows that conversation in the pane.
+  useEffect(() => {
+    if (named_section !== "conversation" || !rest[0]) return;
+    const id = decodeURIComponent(rest[0]);
+    void attempt(() => calls().get_conversation(id)).then((found) => {
+      if (found) open_conversation(id, found.contexts.map((each) => each.id), last_context.current);
+      else window.location.replace(last_context.current ? `#/context/${last_context.current}` : "#/overview");
+    });
+  }, [view_key]);
 
   const view = () => {
     if (context_id) return <ContextView id={context_id} />;

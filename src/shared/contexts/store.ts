@@ -3,12 +3,13 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { and, asc, count, desc, eq, inArray, like, or, sql, synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
+import { and, asc, count, desc, eq, inArray, like, notInArray, or, sql, synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
 import { in_transaction, type SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
 import { feed_key, item_id_of, type CollectorSummary, type Feed, type FoundItem } from "../collectors/collector.ts";
 import { open_plugin_host } from "../collectors/host.ts";
+import { conversation_collector } from "../conversations/model.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { migrations } from "./migrations/index.ts";
 import type { CardPlace, ContextDetail, ContextItem, ContextSummary, ContextView, FollowedFeed, Item, KeptItem, RefreshReport, SeededFrom } from "./model.ts";
@@ -250,9 +251,25 @@ function move_context(database: SqlDatabase, id: string, parent_id: string | nul
     .run();
 }
 
+// Told, after contexts are removed, which items they left in no context at all, such as CODEX's own conversations,
+// which go with the last context holding them.
+type ItemsLeft = (database: SqlDatabase, item_ids: string[]) => void;
+
+const items_left_listeners: ItemsLeft[] = [];
+
+export function when_items_left(listener: ItemsLeft): void {
+  if (!items_left_listeners.includes(listener)) items_left_listeners.push(listener);
+}
+
 function remove_context(database: SqlDatabase, id: string): void {
   context_row(database, id);
-  drizzle_of(database).delete(contexts).where(inArray(contexts.id, subtree_of(database, id))).run();
+  const removed = subtree_of(database, id);
+  const db = drizzle_of(database);
+  const held = db.select({ item_id: context_items.item_id }).from(context_items).where(inArray(context_items.context_id, removed)).all().map((row) => row.item_id);
+  const elsewhere = new Set(held.length > 0 ? db.select({ item_id: context_items.item_id }).from(context_items).where(and(inArray(context_items.item_id, held), notInArray(context_items.context_id, removed))).all().map((row) => row.item_id) : []);
+  db.delete(contexts).where(inArray(contexts.id, removed)).run();
+  const left = [...new Set(held)].filter((item_id) => !elsewhere.has(item_id));
+  if (left.length > 0) for (const listener of items_left_listeners) listener(database, left);
 }
 
 // Keeps what the collector said of the item, adding it the first time; the note and contexts stay as they are.
@@ -280,6 +297,7 @@ function keep_item(database: SqlDatabase, collector: string, found: FoundItem): 
 // Adds the item to each context given that does not hold it yet; the item itself stays in its own app.
 function add_item(database: SqlDatabase, context_ids: string[], collector: string, found: FoundItem, note = ""): string {
   if (context_ids.length === 0) throw new Error("Pick at least one context.");
+  if (collector === conversation_collector) throw new Error("A conversation is started in the Assistant pane; add_item_to_contexts puts one in more contexts.");
   for (const context_id of context_ids) context_row(database, context_id);
   return in_transaction(database, () => {
     const item_id = keep_item(database, collector, found);
@@ -306,11 +324,49 @@ function set_item_note(database: SqlDatabase, context_id: string, item_id: strin
     .run();
 }
 
+// A conversation is CODEX's own, so it is never left in no context by this: it is deleted with delete_conversation.
 function remove_item(database: SqlDatabase, context_id: string, item_id: string): void {
-  drizzle_of(database)
-    .delete(context_items)
+  const db = drizzle_of(database);
+  const memberships = db.select({ context_id: context_items.context_id }).from(context_items).where(eq(context_items.item_id, item_id)).all();
+  const is_last = memberships.length === 1 && memberships[0]!.context_id === context_id;
+  if (is_last && db.select({ collector: items.collector }).from(items).where(eq(items.id, item_id)).get()?.collector === conversation_collector) {
+    throw new Error("This is the last context holding that conversation; delete it with delete_conversation, or move it with move_item.");
+  }
+  db.delete(context_items)
     .where(and(eq(context_items.context_id, context_id), eq(context_items.item_id, item_id)))
     .run();
+}
+
+function kept_item_row(database: SqlDatabase, item_id: string) {
+  const row = drizzle_of(database).select().from(items).where(eq(items.id, item_id)).get();
+  if (!row) throw new Error(`There is no item ${item_id}.`);
+  if (row.collector === conversation_collector && row.status === "missing") throw new Error("That conversation was deleted.");
+  return row;
+}
+
+// Puts an item CODEX already keeps, such as one in another context or a conversation in none, in more contexts.
+function add_item_to_contexts(database: SqlDatabase, item_id: string, context_ids: string[], note = ""): void {
+  if (context_ids.length === 0) throw new Error("Pick at least one context.");
+  kept_item_row(database, item_id);
+  for (const context_id of context_ids) context_row(database, context_id);
+  in_transaction(database, () => {
+    for (const context_id of context_ids) drizzle_of(database).insert(context_items).values({ context_id, item_id, note, added_at: now() }).onConflictDoNothing().run();
+  });
+}
+
+// Moves an item from one context to another, its note with it; one the other already holds keeps that note.
+function move_item(database: SqlDatabase, context_id: string, item_id: string, to_context_id: string): void {
+  kept_item_row(database, item_id);
+  context_row(database, context_id);
+  context_row(database, to_context_id);
+  if (to_context_id === context_id) return;
+  const db = drizzle_of(database);
+  const membership = db.select().from(context_items).where(and(eq(context_items.context_id, context_id), eq(context_items.item_id, item_id))).get();
+  if (!membership) throw new Error("That context does not hold that item.");
+  in_transaction(database, () => {
+    db.insert(context_items).values({ context_id: to_context_id, item_id, note: membership.note, added_at: now() }).onConflictDoNothing().run();
+    db.delete(context_items).where(and(eq(context_items.context_id, context_id), eq(context_items.item_id, item_id))).run();
+  });
 }
 
 // ── Feeds ──────────────────────────────────────────────────────────────────
@@ -601,6 +657,8 @@ export const contexts_feature = define_feature({
     add_manual_item,
     set_item_note,
     remove_item,
+    add_item_to_contexts,
+    move_item,
     refresh_items,
     set_context_view: (database: SqlDatabase, id: string, view: ContextView): void => {
       if (view !== "list" && view !== "cards" && view !== "grouped") throw new Error('A context shows its items as "list", "cards" or "grouped".');
@@ -798,10 +856,26 @@ export const contexts_feature = define_feature({
       ],
     },
     remove_item: {
-      description: "Takes an item out of a context; it stays in its own app.",
+      description: "Takes an item out of a context; it stays in its own app. A conversation cannot be taken out of the last context holding it; delete_conversation deletes it.",
       params: [
         { name: "context_id", schema: id_of("context") },
         { name: "item_id", schema: id_of("item") },
+      ],
+    },
+    add_item_to_contexts: {
+      description: "Puts an item CODEX already keeps, such as one in another context or a conversation in no context, in more contexts, with a note on why.",
+      params: [
+        { name: "item_id", schema: id_of("item") },
+        { name: "context_ids", schema: context_ids_schema },
+        { name: "note", schema: text("Why it belongs there; may be empty."), optional: true },
+      ],
+    },
+    move_item: {
+      description: "Moves an item, such as a conversation, from one context to another, with its note; it stays in any other context holding it.",
+      params: [
+        { name: "context_id", schema: { ...id_of("context"), description: "The context it is in now." } },
+        { name: "item_id", schema: id_of("item") },
+        { name: "to_context_id", schema: { ...id_of("context"), description: "The context it moves to." } },
       ],
     },
     refresh_items: {

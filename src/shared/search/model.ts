@@ -18,13 +18,15 @@ export interface SearchHit {
   title: string;
   // A short piece of the text around what matched.
   excerpt: string;
-  // For an item: its collector, its kind such as "task", and where it opens.
+  // For an item: its collector, its kind such as "task", and where it opens; for a message, where its conversation opens.
   collector: string;
   item_kind: string;
   uri: string;
-  // Where it is: the contexts holding an item, the context a context sits in, or the context whose conversation holds
-  // a message (none for a top-level context or the general conversation).
+  // Where it is: the contexts holding an item, the context a context sits in, or the contexts holding the conversation
+  // a message is in (none for a top-level context or a conversation in no context).
   where: HitPlace[];
+  // The conversation a message is in, by id and title, which its uri opens; null for anything else.
+  conversation: { id: string; title: string } | null;
   // The sources whose content it carries, by collector id: an item's collector, or what an answer's run had read ("*"
   // when not recorded); none for what the user wrote.
   sources: string[];

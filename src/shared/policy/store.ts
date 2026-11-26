@@ -10,7 +10,8 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of } from "../api_schemas.ts";
 import { assistant_host } from "../conversations/host.ts";
-import { add_message } from "../conversations/messages.ts";
+import { add_message, type NewMessage } from "../conversations/messages.ts";
+import { has_conversation } from "../conversations/records.ts";
 import { define_feature } from "../feature.ts";
 import { settings_feature } from "../settings.ts";
 import { migrations } from "./migrations/index.ts";
@@ -33,12 +34,18 @@ function set_action_level(database: SqlDatabase, method: string, level: PolicyLe
 
 // ── Proposals ────────────────────────────────────────────────────────────────
 
-function list_proposals(database: SqlDatabase, context_id: string | null = null, status?: ProposalStatus): Proposal[] {
-  return list_proposals_of(database, context_id, status);
+function list_proposals(database: SqlDatabase, conversation_id: string | null = null, status?: ProposalStatus): Proposal[] {
+  return list_proposals_of(database, conversation_id || null, status);
 }
 
 function as_text(value: unknown): string {
   return value === undefined ? "Done." : typeof value === "string" ? value : JSON.stringify(value);
+}
+
+// Records what became of a proposal in its conversation, unless the change took the conversation away with it, such as
+// the removal of the last context holding it.
+function add_event(database: SqlDatabase, event: NewMessage): void {
+  if (has_conversation(database, event.conversation_id)) add_message(database, event);
 }
 
 // Approving runs the call as the user's own and records its result; rejecting records that it was not made.
@@ -49,7 +56,7 @@ async function resolve_proposal(database: SqlDatabase, id: string, decision: "ap
   const call_record = { id: proposal.id, name: proposal.method, arguments: proposal.arguments, proposal_id: proposal.id };
   if (decision === "reject") {
     settle_proposal(database, id, "rejected", "");
-    add_message(database, { conversation_id: proposal.conversation_id, role: "event", text: `Rejected: ${proposal.summary}`, tool_calls: [{ ...call_record, result: "", is_error: false, outcome: "refused" }], sources: proposal.sources });
+    add_event(database, { conversation_id: proposal.conversation_id, role: "event", text: `Rejected: ${proposal.summary}`, tool_calls: [{ ...call_record, result: "", is_error: false, outcome: "refused" }], sources: proposal.sources });
     return proposal_of(database, id);
   }
   const host = assistant_host();
@@ -60,7 +67,7 @@ async function resolve_proposal(database: SqlDatabase, id: string, decision: "ap
     if (!spec) throw new Error(`${proposal.method} is no longer offered.`);
     const result = as_text(await host.call(proposal.method, positional_args(spec, proposal.arguments)));
     settle_proposal(host.database(), id, "approved", result);
-    add_message(host.database(), {
+    add_event(host.database(), {
       conversation_id: proposal.conversation_id,
       role: "event",
       text: `Approved and done: ${proposal.summary}`,
@@ -70,7 +77,7 @@ async function resolve_proposal(database: SqlDatabase, id: string, decision: "ap
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     settle_proposal(host.database(), id, "failed", message);
-    add_message(host.database(), {
+    add_event(host.database(), {
       conversation_id: proposal.conversation_id,
       role: "event",
       text: `Approved, but it failed: ${proposal.summary}`,
@@ -79,7 +86,7 @@ async function resolve_proposal(database: SqlDatabase, id: string, decision: "ap
       sources: proposal.sources,
     });
   }
-  // An approved removal of the proposal's own context takes the proposal with it.
+  // An approved removal of the last context holding the proposal's conversation takes the proposal with it.
   return list_proposals_of(host.database(), proposal.conversation_id).find((each) => each.id === id) ?? { ...proposal, status: "approved", resolved_at: new Date().toISOString() };
 }
 
@@ -109,9 +116,9 @@ export const policy_feature = define_feature({
       ],
     },
     list_proposals: {
-      description: "Lists the changes the assistant proposed, oldest first, in one context's conversation, the general one, or all of them, with what each would do in plain words and whether it waits, was approved, rejected or failed.",
+      description: "Lists the changes the assistant proposed, oldest first, in one conversation or all of them, with what each would do in plain words and whether it waits, was approved, rejected or failed.",
       params: [
-        { name: "context_id", schema: { type: ["string", "null"], description: 'A context\'s id, "general" for the general conversation, or null for every conversation.' }, optional: true },
+        { name: "conversation_id", schema: { type: ["string", "null"], description: "A conversation's id, from list_conversations, or null for every conversation." }, optional: true },
         { name: "status", schema: { type: "string", enum: ["waiting", "approved", "rejected", "failed"], description: "Only those in this state." }, optional: true },
       ],
     },

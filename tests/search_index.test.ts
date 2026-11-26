@@ -178,7 +178,8 @@ describe("indexing", () => {
     await index_now();
 
     const state = await setup.fixture.calls.get_index_state();
-    expect(state).toMatchObject({ items: 2, contexts: 3, messages: 1, pending: 0, withheld: 0, embedder: { id: "fake-embedder", label: "Fake embedder", model: "words-1", dimensions: 512, is_local: true }, last_error: "", is_working: false });
+    // The messages, kept with no conversation as an older device would, became a conversation item in the kitchen.
+    expect(state).toMatchObject({ items: 3, contexts: 3, messages: 1, pending: 0, withheld: 0, embedder: { id: "fake-embedder", label: "Fake embedder", model: "words-1", dimensions: 512, is_local: true }, last_error: "", is_working: false });
     expect(state.embedded).toBe(state.chunks);
     expect(state.embedders).toEqual([{ id: "fake-embedder", label: "Fake embedder" }]);
     const car = setup.index.prepare("SELECT body, content FROM docs WHERE key LIKE 'item:notes:n-car'").get() as { body: string; content: string };

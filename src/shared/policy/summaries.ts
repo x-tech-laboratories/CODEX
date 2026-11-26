@@ -7,6 +7,7 @@ import { eq, inArray } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { contexts, items } from "../contexts/schema.ts";
+import { conversation_collector } from "../conversations/model.ts";
 import { drizzle_of } from "../feature.ts";
 import { offered_api } from "./policy.ts";
 
@@ -38,8 +39,9 @@ function context_names(database: SqlDatabase, ids: unknown): string {
 
 function item_name(database: SqlDatabase, id: unknown): string {
   if (typeof id !== "string") return "an item";
-  const row = drizzle_of(database).select({ title: items.title }).from(items).where(eq(items.id, id)).get();
-  return row ? quote(row.title) : `the item ${id}`;
+  const row = drizzle_of(database).select({ title: items.title, collector: items.collector }).from(items).where(eq(items.id, id)).get();
+  if (!row) return `the item ${id}`;
+  return row.collector === conversation_collector ? `the conversation ${quote(row.title)}` : quote(row.title);
 }
 
 function parent_place(database: SqlDatabase, parent_id: unknown): string {
@@ -64,6 +66,8 @@ const summaries: Record<string, (database: SqlDatabase, args: Args) => string> =
   },
   set_item_note: (database, args) => `Set the note on ${item_name(database, args.item_id)} in ${context_name(database, args.context_id)} to ${quote(args.note)}.`,
   remove_item: (database, args) => `Take ${item_name(database, args.item_id)} out of ${context_name(database, args.context_id)}.`,
+  add_item_to_contexts: (database, args) => `Add ${item_name(database, args.item_id)} to ${context_names(database, args.context_ids)}${args.note ? ` with the note ${quote(args.note)}` : ""}.`,
+  move_item: (database, args) => `Move ${item_name(database, args.item_id)} from ${context_name(database, args.context_id)} to ${context_name(database, args.to_context_id)}.`,
   refresh_items: (database, args) => `Ask the apps what became of the items in ${args.context_id ? context_name(database, args.context_id) : "every context"}.`,
   follow_feed: (database, args) => `Make ${context_name(database, args.context_id)} follow ${quote(args.label)} in ${String(args.collector)}.`,
   unfollow_feed: (database, args) => `Stop ${context_name(database, args.context_id)} following ${String(args.feed_id)} in ${String(args.collector)}.`,

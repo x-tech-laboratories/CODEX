@@ -10,10 +10,8 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { open_plugin_host } from "../collectors/host.ts";
 import { engine_setting, is_hosted, type Engine, type EngineEvent, type EngineTools, type EngineTurn, type ToolOutcome } from "../engines/engine.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
-import { eq } from "@x-tech-laboratories/x-libs/drizzle";
 
-import { contexts } from "../contexts/schema.ts";
-import { drizzle_of, new_id } from "../feature.ts";
+import { new_id } from "../feature.ts";
 import { is_read_only } from "../page_api.ts";
 import { brings_outside_content, decide, is_offered, level_of, offered_api, type Presence } from "../policy/policy.ts";
 import { add_proposal } from "../policy/proposals.ts";
@@ -26,7 +24,8 @@ import { reply_ended, reply_started } from "./activity.ts";
 import { assistant_host, type AssistantHost } from "./host.ts";
 import { screened_instructions } from "./instructions.ts";
 import { add_message, list_messages } from "./messages.ts";
-import { conversation_id_of, general_conversation, type ConversationMessage, type AssistantStatus, type EngineSummary, type RunState, type ToolCallRecord } from "./model.ts";
+import { type ConversationMessage, type AssistantStatus, type EngineSummary, type RunState, type ToolCallRecord } from "./model.ts";
+import { add_conversation_record, conversation_ids_in, conversation_row, has_conversation, summaries_of } from "./records.ts";
 
 // ── Engines ──────────────────────────────────────────────────────────────────
 
@@ -89,7 +88,7 @@ export function engine_tools(context: ToolContext): EngineTools {
     if (taints(screen, screened.sources)) context.has_outside_content = true;
     const text = as_text(screened.value);
     const shown = screened.sources.size > 0 ? untrusted_block(text) : text;
-    const withheld = withheld_line(screen, screened.withheld);
+    const withheld = withheld_line(screen, screened.withheld, screened.withheld_kinds);
     return withheld ? `${shown}\n${withheld}` : shown;
   };
   return {
@@ -179,13 +178,16 @@ function screened_text(screen: Screen, message: ConversationMessage): string {
   return `[${what} is withheld from this hosted engine: it drew on ${from}, which the user has not marked “May be sent to a hosted engine”.]`;
 }
 
-// The conversation so far as the engine reads it: the user's messages and the answers, with what became of its
-// proposals told at the start of the user's next message, and without failures.
-export function turns_of(database: SqlDatabase, conversation_id: string, screen: Screen = local_screen()): EngineTurn[] {
+// The conversation so far as the engine reads it, with the sources of the earlier answers and events it is replayed,
+// which count as read again: the user's messages and the answers, with what became of its proposals told at the start
+// of the user's next message, and without failures.
+export function screened_turns(database: SqlDatabase, conversation_id: string, screen: Screen = local_screen()): { turns: EngineTurn[]; sources: Set<string> } {
   const turns: EngineTurn[] = [];
+  const sources = new Set<string>();
   let events: string[] = [];
   for (const raw of list_messages(database, conversation_id)) {
     const message = raw.text.trim() ? { ...raw, text: screened_text(screen, raw) } : raw;
+    if (raw.role !== "user" && raw.text.trim() && raw.sources.every((source) => may_send(screen, source))) for (const source of raw.sources) sources.add(source);
     if (message.role === "event") events.push(message.text);
     else if (message.text.trim()) {
       const text = message.role === "user" && events.length > 0 ? `(Since your last answer: ${events.join(" ")})\n\n${message.text}` : message.text;
@@ -193,40 +195,56 @@ export function turns_of(database: SqlDatabase, conversation_id: string, screen:
       turns.push({ role: message.role, text });
     }
   }
-  return turns;
+  return { turns, sources };
 }
 
-// Keeps the user's message and starts the engine on it; answers at once, while the reply streams to open pages.
-export async function start_run(database: SqlDatabase, context_id: string | null, text: string): Promise<{ run_id: string }> {
+export function turns_of(database: SqlDatabase, conversation_id: string, screen: Screen = local_screen()): EngineTurn[] {
+  return screened_turns(database, conversation_id, screen).turns;
+}
+
+// The conversation a message goes to: the one named, a new one for null, or, left out, the context's most recently
+// used one, or a new one when it has none; undefined for one still to be made.
+function conversation_for(database: SqlDatabase, context_id: string | null, conversation_id: string | null | undefined): string | undefined {
+  if (typeof conversation_id === "string" && conversation_id) return conversation_row(database, conversation_id).id;
+  if (conversation_id === null) return undefined;
+  return summaries_of(database, conversation_ids_in(database, context_id))[0]?.id;
+}
+
+// Keeps the user's message, in a new conversation in the open context when asked or when there is none, and starts the
+// engine on it, told about the context the user has open; answers at once, while the reply streams to open pages.
+export async function start_run(database: SqlDatabase, context_id: string | null, text: string, asked?: string | null): Promise<{ conversation_id: string; run_id: string }> {
   const host = assistant_host();
-  const conversation_id = conversation_id_of(context_id);
   if (!text.trim()) throw new Error("Write a message first.");
-  if (runs.has(conversation_id)) throw new Error("A reply is still being written here; stop it or wait for it first.");
-  // Fails on a context that does not exist, before anything is kept.
-  screened_instructions(database, context_id || null, "", local_screen());
+  // Fails on a context or conversation that does not exist, before anything is kept.
+  screened_instructions(database, context_id, null, "", local_screen());
+  const chosen = conversation_for(database, context_id, asked);
+  if (chosen !== undefined && runs.has(chosen)) throw new Error("A reply is still being written here; stop it or wait for it first.");
   const found = await find_engine(database);
   if (!found.running || !found.engine) throw new Error(found.problem);
   const screen = await open_screen(database, is_hosted(found.running));
-  const instructions = screened_instructions(database, context_id || null, new Date().toISOString().slice(0, 10), screen);
-  if (runs.has(conversation_id)) throw new Error("A reply is still being written here; stop it or wait for it first.");
+  if (chosen !== undefined && (runs.has(chosen) || !has_conversation(database, chosen))) throw new Error(runs.has(chosen) ? "A reply is still being written here; stop it or wait for it first." : `There is no conversation ${chosen}.`);
+  const conversation_id = chosen ?? add_conversation_record(database, context_id);
+  const instructions = screened_instructions(database, context_id, conversation_id, new Date().toISOString().slice(0, 10), screen);
   add_message(database, { conversation_id, role: "user", text: text.trim(), sources: [] });
   const state: RunState = { run_id: new_id(), engine: found.engine.label, model: found.engine.model, started_at: new Date().toISOString(), text: "", tool_calls: [] };
   const run: Run = { conversation_id, screen, abort: new AbortController(), state, done: Promise.resolve() };
   runs.set(conversation_id, run);
   reply_started();
+  // An earlier answer replayed counts as reading its sources again, so one that drew on an untrusted source taints the run.
+  const replayed = screened_turns(database, conversation_id, screen);
   const tools = engine_tools({
     database: host.database,
     call: host.call,
     conversation_id,
     presence: "conversation",
-    has_outside_content: taints(screen, instructions.sources),
+    has_outside_content: taints(screen, [...instructions.sources, ...replayed.sources]),
     screen,
     on_decided: (name, record) => note_decision(run, name, record),
   });
-  const request = { instructions: instructions.value, conversation: turns_of(database, conversation_id, screen), tools };
+  const request = { instructions: instructions.value, conversation: replayed.turns, tools };
   run.done = drive(run, found.running.run(request, run.abort.signal), host);
   host.emit({ conversation_id, run_id: state.run_id, type: "started", engine: state.engine, model: state.model });
-  return { run_id: state.run_id };
+  return { conversation_id, run_id: state.run_id };
 }
 
 // What the policy made of a call, kept with the call the engine announced under that name and not yet decided.
@@ -288,8 +306,8 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
     }
   }
   try {
-    // A context removed while its reply was written keeps no conversation.
-    if (conversation_id !== general_conversation && !drizzle_of(host.database()).select({ id: contexts.id }).from(contexts).where(eq(contexts.id, conversation_id)).get()) return;
+    // A conversation deleted while its reply was written, on its own or with its last context, keeps nothing.
+    if (!has_conversation(host.database(), conversation_id)) return;
     add_message(host.database(), {
       conversation_id,
       role: "assistant",

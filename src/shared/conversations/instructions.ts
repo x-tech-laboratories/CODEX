@@ -1,6 +1,7 @@
-// What the engine is told before the conversation: who it is, today's date, the open context with what it holds, and
-// the rules. What other apps wrote, such as item titles and snippets, goes inside the untrusted fence, and a hosted
-// engine is told only how many items it was not sent from sources not marked for one.
+// What the engine is told before the conversation: who it is, today's date, the context the user has open with what it
+// holds, and the rules. What other apps wrote, such as item titles and snippets, goes inside the untrusted fence, and a
+// hosted engine is told only how many items it was not sent from sources not marked for one. The context's other
+// conversations are CODEX's own and are named by their titles alone.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -10,6 +11,8 @@ import { contexts_feature } from "../contexts/store.ts";
 import type { ContextItem } from "../contexts/model.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
 import { local_screen, screen_entries, withheld_line, type Screen, type Screened } from "../privacy/screen.ts";
+import { conversation_collector, conversation_of_item } from "./model.ts";
+import { conversation_row } from "./records.ts";
 
 // ── Instructions ─────────────────────────────────────────────────────────────
 
@@ -34,8 +37,9 @@ function item_line(item: ContextItem): string {
   return `- ${facts.filter(Boolean).join("; ")}`;
 }
 
-// The open context: its name, where it sits in the tree, its notes, the contexts inside it and the items it may be sent.
-function context_part(database: SqlDatabase, context_id: string, screen: Screen): Screened<string> {
+// The open context: its name, where it sits in the tree, its notes, the contexts inside it, the items it may be sent and
+// its other conversations by title.
+function context_part(database: SqlDatabase, context_id: string, conversation_id: string | null, screen: Screen): Screened<string> {
   const context = contexts_feature.methods.get_context(database, context_id);
   const all = contexts_feature.methods.list_contexts(database, true);
   const by_id = new Map(all.map((each) => [each.id, each]));
@@ -45,7 +49,9 @@ function context_part(database: SqlDatabase, context_id: string, screen: Screen)
     if (path.length > all.length) break;
   }
   const children = all.filter((each) => each.parent_id === context_id);
-  const screened = screen_entries(screen, context.items.slice(0, most_items_listed), (item) => item.collector, (item) => item.id);
+  const held = context.items.filter((item) => item.collector !== conversation_collector);
+  const others = context.items.filter((item) => item.collector === conversation_collector && conversation_of_item(item.id) !== conversation_id && item.status !== "missing");
+  const screened = screen_entries(screen, held.slice(0, most_items_listed), (item) => item.collector, (item) => item.id);
   const listed = screened.value;
   const lines = [
     `The open context is "${context.name}" (id ${context.id})${context.is_archived ? ", archived" : ""}.`,
@@ -53,24 +59,26 @@ function context_part(database: SqlDatabase, context_id: string, screen: Screen)
     context.notes.trim() ? `Its notes, written by the user:\n${context.notes.trim()}` : "It has no notes.",
     children.length > 0 ? `Contexts inside it: ${children.map((child) => `"${child.name}" (id ${child.id})`).join(", ")}.` : "No contexts are inside it.",
   ];
-  if (context.items.length === 0) lines.push("It holds no items.");
+  if (held.length === 0) lines.push("It holds no items.");
   else {
     const shown = listed.length + [...screened.withheld.values()].reduce((sum, count) => sum + count, 0);
-    const more = context.items.length > shown ? `, the newest ${shown} listed` : "";
-    lines.push(`It holds ${context.items.length} items${more}, as their apps describe them:`);
+    const more = held.length > shown ? `, the newest ${shown} listed` : "";
+    lines.push(`It holds ${held.length} items${more}, as their apps describe them:`);
     if (listed.length > 0) lines.push(untrusted_block(listed.map(item_line).join("\n")));
-    const withheld = withheld_line(screen, screened.withheld);
+    const withheld = withheld_line(screen, screened.withheld, screened.withheld_kinds);
     if (withheld) lines.push(withheld);
   }
+  if (others.length > 0) lines.push(`Its other conversations with you, CODEX's own items, by the titles the user gave or began them with: ${others.map((item) => `"${shortened(item.title)}" (id ${item.id})`).join(", ")}.`);
   return { ...screened, value: lines.join("\n") };
 }
 
 // The instructions with the sources whose items they hold, so a run knows whether it starts having read outside content.
-export function screened_instructions(database: SqlDatabase, context_id: string | null, today: string, screen: Screen): Screened<string> {
-  const context = context_id ? context_part(database, context_id, screen) : { value: "No context is open: this is the general conversation. list_contexts gives the user's contexts.", sources: new Set<string>(), withheld: new Map<string, number>() };
+export function screened_instructions(database: SqlDatabase, context_id: string | null, conversation_id: string | null, today: string, screen: Screen): Screened<string> {
+  if (conversation_id !== null) conversation_row(database, conversation_id);
+  const context = context_id ? context_part(database, context_id, conversation_id, screen) : { value: "No context is open: this conversation is in no context. list_contexts gives the user's contexts.", sources: new Set<string>(), withheld: new Map<string, number>() };
   return { ...context, value: `${identity}\n\nToday is ${today}.\n\n${context.value}` };
 }
 
-export function build_instructions(database: SqlDatabase, context_id: string | null, today: string, screen: Screen = local_screen()): string {
-  return screened_instructions(database, context_id, today, screen).value;
+export function build_instructions(database: SqlDatabase, context_id: string | null, today: string, screen: Screen = local_screen(), conversation_id: string | null = null): string {
+  return screened_instructions(database, context_id, conversation_id, today, screen).value;
 }

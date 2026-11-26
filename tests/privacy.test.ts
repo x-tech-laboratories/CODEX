@@ -210,11 +210,11 @@ describe("the log of what hosted engines were sent", () => {
       await request.tools.call("search_kept_items", { query: "o" });
       yield { type: "done", text: "Read." };
     });
-    await fixture.calls.send_message(kitchen, "What is here?");
+    const { conversation_id } = await fixture.calls.send_message(kitchen, "What is here?");
     await wait_for_runs();
 
     const [send] = fixture.calls.list_hosted_sends();
-    expect(send).toMatchObject({ conversation_id: kitchen, engine: "Fake", model: "fake-model", item_count: 1, included: [{ collector: "email", label: "Email", count: 1 }], withheld: [{ collector: "links", label: "Web links", count: 1 }] });
+    expect(send).toMatchObject({ conversation_id, engine: "Fake", model: "fake-model", item_count: 1, included: [{ collector: "email", label: "Email", count: 1 }], withheld: [{ collector: "links", label: "Web links", count: 1 }] });
     expect(JSON.stringify(send)).not.toContain("Tiler");
 
     const local = start_fixture();

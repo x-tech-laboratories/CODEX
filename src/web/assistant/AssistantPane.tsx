@@ -1,18 +1,27 @@
-// The assistant's pane on the right: its face and the engine answering, the open context's conversation (the general
-// one with no context open) with the reply streaming in, the changes waiting for the user, and the message box.
+// The assistant's pane on the right: its face and the engine answering, a switcher between the open context's
+// conversations (those in no context when none is open), the one shown with the reply streaming in, the changes
+// waiting for the user, and the message box.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import type { MenuItem } from "@x-tech-laboratories/x-libs/web/menus";
+import { age } from "@x-tech-laboratories/x-libs/web/format";
+import { AddIcon, ChevronDownIcon, EditIcon, Icon } from "@x-tech-laboratories/x-libs/web/react/icons";
 import { FormGroup } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Markdown } from "@x-tech-laboratories/x-libs/web/react/markdown";
-import { confirm_dialog } from "@x-tech-laboratories/x-libs/web/react/dialog";
+import { MenuButton } from "@x-tech-laboratories/x-libs/web/react/menu_button";
+import { open_context_menu } from "@x-tech-laboratories/x-libs/web/react/menus";
 import { Empty, Skeleton } from "@x-tech-laboratories/x-libs/web/react/states";
-import { Send, Square, Trash2 } from "lucide-react";
+import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
+import { use_watch } from "@x-tech-laboratories/x-libs/web/react/watch";
+import { Send, Square } from "lucide-react";
 
-import type { AssistantStatus, ConversationMessage, ToolCallRecord } from "../../shared/conversations/model.ts";
+import { conversation_item_id, type AssistantStatus, type ConversationMessage, type ConversationSummary, type ToolCallRecord } from "../../shared/conversations/model.ts";
 import type { Proposal } from "../../shared/policy/model.ts";
-import { attempt, calls, succeeds, use_data } from "../api.ts";
+import { attempt, calls, page, succeeds, use_data } from "../api.ts";
+import { add_to_contexts, delete_conversation, move_to_context, rename_conversation } from "../contexts/item_actions.tsx";
+import { open_conversation, take_wanted, wanted_watch } from "./selection.ts";
 import { Mascot } from "./Mascot.tsx";
 import { lasting_mood, moment_after, type MascotMood } from "./mascot.ts";
 import { use_conversation, type LiveRun } from "./use_conversation.ts";
@@ -136,31 +145,26 @@ export function ProposalCard({ proposal }: { proposal: Proposal }) {
 
 // ── Message box ──────────────────────────────────────────────────────────────
 
-function Composer({ context_id, is_running, can_clear }: { context_id: string | null; is_running: boolean; can_clear: boolean }) {
+// Sends to the conversation shown, or starts a new one in the open context when none is; gives the conversation's id.
+function Composer({ context_id, conversation_id, is_running, on_sent }: { context_id: string | null; conversation_id: string | null; is_running: boolean; on_sent: (sent: { conversation_id: string; run_id: string }) => void }) {
   const [text, set_text] = useState("");
   const [sending, set_sending] = useState(false);
 
   const send = async () => {
     if (!text.trim() || is_running || sending) return;
     set_sending(true);
-    const sent = await attempt(() => calls().send_message(context_id, text));
+    const sent = await attempt(() => calls().send_message(context_id, text, conversation_id));
     set_sending(false);
-    if (sent) set_text("");
+    if (sent) {
+      set_text("");
+      on_sent(sent);
+    }
   };
   const on_key_down = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
     void send();
   };
-  const clear = () =>
-    confirm_dialog({
-      title: "Clear this conversation?",
-      message: "Every message and proposal in it is deleted. The contexts and items stay as they are.",
-      confirm_label: "Clear",
-      busy_label: "Clearing…",
-      danger: true,
-      run: async () => void (await calls().clear_conversation(context_id)),
-    });
 
   return (
     <form
@@ -172,11 +176,8 @@ function Composer({ context_id, is_running, can_clear }: { context_id: string | 
     >
       <textarea aria-label="Message" placeholder="Ask CODEX… (Enter sends, Shift+Enter starts a new line)" rows={3} value={text} onChange={(event) => set_text(event.target.value)} onKeyDown={on_key_down} />
       <div className="composer-actions">
-        <button type="button" className="icon" aria-label="Clear the conversation" title="Clear the conversation" disabled={is_running || !can_clear} onClick={clear}>
-          <Trash2 size={16} />
-        </button>
-        {is_running ? (
-          <button type="button" onClick={() => void attempt(() => calls().stop_reply(context_id))}>
+        {is_running && conversation_id ? (
+          <button type="button" onClick={() => void attempt(() => calls().stop_reply(conversation_id))}>
             <Square size={14} /> Stop
           </button>
         ) : (
@@ -186,6 +187,54 @@ function Composer({ context_id, is_running, can_clear }: { context_id: string | 
         )}
       </div>
     </form>
+  );
+}
+
+// ── Switcher ─────────────────────────────────────────────────────────────────
+
+function when_used(conversation: ConversationSummary): string {
+  const used = age(Date.parse(conversation.last_used_at) / 1000);
+  return conversation.is_running ? `writing… · ${used}` : used;
+}
+
+// The conversation shown, a menu of the others in this context (or in none) with when each was used and which are
+// being written, and what can be done to the one shown.
+function Switcher({ context_id, list, shown, on_pick }: { context_id: string | null; list: ConversationSummary[]; shown: ConversationSummary | null; on_pick: (id: string | null) => void }) {
+  const running_elsewhere = list.filter((each) => each.is_running && each.id !== shown?.id).length;
+  const holders = shown?.contexts.map((each) => each.id) ?? [];
+  const open_list = (event: MouseEvent<HTMLButtonElement>) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    open_context_menu({ clientX: box.left, clientY: box.bottom, preventDefault: () => undefined }, [
+      ...list.map((each) => ({ label: each.title, hint: when_used(each), radio: true, checked: each.id === shown?.id, run: () => on_pick(each.id) })),
+      { label: "New conversation", separator_before: list.length > 0, run: () => on_pick(null) },
+    ]);
+  };
+  const more: MenuItem[] = shown
+    ? [
+        { label: "Rename…", run: () => rename_conversation(shown) },
+        { label: context_id ? "Move to…" : "Move to a context…", run: () => move_to_context({ id: conversation_item_id(shown.id), title: shown.title }, context_id, holders, (moved_to) => open_conversation(shown.id, [moved_to], null)) },
+        { label: "Also add to…", run: () => add_to_contexts({ id: conversation_item_id(shown.id), title: shown.title }, holders) },
+        { label: "Copy link", run: () => void navigator.clipboard.writeText(shown.link).then(() => toast("Link copied.")) },
+        { label: "Delete…", danger: true, separator_before: true, run: () => delete_conversation(shown, () => on_pick(null)) },
+      ]
+    : [];
+  return (
+    <div className="assistant-switcher">
+      <button type="button" className="assistant-switcher-pick" aria-haspopup="menu" aria-label="Conversations" title="Pick a conversation" onClick={open_list}>
+        <span className="assistant-switcher-title">{shown?.title ?? "New conversation"}</span>
+        {running_elsewhere > 0 && <span className="badge tone-warn">{running_elsewhere} writing</span>}
+        <Icon icon={ChevronDownIcon} />
+      </button>
+      {shown && (
+        <button type="button" className="icon" aria-label="Rename the conversation" title="Rename" onClick={() => rename_conversation(shown)}>
+          <Icon icon={EditIcon} />
+        </button>
+      )}
+      <button type="button" className="icon" aria-label="New conversation" title="New conversation" disabled={shown === null} onClick={() => on_pick(null)}>
+        <Icon icon={AddIcon} />
+      </button>
+      {shown && <MenuButton label="More for this conversation" items={more} />}
+    </div>
   );
 }
 
@@ -202,6 +251,39 @@ function NoEngine({ status }: { status: AssistantStatus }) {
   );
 }
 
+// How each reply ended, once each: those of the conversation shown, and those this pane sent, which may end before the
+// pane knows which conversation a new one went to.
+function use_ends(ended: { error: string; run_id: string } | null): [{ error: string; key: number } | null, (run_id: string) => void] {
+  const [end, set_end] = useState<{ error: string; key: number } | null>(null);
+  const noted = useRef(new Set<string>());
+  const unclaimed = useRef(new Map<string, string>());
+  const awaited = useRef(new Set<string>());
+  const note = (run_id: string, error: string) => {
+    if (noted.current.has(run_id)) return;
+    noted.current.add(run_id);
+    set_end((before) => ({ error, key: (before?.key ?? 0) + 1 }));
+  };
+  useEffect(() => {
+    if (ended) note(ended.run_id, ended.error);
+  }, [ended]);
+  useEffect(
+    () =>
+      page().on_conversation((event) => {
+        if (event.type !== "finished") return;
+        if (awaited.current.delete(event.run_id)) note(event.run_id, event.error);
+        else unclaimed.current.set(event.run_id, event.error);
+        if (unclaimed.current.size > 20) unclaimed.current.delete(unclaimed.current.keys().next().value!);
+      }),
+    [],
+  );
+  const sent = (run_id: string) => {
+    const error = unclaimed.current.get(run_id);
+    if (error === undefined) awaited.current.add(run_id);
+    else note(run_id, error);
+  };
+  return [end, sent];
+}
+
 function use_moment(ended: { error: string; key: number } | null): { mood: MascotMood; key: number } | null {
   const [moment, set_moment] = useState<{ mood: MascotMood; key: number } | null>(null);
   useEffect(() => {
@@ -211,15 +293,37 @@ function use_moment(ended: { error: string; key: number } | null): { mood: Masco
   return moment;
 }
 
+// Which conversation the pane shows on this context: the one picked or asked for, else the most recently used; null
+// for a new one not yet sent to.
+function use_shown(context_id: string | null, list: ConversationSummary[] | null | undefined): [string | null, (id: string | null) => void, () => void] {
+  const [choice, set_choice] = useState<{ context_id: string | null; id: string | null } | null>(null);
+  const asked = use_watch(wanted_watch);
+  useEffect(() => {
+    const id = take_wanted(context_id);
+    if (id) set_choice({ context_id, id });
+  }, [asked, context_id]);
+  const picked = choice && choice.context_id === context_id ? choice.id : undefined;
+  const shown = picked === undefined ? (list?.[0]?.id ?? null) : picked;
+  return [shown, (id) => set_choice({ context_id, id }), () => set_choice(null)];
+}
+
 export function AssistantPane({ context_id }: { context_id: string | null }) {
   const status = use_data((api) => api.get_assistant_status());
-  const { conversation, run, ended } = use_conversation(context_id);
-  const moment = use_moment(ended);
+  const list = use_data((api) => api.list_conversations(context_id), [context_id]);
+  const [shown_id, pick, forget_pick] = use_shown(context_id, list.data);
+  const { conversation, run, ended } = use_conversation(shown_id);
+  const [end, on_sent_run] = use_ends(ended);
+  // One picked that has gone, such as one deleted on another device, gives way to the most recent.
+  useEffect(() => {
+    if (conversation.status === "failed") forget_pick();
+  }, [conversation.status]);
+  const moment = use_moment(end);
   const list_end = useRef<HTMLDivElement>(null);
   const engine = status.data?.engine ?? null;
   const is_running = run !== null && !run.finished;
   const mood = lasting_mood({ has_engine: engine !== null, is_reachable: status.status !== "failed" && conversation.status !== "failed", is_running });
-  const data = conversation.data;
+  const data = shown_id ? conversation.data : null;
+  const shown = list.data?.find((each) => each.id === shown_id) ?? data ?? null;
   const waiting = data?.proposals.filter((proposal) => proposal.status === "waiting") ?? [];
   const count = (data?.messages.length ?? 0) + waiting.length + (run ? 1 : 0);
 
@@ -237,15 +341,18 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
           {engine && " "}
           {engine && <span className={`badge tone-${engine.is_local ? "none" : "warn"}`} title={engine.is_local ? "Answers on this computer or your own network." : "Answers from a company's servers; it is sent only the items of sources you marked for it."}>{engine.is_local ? "local" : "hosted"}</span>}
         </p>
+        <Switcher context_id={context_id} list={list.data ?? []} shown={shown} on_pick={pick} />
       </header>
       {status.data && !engine && <NoEngine status={status.data} />}
       <div className="assistant-messages">
-        {!data ? (
+        {shown_id && !data ? (
           <Skeleton lines={3} />
         ) : (
           <>
-            {data.messages.length === 0 && !run && engine && <p className="muted small">{context_id ? "Ask about this context, or ask CODEX to change it." : "No context is open, so this is the general conversation."}</p>}
-            {data.messages.map((message) => (
+            {!data?.messages.length && !run && engine && (
+              <p className="muted small">{context_id ? "A new conversation about this context: ask about it, or ask CODEX to change it." : "No context is open, so this conversation will be in no context."}</p>
+            )}
+            {data?.messages.map((message) => (
               <Message key={message.id} message={message} />
             ))}
             {run && <Reply run={run} />}
@@ -256,7 +363,7 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
         )}
         <div ref={list_end} />
       </div>
-      {engine && <Composer context_id={context_id} is_running={is_running} can_clear={(data?.messages.length ?? 0) + (data?.proposals.length ?? 0) > 0} />}
+      {engine && <Composer key={shown_id ?? "new"} context_id={context_id} conversation_id={shown_id} is_running={is_running} on_sent={(sent) => (pick(sent.conversation_id), on_sent_run(sent.run_id))} />}
     </div>
   );
 }

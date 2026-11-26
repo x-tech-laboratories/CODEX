@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
+import { add_conversation_record, has_conversation } from "../src/shared/conversations/records.ts";
 import { engine_tools, max_result_chars, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
 import { brings_outside_content, changing_calls, decide } from "../src/shared/policy/policy.ts";
 import { summarize_call } from "../src/shared/policy/summaries.ts";
@@ -11,8 +12,9 @@ afterEach(async () => {
   use_assistant_host(null);
 });
 
-// The tools a conversation run gets, calling the fixture's store as the host does.
+// The tools a run in a conversation in no context gets, calling the fixture's store as the host does.
 function tools_of(fixture: Fixture, conversation_id = "general"): { context: ToolContext; tools: ReturnType<typeof engine_tools>; decided: string[] } {
+  if (!has_conversation(fixture.database, conversation_id)) add_conversation_record(fixture.database, null, conversation_id);
   const decided: string[] = [];
   const context: ToolContext = {
     database: () => fixture.database,
@@ -76,6 +78,7 @@ const allowed_tools = [
   "add_contexts_from_feed_group",
   "add_contexts_from_feeds",
   "add_item",
+  "add_item_to_contexts",
   "add_manual_item",
   "follow_feed",
   "get_context",
@@ -85,6 +88,7 @@ const allowed_tools = [
   "list_contexts",
   "list_feed_group_news",
   "move_context",
+  "move_item",
   "refresh_items",
   "remove_context",
   "remove_item",
@@ -104,7 +108,7 @@ describe("a run's tools", () => {
     const fixture = start_fixture();
     const { tools } = tools_of(fixture);
     expect(tools.definitions.map((tool) => tool.name).sort()).toEqual(allowed_tools);
-    for (const never of ["set_setting", "get_settings", "set_action_level", "resolve_proposal", "set_source_mark", "rebuild_index", "import_contexts", "send_message", "clear_conversation"]) {
+    for (const never of ["set_setting", "get_settings", "set_action_level", "resolve_proposal", "set_source_mark", "rebuild_index", "import_contexts", "send_message", "list_conversations", "get_conversation", "rename_conversation", "delete_conversation", "stop_reply"]) {
       expect(allowed_tools).not.toContain(never);
     }
   });
@@ -186,11 +190,11 @@ describe("proposals", () => {
       yield { type: "done", text: "I proposed renaming it." };
     });
 
-    await fixture.calls.send_message(kitchen, "Rename this to Cooking");
+    const { conversation_id } = await fixture.calls.send_message(kitchen, "Rename this to Cooking");
     await wait_for_runs();
-    const conversation = fixture.calls.get_conversation(kitchen);
+    const conversation = fixture.calls.get_conversation(conversation_id);
     const [proposal] = conversation.proposals;
-    expect(proposal).toMatchObject({ conversation_id: kitchen, method: "rename_context", status: "waiting", summary: "Rename the context “Kitchen” to “Cooking”." });
+    expect(proposal).toMatchObject({ conversation_id, method: "rename_context", status: "waiting", summary: "Rename the context “Kitchen” to “Cooking”." });
     expect(conversation.messages[1]!.tool_calls).toMatchObject([{ id: "t1", outcome: "proposed", proposal_id: proposal!.id }]);
     expect(fixture.calls.get_context(kitchen).name).toBe("Kitchen");
 
@@ -199,7 +203,7 @@ describe("proposals", () => {
     expect(approved).toMatchObject({ status: "approved", result: "Done." });
     expect(approved.resolved_at).not.toBe("");
     expect(fixture.calls.get_context(kitchen).name).toBe("Cooking");
-    const event = fixture.calls.get_conversation(kitchen).messages.at(-1)!;
+    const event = fixture.calls.get_conversation(conversation_id).messages.at(-1)!;
     expect(event).toMatchObject({ role: "event", text: "Approved and done: Rename the context “Kitchen” to “Cooking”." });
     expect(event.tool_calls).toMatchObject([{ name: "rename_context", outcome: "ran", applied_by: "user_approval", proposal_id: proposal!.id }]);
     // The change is in History like any other.
@@ -223,7 +227,7 @@ describe("proposals", () => {
     const failed = await fixture.calls.resolve_proposal(again!.id, "approve");
 
     expect(failed).toMatchObject({ status: "failed", result: `There is no context ${kitchen}.` });
-    const events = fixture.calls.get_conversation(null).messages.map((message) => [message.role, message.text.split(":")[0]]);
+    const events = fixture.calls.get_conversation("general").messages.map((message) => [message.role, message.text.split(":")[0]]);
     expect(events).toEqual([
       ["event", "Rejected"],
       ["event", "Approved and done"],
@@ -236,13 +240,18 @@ describe("proposals", () => {
   it("can remove the context whose conversation proposed it, taking that conversation with it", async () => {
     const fixture = start_fixture();
     const kitchen = fixture.calls.add_context("Kitchen");
-    const { tools } = tools_of(fixture, kitchen);
-    await tools.call("remove_context", { id: kitchen });
-    const [remove] = fixture.calls.list_proposals(kitchen);
+    fixture.set_script(async function* (request) {
+      await request.tools.call("remove_context", { id: kitchen });
+      yield { type: "done", text: "Proposed." };
+    });
+    const { conversation_id } = await fixture.calls.send_message(kitchen, "Remove this context");
+    await wait_for_runs();
+    const [remove] = fixture.calls.list_proposals(conversation_id);
 
     expect(await fixture.calls.resolve_proposal(remove!.id, "approve")).toMatchObject({ status: "approved" });
     expect(fixture.calls.list_contexts()).toEqual([]);
-    expect(fixture.calls.get_conversation(kitchen)).toMatchObject({ messages: [], proposals: [] });
+    expect(() => fixture.calls.get_conversation(conversation_id)).toThrow("There is no conversation");
+    expect(fixture.calls.list_proposals()).toEqual([]);
   });
 
   it("say each change in plain words, naming contexts and items", () => {
@@ -262,6 +271,10 @@ describe("proposals", () => {
     expect(said("add_manual_item", { context_ids: [kitchen], collector: "links", values: { url: "https://example.org/x" } })).toBe("Add “https://example.org/x” to the context “Kitchen”.");
     expect(said("set_item_note", { context_id: kitchen, item_id: item, note: "floor" })).toBe("Set the note on “Tiles” in the context “Kitchen” to “floor”.");
     expect(said("remove_item", { context_id: kitchen, item_id: "nope" })).toBe("Take the item nope out of the context “Kitchen”.");
+    expect(said("move_item", { context_id: kitchen, item_id: item, to_context_id: home })).toBe("Move “Tiles” from the context “Kitchen” to the context “Home”.");
+    expect(said("add_item_to_contexts", { item_id: item, context_ids: [home], note: "too" })).toBe("Add “Tiles” to the context “Home” with the note “too”.");
+    fixture.database.prepare("INSERT INTO items (id, collector, source_id, kind, title, created_at) VALUES ('conversation:c1', 'conversation', 'c1', 'conversation', 'Plans', '')").run();
+    expect(said("add_item_to_contexts", { item_id: "conversation:c1", context_ids: [kitchen] })).toBe("Add the conversation “Plans” to the context “Kitchen”.");
     expect(said("refresh_items", {})).toBe("Ask the apps what became of the items in every context.");
     expect(said("follow_feed", { context_id: kitchen, collector: "x-tasks", feed_id: "tag:1", label: "Renovation" })).toBe("Make the context “Kitchen” follow “Renovation” in x-tasks.");
     expect(said("unfollow_feed", { context_id: kitchen, collector: "x-tasks", feed_id: "tag:1" })).toBe("Stop the context “Kitchen” following tag:1 in x-tasks.");

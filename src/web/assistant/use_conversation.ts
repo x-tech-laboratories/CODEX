@@ -1,12 +1,12 @@
-// The open conversation as the pane shows it: what the store keeps, with the reply being written laid over it as its
-// events arrive, and the end of each reply, for the mascot's moment.
+// The conversation the pane shows: what the store keeps, with the reply being written laid over it as its events
+// arrive, and the end of each reply, for the mascot's moment. A new conversation not yet sent to has nothing to load.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState } from "react";
 import type { Resource } from "@x-tech-laboratories/x-libs/web/react/states";
 
-import { conversation_id_of, type Conversation, type ConversationEvent, type RunState } from "../../shared/conversations/model.ts";
+import type { Conversation, ConversationEvent, RunState } from "../../shared/conversations/model.ts";
 import { page, use_data } from "../api.ts";
 
 // ── Runs ─────────────────────────────────────────────────────────────────────
@@ -27,19 +27,18 @@ export function next_run(run: LiveRun | null, event: ConversationEvent): LiveRun
 }
 
 export interface OpenConversation {
-  conversation: Resource<Conversation>;
+  conversation: Resource<Conversation | null>;
   // The reply being written, from the events or, for a page opened mid-reply, from the store.
   run: LiveRun | null;
   // Bumped as each reply ends, with how it ended.
-  ended: { error: string; key: number } | null;
+  ended: { error: string; key: number; run_id: string } | null;
 }
 
-export function use_conversation(context_id: string | null): OpenConversation {
-  const conversation = use_data((api) => api.get_conversation(context_id), [context_id]);
+export function use_conversation(id: string | null): OpenConversation {
+  const conversation = use_data((api) => (id ? api.get_conversation(id) : Promise.resolve(null)), [id]);
   const [live, set_live] = useState<LiveRun | null>(null);
   const [ended, set_ended] = useState<OpenConversation["ended"]>(null);
   const ends = useRef(0);
-  const id = conversation_id_of(context_id);
   // A page opened mid-reply carries on from what the store said of it.
   const stored_run = useRef<RunState | null>(null);
   stored_run.current = conversation.data?.run ?? null;
@@ -49,7 +48,7 @@ export function use_conversation(context_id: string | null): OpenConversation {
     return page().on_conversation((event) => {
       if (event.conversation_id !== id) return;
       set_live((run) => next_run(run ?? (stored_run.current ? { ...stored_run.current, finished: false } : null), event));
-      if (event.type === "finished") set_ended({ error: event.error, key: (ends.current += 1) });
+      if (event.type === "finished") set_ended({ error: event.error, key: (ends.current += 1), run_id: event.run_id });
     });
   }, [id]);
 

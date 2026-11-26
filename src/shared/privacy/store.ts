@@ -8,6 +8,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { text } from "../api_schemas.ts";
 import { open_plugin_host } from "../collectors/host.ts";
+import { conversations_plugin_id } from "../conversations/collector.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { settings_feature } from "../settings.ts";
 import { migrations } from "./migrations/index.ts";
@@ -17,13 +18,13 @@ import { marks_setting, stored_marks } from "./screen.ts";
 
 // ── Marks ────────────────────────────────────────────────────────────────────
 
-// Every collector plugin running, with its marks.
+// Every collector plugin running, with its marks; CODEX's own conversations are never an outside source, so have none.
 async function list_source_marks(database: SqlDatabase): Promise<SourceMarkEntry[]> {
   const host = await open_plugin_host(database);
   const stored = stored_marks(database);
   const names = new Map(host.list().map((status) => [status.manifest.id, status.manifest.name]));
   const by_plugin = new Map<string, string[]>();
-  for (const { id, plugin_id } of host.providers("collector")) by_plugin.set(plugin_id, [...(by_plugin.get(plugin_id) ?? []), id]);
+  for (const { id, plugin_id } of host.providers("collector")) if (plugin_id !== conversations_plugin_id) by_plugin.set(plugin_id, [...(by_plugin.get(plugin_id) ?? []), id]);
   return [...by_plugin].map(([plugin_id, collectors]) => ({ plugin_id, name: names.get(plugin_id) ?? plugin_id, collectors, ...unmarked, ...stored[plugin_id] }));
 }
 
