@@ -78,8 +78,9 @@ from what is kept (still missing if it was), and one not kept yet is read with `
 every item kept from that app, so refreshing one context never skips a change to another's item.
 
 `client.ts` makes the calls with the arguments as a JSON list, which every X-app's API takes (an X-Libs call table
-takes nothing else), at `POST /api/call/<method>` (CODEX's form) or `POST /api/<method>` (X-Tasks', a plain X-Libs
-call table), remembering per address the one that answered. Its failures are plain: an address nothing answers at, or
+takes nothing else), at `POST /api/call/<method>`, the Application Standard's path for every app, falling back to
+`POST /api/<method>` only for an older X-Tasks server that answers nowhere else, remembering per address the one that
+answered. Its failures are plain: an address nothing answers at, or
 that does not answer in 15 seconds, named by host and port; a token refused (401, or 403 with no 404); a call missing
 (404, naming the call); an answer that is not a JSON list. The token goes only into the `Authorization` header.
 
@@ -140,8 +141,10 @@ Drizzle, which FTS5 and vector blobs need. The server and the daemon open it and
 - **Calls** (`store.ts`): `search_index(query, context_id?, limit?)` gives items, contexts and messages with an
   excerpt and where each is, a message with the conversation it is in (its id and title) and that conversation's
   `codex://conversation/<id>` link as its `uri`; `get_index_state` the counts, pending and withheld pieces, the embedder and the last
-  error, cleared as soon as a later attempt embeds a batch; `rebuild_index` starts again from nothing. A change to
-  the `embedder` or `plugins` setting ends the embedding in hand, and the next pass tries the new settings. The
+  problem in plain words (an embedder's failure names its endpoint by host and port and says what to do, written by
+  `explain_embedder_failure` beside the engines' `explain_failure`) with its raw text as `last_error_detail`, cleared as
+  soon as a later attempt embeds a batch; `rebuild_index` starts again from nothing. A change to the `embedder` or
+  `plugins` setting clears the last problem, ends the embedding in hand, and the next pass tries the new settings. The
   engine is offered `search_index`, screened by source like every other read (PR A's withholding and trust), and
   never given the messages of the conversation it answers in. The first page's search uses it, gathering each
   conversation and its messages in one row, and Settings → Index shows the state, the embedder and Rebuild.
@@ -211,7 +214,8 @@ A link a rule no longer finds is closed; one that comes back opens again. A link
 type someone else made, stands in its place.
 
 `similarity.ts` runs after a pass that embedded something: an item given new vectors (their mean, scaled to length
-one) is compared with every other item's, and those at a cosine of 0.8 or more become proposed `related_to` links
+one) is compared with every other item's, and those standing clearly above what it scores against the rest, judged
+by search's `meaning_floor` so the rule holds on any embedder's scale (`standing_out`), become proposed `related_to` links
 labelled "similar", made by `similarity` with the embedder and model, at most three waiting per item, never between two
 items already linked in any way or a pair once rejected.
 
@@ -226,8 +230,12 @@ proposal carries. Evidence names an item or a message; its excerpt is kept only 
 "May be sent to a hosted engine", the mark under which the user lets that source's words leave this computer, and
 otherwise only the reference is kept. `get_node_links` is screened like every other read: for a hosted engine a node
 carrying a source not marked for it is withheld whole, and each link whose own sources, or its other end's, carry one.
-`suggest_links(context_id)` starts an ordinary conversation in the context with a message asking the engine to read
-its items and propose; no background job proposes links yet.
+`suggest_links(context_id)` starts a conversation in the context, named Suggest links, shaped so a small model can
+finish it: its instructions hold the context's items (kind, title, snippet) as every run's do, and also the context's
+entities and links so far (`graph_part`, screened by source and capped like the other listings); its message says to
+propose from those and read at most three items for detail; it is offered only `propose_entity`, `propose_link`,
+`get_item` and `search_index` (`RunOptions.tools`), for six rounds, the last without tools; and its answer ends with a
+notice saying how many entities and links it proposed. No background job proposes links yet.
 
 ### The views
 
@@ -315,15 +323,19 @@ the page.
 Fitting (`src/shared/engines/fitting.ts`), before every round: the room for the conversation is the context size, less
 the instructions, the tool definitions as sent, a reserve for the reply (the most wanted, 4,096 tokens, or a quarter of
 the context, never under 512) and a margin (5%, at least 256 tokens). Tokens are estimated at 2.5 characters each until
-the engine reports what a request cost; that engine and model's measured ratio, a little under what was measured and
-never above the most cautious seen, is used from then on, in memory while the store runs (engine settings are the
-user's alone, so it is not written there). When the conversation does not fit: tool results of earlier rounds are
-blanked, oldest first; then whole turns are left out, oldest first, with one line added to the instructions saying so;
-then the latest round's tool results; then the newest user message is shortened in its middle, with a marker saying how
-much, for that request alone. The reply asked for is the most wanted capped by what is left. Below 512 tokens left, or
+the engine reports what a request cost; from then on the estimate follows what that engine, endpoint and model report:
+a smaller ratio is taken at once, a larger one moves it halfway, and it is used at 92% of the ratio so followed. A
+request refused as too large counts at 90% of what it measured (or a quarter fewer characters a token when the engine
+does not say), so it is fitted tighter at once and loosens again as reports show room. It is kept in memory while the
+store runs (engine settings are the user's alone, so it is not written there). When the conversation does not fit: tool
+results of earlier rounds are blanked, oldest first; then over-long earlier messages are shortened in their middle,
+longest first and alike, each keeping at least 1,500 characters, with the same marker; only when that is not enough do
+whole turns go, oldest first, with one line added to the instructions saying so; then the latest round's tool results;
+then the newest user message is shortened in its middle, with a marker saying how much, for that request alone. The reply asked for is the most wanted capped by what is left. Below 512 tokens left, or
 when the newest message would keep under 200 characters, nothing is sent and the user is told to raise the context size
 or start a new conversation. A request the engine still refuses as too large is fitted again once, with the size the
-engine counted (or a quarter fewer characters a token); the loop tells the user, as notices, what was left out. The
+engine counted (or a quarter fewer characters a token); the loop tells the user, as notices, what was shortened and
+what was left out. The
 stored messages never change, so an over-long message cannot keep a conversation failing.
 
 Tools offered: below 16,384 tokens of context, or when the plugin's **Tools offered** is **Core set**, the engine offers
@@ -356,7 +368,8 @@ recently used first, each with whether a reply is being written in it; `get_conv
 proposals and the run still going, so a page opened mid-reply catches up; `send_message(context_id, message,
 conversation_id?)` keeps the user's message and starts a run (`run.ts`), answering at once with both ids, where
 `context_id` is the context the user has open, which the engine is told about, and the conversation is the one named,
-a new one in that context for null, or, left out, the context's most recently used one; `stop_reply`,
+a new one in that context for null, or, left out, the context's most recently used one that is not a background
+job's; `stop_reply`,
 `rename_conversation` (an empty title goes back to the first message) and `delete_conversation`, which takes it out of
 every context with its messages and proposals and keeps its item marked missing, so History can still put a context
 back. One run at a time per conversation, held in memory where the store runs. As the engine streams, the run sends
@@ -453,7 +466,8 @@ events at the start of the user's next message. The policy's own calls and the c
 A proposal keeps its `evidence` (a JSON column): the user's message that asked for it (`asked_by`), the run, and each
 read the run made before proposing, by its tool call's id with its name and arguments, the sources it carried, and an
 excerpt of what came back only when every one of those sources is marked for hosted engines, as graph evidence is
-kept. The card folds it under "Why, and from what".
+kept, and `seen`, the sources whose content the run had in front of it, in its instructions or through a read. The
+card folds it under "Why, and from what", whose "From" line names only `seen` and is left out when it is empty.
 
 Every applied change, approved or made at auto, keeps an `undo` on its tool call (`policy/undo.ts`): the contexts
 History recorded it touching, each by the version it made and the version before (none for a context it made), with
@@ -470,14 +484,16 @@ is RoboBuddy's face (`Mascot.tsx`, moods in `mascot.ts`: asleep with no engine o
 written, happy or sad for three seconds when one ends), the engine and model answering, and the switcher: the title of
 the conversation shown, opening a menu of the context's conversations (those in no context when none is open) with
 when each was used and which are being written, then Rename, New conversation and a menu to move it, add it to more
-contexts, copy its link or delete it, asking first. The pane shows the context's most recently used conversation
-unless one was picked or asked for (`selection.ts`: an item's title, a search hit, or a `#/conversation/<id>` route,
+contexts, copy its link or delete it, asking first; a background job's conversations (each summary's `job`) are listed
+last, under a Background jobs heading. The pane shows the context's most recently used conversation that is not a
+job's unless one was picked or asked for (`selection.ts`: an item's title, a search hit, or a `#/conversation/<id>` route,
 which a `codex://conversation/<id>` link opens, go to a context holding it and open the pane on it); New
 conversation leaves the box sending to a new one. `use_conversation` loads the one shown and lays the streamed events
 over it until the kept answer arrives; a reply keeps being written while the user looks at another. Tool calls are
 folded rows, each where it was made in the reply (a call keeps `text_at`, how far into the reply's text it came; one
 kept before that was recorded shows ahead of the text), a proposed one reading as the user decided it; waiting proposals are cards with Approve and Reject; the message box sends on Enter. While a reasoning model
-thinks, a folded Thinking row opens to its thinking streaming, and the answer replaces it; a reply's notices show as
+thinks, a folded Thinking row opens to about ten lines of its thinking, scrolling and following the newest text
+unless the user has scrolled up, and the answer replaces it; a reply's notices show as
 banners above it, and an error says what happened in plain words with the raw detail under Details. Settings gains an
 Assistant category: Engine (which engine answers, whether it is local or hosted, and each engine plugin's own settings
 in its row), Action policy (each change's level, the two riskier levels badged) and Sent to hosted engines (the log).

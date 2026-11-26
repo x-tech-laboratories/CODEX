@@ -39,8 +39,9 @@ nomic-embed-text), an optional query prefix and an optional API key command. Som
 want an instruction before a search but not before what is searched; give it as the **Query prefix**, writing `\n`
 for a new line (`Instruct: Given a search query, retrieve relevant notes and tasks\nQuery: `). Changing it embeds
 nothing again. Embedding runs in the background and waits while the assistant writes a reply. A hosted embedder is
-never sent text from a source not marked **May be sent to a hosted engine**. Settings → Index shows the last error
-until a later attempt gets past it, and a change to the embedder's settings is tried at once.
+never sent text from a source not marked **May be sent to a hosted engine**. Settings → Index shows the last problem in
+plain words, such as which endpoint could not be reached and what to do, with the raw message under **Details**, until a
+later attempt gets past it; changing the embedder's settings clears it and is tried at once.
 
 A document counts as found by meaning only when it stands out from how near everything else is to the same search,
 since every model rates unrelated text somewhat near and each on its own scale: a search whose best match does not
@@ -61,9 +62,12 @@ link that stops being true is closed rather than deleted.
 - **Without a model:** an item whose text holds another kept item's address, or a `codex://` or other app's link to
   something CODEX holds, is linked to it, and an X-Tasks subtask to its parent task. These links are made as the index
   reads what changed, and accepted at once.
-- **By meaning:** with an embedder set up, items very close in meaning are proposed as related, a few per item.
-- **By the assistant:** **Suggest links** on a context starts a conversation asking the assistant to read its items
-  and propose entities and links, each with where it found it.
+- **By meaning:** with an embedder set up, items that stand clearly closer to an item than everything else does are
+  proposed as related, a few per item, whatever scale the embedder scores on.
+- **By the assistant:** **Suggest links** on a context starts a conversation asking the assistant to propose entities
+  and links, each with where it found it, from the context's items and the entities and links it already has. It is
+  given only the tools it needs and a few rounds, so a small local model can finish, and ends by saying how many it
+  proposed.
 - **Yours to decide:** a proposal waits until you accept or reject it, only from CODEX's own page; a rejection is
   remembered, so the same link is never proposed again. Two entities found to be one are joined, never merged, and
   the join can be undone.
@@ -88,8 +92,9 @@ The **Assistant** pane on the right, opened and closed from the robot button in 
 CODEX about the context that is open. A context can hold as many conversations as you start: each is an item of the
 context, listed with its tasks and notes in every view, with its title (its first message until you rename it), its
 latest exchange and when it was last used, and like any item it takes a note, moves to another context and can sit in
-several. The pane shows the context's most recently used conversation; the title under the face opens a list of the
-others, showing which have a reply being written, and **+** starts a new one. A reply keeps being written while you look
+several. The pane shows the context's most recently used conversation, leaving aside those background jobs run in; the
+title under the face opens a list of the others, showing which have a reply being written, with the jobs' under their
+own heading, and **+** starts a new one. A reply keeps being written while you look
 at another. Its ⋮ menu renames, moves, adds to more contexts, copies the conversation's `codex://conversation/<id>`
 link, or deletes it. With no context open, the pane holds the conversations that are in no context. Taking a
 conversation out of the last context holding it deletes it, after asking; deleting a context deletes the conversations
@@ -98,8 +103,8 @@ no other context holds.
 Its face sleeps until an engine is set up, thinks while it writes, and smiles or frowns for a moment when a reply ends.
 Enter sends, Shift+Enter starts a new line, and **Stop** ends a reply early. Each tool call it made shows where in the reply it
 was made, and folds open to show its arguments and what came back. Wide tables and code in a reply scroll sideways on
-their own. While a reasoning model thinks, a folded **Thinking…** row opens to show its thinking
-as it streams; the answer replaces it, and the thinking is never kept. When a reply fails, the pane says what happened
+their own. While a reasoning model thinks, a folded **Thinking…** row opens to about ten lines of its
+thinking, following it as it streams unless you scroll up; the answer replaces it, and the thinking is never kept. When a reply fails, the pane says what happened
 and what to do in plain words, with the raw message folded under **Details**.
 
 **Setting up an engine,** under **Settings → Assistant → Engine**: pick the engine under **Answering**, then open its row
@@ -124,9 +129,10 @@ name and its context size. The model has to support tool calls to read or change
 
 **Running a small local model.** Give the engine the context size the server really has (llama-server's `-c`, Ollama's
 `num_ctx`); CODEX fits every request into it. It counts its instructions, the tools as sent and a reply, estimates
-tokens cautiously at first and more closely once the server has reported what a request cost, and when the
-conversation is too long it leaves out the oldest messages, then shortens the middle of your newest one for that
-request alone, saying so in the pane. Below 16,384 tokens of context it offers the model a core set of sixteen tools
+tokens cautiously at first and then by what the server reports each request cost, tightening at once when a request
+comes in larger than estimated and loosening as reports show room, so requests grow toward what fits. When the
+conversation is too long it first shortens the middle of over-long earlier messages, then leaves out the oldest
+messages, then shortens the middle of your newest one, for that request alone, saying so in the pane. Below 16,384 tokens of context it offers the model a core set of sixteen tools
 (the reads, the most-used changes and the proposing calls, briefly described) instead of all of them, which keeps the prompt to about a
 quarter; **Tools offered** in the engine's settings chooses **Automatic**, **Core set** or **All tools**. Expect a
 4B model on a CPU at 8,192 tokens to spend a minute or more reading the prompt before its first word, longer on a
@@ -283,6 +289,10 @@ npm run dev:server        # the server on http://127.0.0.1:7770, with the data i
 npm run dev:web           # the page with live reload, reaching that server
 npm run dev               # the desktop app, with its profile in dev-data/desktop
 ```
+
+The desktop app opens the profile folder `CODEX_USER_DATA` names (an absolute path as given, a relative one from the
+working directory), or the installed app's own when it is unset; a profile other than its own gets a daemon and socket
+of its own. `CODEX_SOCKET` names the socket the window and its daemon share instead.
 
 `npm run build` type-checks and builds the page into `out/web`; `npm start` serves it. `npm run build:desktop` builds
 the desktop app into `out/`. `npm run icons` draws every icon from `resources/icon.svg`.
