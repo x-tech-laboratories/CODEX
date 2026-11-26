@@ -12,6 +12,8 @@ export const item_sources_plugin_id = "codex.items";
 export interface SourceKind {
   kind: string;
   label: string;
+  // Whether items of this kind have text beyond their snippet, read with get_item_texts.
+  has_text?: boolean;
 }
 
 // One app as it is kept: its token is never shown to the page, the API or MCP.

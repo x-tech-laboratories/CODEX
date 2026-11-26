@@ -74,13 +74,34 @@ function task_item(task: XTask): FoundItem {
   };
 }
 
+// The standard path, then the older one an X-Tasks server from before it answers on.
+const x_tasks_prefixes = ["/api/call/", "/api/"];
+
+// The prefix each X-Tasks address answered on, so later calls go straight there.
+const x_tasks_known = new Map<string, string>();
+
+// For tests, which start each server afresh.
+export function forget_x_tasks_paths(): void {
+  x_tasks_known.clear();
+}
+
 async function call_x_tasks<Result>(settings: SettingValues, method: string): Promise<Result> {
-  const response = await fetch(`${server_of(settings, "X-Tasks")}/api/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${String(settings.token ?? "")}` },
-    body: "[]",
-  });
-  return (await read_json(response, "X-Tasks")) as Result;
+  const server = server_of(settings, "X-Tasks");
+  const known = x_tasks_known.get(server);
+  const prefixes = known ? [known, ...x_tasks_prefixes.filter((each) => each !== known)] : x_tasks_prefixes;
+  let response: Response | undefined;
+  for (const prefix of prefixes) {
+    response = await fetch(`${server}${prefix}${method}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${String(settings.token ?? "")}` },
+      body: "[]",
+    });
+    if (response.status !== 404) {
+      if (response.ok) x_tasks_known.set(server, prefix);
+      break;
+    }
+  }
+  return (await read_json(response!, "X-Tasks")) as Result;
 }
 
 function list_x_tasks(settings: SettingValues): Promise<XTask[]> {

@@ -1,4 +1,4 @@
-// The item sources' one table, from which drizzle-kit writes the migrations and the store reads its row types.
+// The item sources' tables, from which drizzle-kit writes the migrations and the store reads its row types.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -13,4 +13,13 @@ export const item_source_cursors = sqliteTable("item_source_cursors", {
   // The changed_at of the last change read, as the app gave it.
   cursor: text().notNull(),
   updated_at: text().notNull(),
+});
+
+// When each item last changed as its app gave it, so its text is read again only once that moved; this device's alone,
+// like the index it feeds, and never the text itself.
+export const item_source_stamps = sqliteTable("item_source_stamps", {
+  // The kept item's id, its collector and its id in the app.
+  item_id: text().primaryKey(),
+  source_id: text().notNull(),
+  changed_at: text().notNull(),
 });

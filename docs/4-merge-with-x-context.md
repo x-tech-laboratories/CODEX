@@ -195,8 +195,6 @@ cosine, and a job's conversation is no longer the pane's default):
   stopping worked. What the second run found (requests settling far under the context, a huge message costing every
   older turn, a cramped Thinking row, an unclear index problem, a "From" line naming sources never read, Suggest links
   reading without proposing) is fixed, but not yet tried on a real model again.
-- The collector for apps answering the item calls gives the index only each item's 200-character snippet, as the four
-  calls carry nothing more; an app's full text would need a fifth, optional call in the standard.
 - An app read through the item calls is reached over HTTP with a token, not over its MCP server as decision 6 says;
   the item calls are the shared convention it names, so MCP would add nothing for reading.
 - An app's kinds are read when it is saved, not on each refresh, so a kind an app adds later shows once the app is

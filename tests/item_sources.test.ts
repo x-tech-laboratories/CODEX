@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 
+import { forget_item_prefixes, item_client } from "@x-tech-laboratories/x-libs/item_client";
 import { hidden_secret } from "@x-tech-laboratories/x-libs/plugins";
 import { hash_password } from "@x-tech-laboratories/x-libs/server/passwords";
 
@@ -10,8 +11,9 @@ import { build_app } from "../src/server/app.ts";
 import { use_plugins } from "../src/shared/collectors/host.ts";
 import { offered_api } from "../src/shared/policy/policy.ts";
 import { open_screen } from "../src/shared/privacy/screen.ts";
-import { forget_prefixes, list_kinds, search } from "../src/shared/sources/client.ts";
-import { read_cursor } from "../src/shared/sources/collector.ts";
+import { list_kinds, read_cursor } from "../src/shared/sources/collector.ts";
+import { open_plugin_host } from "../src/shared/collectors/host.ts";
+import { open_index, sync_documents } from "../src/shared/search/indexer.ts";
 import { bind_methods, open_store } from "../src/shared/store.ts";
 import { start_fake_item_app, type FakeItemApp } from "./fake_item_app.ts";
 
@@ -32,7 +34,7 @@ function store() {
 
 beforeEach(() => {
   use_plugins([]);
-  forget_prefixes();
+  forget_item_prefixes();
 });
 
 afterEach(async () => {
@@ -95,7 +97,7 @@ describe("apps read through the item calls", () => {
 
       fetched.mockClear();
       await list_kinds({ name: "Older", address: older.address, token });
-      await search({ name: "Older", address: older.address, token }, "boiler", 5);
+      await item_client({ name: "Older", address: older.address, token }).search_items("boiler", 5);
       expect(fetched.mock.calls.map(([url]) => String(url))).toEqual([
         `${older.address}/api/call/list_item_kinds`,
         `${older.address}/api/list_item_kinds`,
@@ -167,13 +169,59 @@ describe("apps read through the item calls", () => {
     expect(calls.get_item("app.notes:n1").title).toBe("Boiler again");
   });
 
-  it("give the index each item's snippet", async () => {
+  it("give the index each item's snippet when the app has no text call", async () => {
     const app = await fake({ notes: [...notes, { id: "n3", title: "Empty", notes: "" }] });
     const { database, calls } = store();
     await calls.add_item_source("Notes", app.address, token);
-    const { open_plugin_host } = await import("../src/shared/collectors/host.ts");
     const collector = (await open_plugin_host(database)).providers("collector").find((each) => each.id === "app.notes")!.value;
     expect(await collector.content!(["n1", "n3", "gone"])).toEqual({ n1: "Call the plumber about the boiler" });
+    expect(app.calls).not.toContain("get_item_texts");
+  });
+
+  it("give the index each item's full text for a kind that has it, and keep has_text with the kinds", async () => {
+    const long = `# Boiler\n\n${"Call the plumber about the boiler. ".repeat(20)}`;
+    const app = await fake({ with_text: true, notes: [{ id: "n1", title: "Boiler service", notes: long }, { id: "n3", title: "Empty", notes: "" }] });
+    const { database, calls } = store();
+    await calls.add_item_source("Notes", app.address, token);
+    expect(calls.list_item_sources()[0]!.kinds).toEqual([{ kind: "note", label: "Note", has_text: true }]);
+    const collector = (await open_plugin_host(database)).providers("collector").find((each) => each.id === "app.notes")!.value;
+    expect(await collector.content!(["n1", "n3", "gone"])).toEqual({ n1: long });
+    expect(app.calls).toContain("get_item_texts");
+  });
+
+  it("read an item's text into the index alone, and again only once its changed_at moved", async () => {
+    const long = `${"Porcelain lasts longer than stone. ".repeat(10)}The grout is grey.`;
+    const app = await fake({ with_text: true, notes: [{ id: "n1", title: "Garden tiles", notes: long }, { id: "n2", title: "Boiler", notes: "Short" }] });
+    const { database, calls } = store();
+    await calls.add_item_source("Notes", app.address, token);
+    const home = calls.add_context("Home");
+    for (const found of await calls.search_collector("app.notes", "e")) calls.add_item([home], "app.notes", found);
+    await calls.refresh_items();
+    const index = new DatabaseSync(":memory:");
+    open_index(index);
+    const text_reads = () => app.calls.filter((name) => name === "get_item_texts").length;
+    const content_of = (id: string) => (index.prepare("SELECT content FROM docs WHERE key = ?").get(`item:app.notes:${id}`) as { content: string }).content;
+
+    await sync_documents(database, index);
+    expect(content_of("n1")).toBe(long);
+    expect(calls.get_item("app.notes:n1").snippet.length).toBeLessThanOrEqual(200);
+    // The store keeps the snippet the app gave, never the text.
+    expect(JSON.stringify(database.prepare("SELECT * FROM items").all())).not.toContain("grout");
+    const after_first = text_reads();
+    expect(after_first).toBe(1);
+
+    // Nothing moved: no text is read.
+    await calls.refresh_items();
+    await sync_documents(database, index);
+    expect(text_reads()).toBe(after_first);
+
+    // A change past the snippet moves changed_at, so the text is read again.
+    const changed = long.replace("grey", "white");
+    app.put({ id: "n1", title: "Garden tiles", notes: changed });
+    await calls.refresh_items();
+    await sync_documents(database, index);
+    expect(text_reads()).toBe(after_first + 1);
+    expect(content_of("n1")).toBe(changed);
   });
 
   it("are marked one by one, beside the plugins' own marks, and lose their marks when removed", async () => {
