@@ -32,7 +32,8 @@ export function tool_facts(tool: Pick<PluginToolEntry, "changes" | "sends_outsid
   return `It ${facts.join(" and ")}.`;
 }
 
-function ToolRows({ entry }: { entry: ToolPluginEntry }) {
+// A tool plugin's marks and each of its tools, with an on switch and the switch offering it to small models.
+export function ToolRows({ entry }: { entry: ToolPluginEntry }) {
   return (
     <>
       {entry.problem && <p className="muted small">Its tools could not be listed: {entry.problem}</p>}

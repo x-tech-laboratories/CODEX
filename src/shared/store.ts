@@ -30,10 +30,13 @@ import { item_sources_setting } from "./sources/model.ts";
 import { hide_tokens, keep_tokens } from "./sources/records.ts";
 import { sources_feature } from "./sources/store.ts";
 import { tools_feature } from "./tools/store.ts";
+import { mcp_servers_setting } from "./mcp/model.ts";
+import { hide_server_tokens, keep_server_tokens } from "./mcp/records.ts";
+import { mcp_feature } from "./mcp/store.ts";
 
 // ── Features ─────────────────────────────────────────────────────────────────
 
-export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature, jobs_feature, inbox_feature, tools_feature];
+export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature, jobs_feature, inbox_feature, tools_feature, mcp_feature];
 
 export const sync_engine = create_sync_engine({ tables: features.flatMap((feature) => feature.tables), after_apply: forget_synced_changes });
 
@@ -75,19 +78,27 @@ const all_methods = {
     typeof blueprints_feature.methods &
     typeof jobs_feature.methods &
     typeof inbox_feature.methods &
-    typeof tools_feature.methods),
-  // Every setting, the ones never set at their defaults, with plugin keys and apps' tokens hidden from the page and other programs.
+    typeof tools_feature.methods &
+    typeof mcp_feature.methods),
+  // Every setting, the ones never set at their defaults, with plugin keys and apps' and MCP servers' tokens hidden from the page and other programs.
   get_settings: (database: SqlDatabase): Record<string, unknown> => {
     const settings: Record<string, unknown> = { ...setting_defaults, ...settings_feature.methods.get_settings(database) };
     const records = settings[plugins_setting] as PluginRecords | undefined;
-    const hidden = { ...settings, [item_sources_setting]: hide_tokens(settings[item_sources_setting]) };
+    const hidden = { ...settings, [item_sources_setting]: hide_tokens(settings[item_sources_setting]), [mcp_servers_setting]: hide_server_tokens(settings[mcp_servers_setting]) };
     return records ? { ...hidden, [plugins_setting]: hide_secrets(bundled_manifests, records) } : hidden;
   },
-  // A plugin key or an app's token sent back hidden keeps the value stored.
+  // A plugin key or an app's or MCP server's token sent back hidden keeps the value stored.
   set_setting: (database: SqlDatabase, key: string, value: unknown): void => {
     const stored_settings = settings_feature.methods.get_settings(database);
     const stored = (stored_settings[plugins_setting] ?? {}) as PluginRecords;
-    const kept = key === plugins_setting ? keep_secrets(bundled_manifests, stored, value as PluginRecords) : key === item_sources_setting ? keep_tokens(stored_settings[item_sources_setting], value) : value;
+    const kept =
+      key === plugins_setting
+        ? keep_secrets(bundled_manifests, stored, value as PluginRecords)
+        : key === item_sources_setting
+          ? keep_tokens(stored_settings[item_sources_setting], value)
+          : key === mcp_servers_setting
+            ? keep_server_tokens(stored_settings[mcp_servers_setting], value)
+            : value;
     settings_feature.methods.set_setting(database, key, kept);
   },
 };

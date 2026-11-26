@@ -33,6 +33,7 @@
     "@fastify/formbody": "^9.0.2",
     "@fastify/rate-limit": "^11.3.0",
     "@fastify/static": "^10.1.12",
+    "@modelcontextprotocol/client": "^2.4.0",
     "@modelcontextprotocol/server": "^2.4.0",
     "@x-tech-laboratories/halon": "^0.33.0",
     "@x-tech-laboratories/x-libs": "^0.88.0",
