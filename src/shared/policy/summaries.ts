@@ -28,8 +28,10 @@ function context_name(database: SqlDatabase, id: unknown): string {
 function context_names(database: SqlDatabase, ids: unknown): string {
   const list = Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
   if (list.length === 0) return "no context";
-  const rows = drizzle_of(database).select({ name: contexts.name }).from(contexts).where(inArray(contexts.id, list)).all();
-  const names = rows.map((row) => quote(row.name));
+  const rows = drizzle_of(database).select({ id: contexts.id, name: contexts.name }).from(contexts).where(inArray(contexts.id, list)).all();
+  const name_of = new Map(rows.map((row) => [row.id, quote(row.name)]));
+  // In the order the engine gave them.
+  const names = list.flatMap((id) => (name_of.has(id) ? [name_of.get(id)!] : []));
   if (names.length < list.length) names.push(`${list.length - names.length} unknown`);
   return names.length === 1 ? `the context ${names[0]}` : `the contexts ${names.join(", ")}`;
 }

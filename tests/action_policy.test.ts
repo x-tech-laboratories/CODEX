@@ -204,7 +204,7 @@ describe("proposals", () => {
     expect(said("set_context_archived", { id: kitchen, is_archived: false })).toBe("Bring back the context “Kitchen”.");
     expect(said("move_context", { id: kitchen, parent_id: null })).toBe("Move the context “Kitchen” at the top level.");
     expect(said("remove_context", { id: "gone" })).toBe("Delete a context that does not exist (gone) and every context inside it; the items stay in their apps.");
-    expect(said("add_item", { context_ids: [kitchen, home], collector: "links", item: { title: "Grout" } })).toBe("Add “Grout” from links to the contexts “Home”, “Kitchen”.");
+    expect(said("add_item", { context_ids: [kitchen, home], collector: "links", item: { title: "Grout" } })).toBe("Add “Grout” from links to the contexts “Kitchen”, “Home”.");
     expect(said("add_manual_item", { context_ids: [kitchen], collector: "links", values: { url: "https://example.org/x" } })).toBe("Add “https://example.org/x” to the context “Kitchen”.");
     expect(said("set_item_note", { context_id: kitchen, item_id: item, note: "floor" })).toBe("Set the note on “Tiles” in the context “Kitchen” to “floor”.");
     expect(said("remove_item", { context_id: kitchen, item_id: "nope" })).toBe("Take the item nope out of the context “Kitchen”.");
