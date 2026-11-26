@@ -205,11 +205,12 @@ function brief_arguments(args: Record<string, unknown>): string {
   return text.length > 120 ? `${text.slice(0, 119)}…` : text;
 }
 
-// What a proposal came from: the message that asked for it, what the run read before proposing, and the sources.
+// What a proposal came from: the message that asked for it, what the run read before proposing, and the sources whose
+// content it had in front of it, in its instructions or through a read.
 export function Evidence({ proposal, asked, label_of }: { proposal: Proposal; asked: string | null; label_of: (source: string) => string }) {
   const { evidence } = proposal;
   if (!evidence.asked_by && evidence.reads.length === 0) return <p className="muted small">No evidence was kept for this proposal.</p>;
-  const sources = proposal.sources.filter((source) => source !== "*");
+  const sources = (evidence.seen ?? []).filter((source) => source !== "*");
   return (
     <div className="proposal-evidence">
       {asked !== null && (

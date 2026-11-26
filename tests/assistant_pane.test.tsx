@@ -290,6 +290,7 @@ describe("the assistant's pane", () => {
           { call_id: "t1", name: "list_contexts", arguments: {}, sources: [], excerpt: "Kitchen, Garden" },
           { call_id: "t2", name: "get_item", arguments: { id: "links:tiles" }, sources: ["links"], excerpt: "" },
         ],
+        seen: ["links"],
       },
     };
     render(<ProposalCard proposal={proposal} asked="Name it after the tiles" label_of={(source) => (source === "links" ? "Web links" : source)} />);
@@ -298,6 +299,11 @@ describe("the assistant's pane", () => {
     expect(screen.getByText(/“Kitchen, Garden”/)).toBeTruthy();
     expect(screen.getByText(/not quoted, as Web links may not leave this computer/)).toBeTruthy();
     expect(screen.getByText("From: Web links")).toBeTruthy();
+    cleanup();
+    // A run that had no other app's content in front of it names no source, whatever the proposal itself names.
+    render(<ProposalCard proposal={{ ...proposal, sources: ["links", "x-tasks"], evidence: { asked_by: "m1", run_id: "r1", reads: [], seen: [] } }} />);
+    expect(screen.getByText("It read nothing before proposing.")).toBeTruthy();
+    expect(screen.queryByText(/^From:/)).toBeNull();
     cleanup();
     render(<ProposalCard proposal={{ ...proposal, evidence: { asked_by: "", run_id: "", reads: [] } }} />);
     expect(screen.getByText("No evidence was kept for this proposal.")).toBeTruthy();

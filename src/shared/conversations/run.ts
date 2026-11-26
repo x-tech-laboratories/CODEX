@@ -75,6 +75,8 @@ export interface ToolContext {
   run_id?: string;
   // What the run has read so far, each read by its tool call, which a proposal carries as evidence.
   reads?: ProposalRead[];
+  // The sources whose items its instructions listed, which a proposal names as what it came from.
+  instruction_sources?: string[];
   // Hears what the policy made of each call, in order, so it can be kept with the call; gives back the call's id.
   on_decided?: (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id" | "undo">) => string | void;
 }
@@ -160,7 +162,8 @@ export function engine_tools(context: ToolContext): EngineTools {
         if (decision.action === "refuse") return decided(name, { outcome: "refused" }, { result: `The user does not permit ${name}, so it was not run.`, is_error: true });
         if (decision.action === "propose") {
           const sources = [...new Set([...read_sources(screen), ...sources_named(database, given)])].sort();
-          const evidence = { asked_by: context.asked_by ?? "", run_id: context.run_id ?? "", reads: structuredClone(reads) };
+          const seen = [...new Set([...(context.instruction_sources ?? []), ...reads.flatMap((read) => read.sources)])].sort();
+          const evidence = { asked_by: context.asked_by ?? "", run_id: context.run_id ?? "", reads: structuredClone(reads), seen };
           const proposal = add_proposal(database, { conversation_id: context.conversation_id, method: name, arguments: given, summary: summarize_call(database, name, given), reason: decision.reason, sources, evidence });
           const why = decision.reason === "outside content" ? " because this conversation has read text from other apps" : "";
           return decided(
@@ -352,6 +355,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
     presence,
     has_outside_content: taints(screen, [...instructions.sources, ...replayed.sources]),
     screen,
+    instruction_sources: [...instructions.sources],
     maker: { engine: found.engine.id, model: found.engine.model },
     asked_by: question.id,
     run_id: state.run_id,

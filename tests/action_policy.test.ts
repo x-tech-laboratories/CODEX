@@ -471,5 +471,27 @@ describe("a proposal's evidence", () => {
     const marked = fixture.calls.get_conversation(conversation_id).proposals.at(-1)!;
     expect(marked.evidence.reads).toMatchObject([{ call_id: "u1", name: "get_item", sources: ["links"] }]);
     expect(marked.evidence.reads[0]!.excerpt).toContain("Tiles from the shop");
+    // Its instructions listed the context's items, so their source was in front of it as well as read.
+    expect(marked.evidence.seen).toEqual(["links"]);
+  });
+
+  it("names as where it came from only the sources a run had in front of it, none when it had none", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const garden = fixture.calls.add_context("Garden");
+    const tiles = fixture.calls.add_item([garden], "links", { source_id: "https://example.org/tiles", kind: "link", title: "Tiles from the shop" });
+    fixture.set_script(async function* (request) {
+      yield { type: "tool_call", id: "t1", name: "add_item_to_contexts", arguments: { item_id: tiles, context_ids: [kitchen] } };
+      yield { type: "tool_result", id: "t1", ...(await request.tools.call("add_item_to_contexts", { item_id: tiles, context_ids: [kitchen] })) };
+      yield { type: "done", text: "Proposed." };
+    });
+
+    // Kitchen holds nothing, so its instructions list no item, and the run reads nothing before proposing an item it names.
+    const { conversation_id } = await fixture.calls.send_message(kitchen, "Put the tiles link here");
+    await wait_for_runs();
+    const [proposal] = fixture.calls.get_conversation(conversation_id).proposals;
+
+    expect(proposal!.evidence).toMatchObject({ reads: [], seen: [] });
+    expect(proposal!.sources).toContain("links");
   });
 });
