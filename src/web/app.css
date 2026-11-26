@@ -495,3 +495,8 @@
   flex: none;
   margin-top: var(--space-1);
 }
+
+.mcp-command {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

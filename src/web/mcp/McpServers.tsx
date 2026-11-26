@@ -1,5 +1,6 @@
 // Settings → Plugins → MCP servers: each MCP server as a row whose dialog holds how it is reached, whether it is on, the
-// tools it listed with Refresh, its marks and each tool's switches, and Remove; then a row to add one.
+// tools it listed with Refresh, its marks and each tool's switches, and Remove; then a row to add one. A local command
+// added on another device shows where it runs, with a way to move it here after reading its command.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ function ServerFields({ id, values, on_change, has_token }: { id: string; values
         </>
       ) : (
         <>
-          <FormRow label="Program" id={`${id}-command`} hint="The program that starts the server, by its full path or a name on the PATH. It runs where CODEX's data is (the desktop app's daemon, or the server), without a shell.">
+          <FormRow label="Program" id={`${id}-command`} hint="The program that starts the server, by its full path or a name on the PATH. It runs only on the device you add it from (this desktop app's daemon, or the server), without a shell.">
             <input id={`${id}-command`} value={values.command} placeholder="/run/current-system/sw/bin/mcp-server-files" onChange={(event) => set({ command: event.target.value })} />
           </FormRow>
           <FormRow label="Arguments" id={`${id}-args`} hint="One a line, each passed as it is.">
@@ -136,6 +137,42 @@ function ServerTools({ server }: { server: McpServerSummary }) {
   );
 }
 
+// Where a local server runs, in plain words.
+export function device_words(server: McpServerSummary): string {
+  if (server.runs_here) return "This device";
+  if (server.device_name) return `Runs on ${server.device_name}`;
+  return server.device ? "Runs on another device" : "Runs on no device yet";
+}
+
+function MoveHere({ server }: { server: McpServerSummary }) {
+  const move = () =>
+    confirm_dialog({
+      title: `Run ${server.name} on this device?`,
+      message: (
+        <>
+          <p>CODEX will start this command on this device now, to list its tools, and whenever the assistant uses them. Read it first:</p>
+          <pre className="mcp-command">{[server.command, ...server.args].join("\n")}</pre>
+          {server.variables.length > 0 ? <p>Variables passed: {server.variables.join(", ")}</p> : null}
+          <p>{server.device_name ? `It stops running on ${server.device_name}.` : server.device ? "It stops running on the device that added it." : "No other device runs it."}</p>
+        </>
+      ),
+      confirm_label: "Run it here",
+      run: async () => void (await attempt(() => calls().move_mcp_server_here(server.id, { command: server.command, args: server.args }), `${server.name} runs on this device now.`)),
+    });
+  return (
+    <SettingRow
+      label={device_words(server)}
+      hint={`${
+        server.device
+          ? `It was added on ${server.device_name || "another device"}, so it is started only there, and the assistant is offered its tools only there.`
+          : "It was added before CODEX recorded where it runs, so it is started nowhere and the assistant is offered none of its tools."
+      } A command is never started on a device you did not choose.`}
+    >
+      <button type="button" onClick={move}>Move to this device…</button>
+    </SettingRow>
+  );
+}
+
 function ServerDialogBody({ server }: { server: McpServerSummary }) {
   const [values, set_values] = useState<Values>(values_of(server));
   const [busy, set_busy] = useState(false);
@@ -160,13 +197,14 @@ function ServerDialogBody({ server }: { server: McpServerSummary }) {
       <SettingRow label="On" hint="Off, the assistant is offered none of its tools." as_label>
         <Switch label={`${server.name} on`} checked={server.enabled} on_change={set_on} />
       </SettingRow>
+      {server.runs_here ? null : <MoveHere server={server} />}
       <form onSubmit={(event) => void save(event)}>
         <ServerFields id={`mcp-${server.id}`} values={values} on_change={set_values} has_token={server.has_token} />
         <SettingRow label="Save" hint="When how it is reached changed, CODEX lists its tools again before keeping the change.">
           <button type="submit" disabled={busy}>{busy ? "Listing its tools…" : "Save"}</button>
         </SettingRow>
       </form>
-      <ServerTools server={server} />
+      {server.runs_here ? <ServerTools server={server} /> : <p className="muted small">Not offered on this device: its tools are offered only where it runs.</p>}
       <SettingRow label="Remove" hint="Stop offering its tools.">
         <button type="button" className="danger" onClick={remove}>Remove…</button>
       </SettingRow>
@@ -186,7 +224,7 @@ export function McpServerRows() {
       {(list) => (
         <>
           {list.map((server) => (
-            <SettingsDialogRow key={server.id} name={server.name} status={server.enabled ? `${server.tools.length} tools` : "Off"} about={where_words(server)}>
+            <SettingsDialogRow key={server.id} name={server.name} status={!server.enabled ? "Off" : server.runs_here ? `${server.tools.length} tools` : device_words(server)} about={where_words(server)}>
               <ServerDialogBody server={server} />
             </SettingsDialogRow>
           ))}

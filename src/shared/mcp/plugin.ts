@@ -1,7 +1,8 @@
 // The bundled plugin `codex.mcp`: each MCP server the user added and left on is a tool plugin of its own, its tools
 // the ones it listed when added or refreshed, so opening the plugin host starts no server. A tool the server marks
 // read-only reads; every other one changes something. Its tools send outside unless it is a local command or answers on
-// a loopback address. Its descriptions are the server's own words, so they reach the engine fenced.
+// a loopback address. Its descriptions are the server's own words, so they reach the engine fenced. A local command is
+// offered only on the device that added it, so a command synced from one machine never starts on another.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -9,9 +10,10 @@ import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import type { ContextPlugin, ContextPluginApi } from "../collectors/host.ts";
+import { device_id_of } from "../jobs/records.ts";
 import type { ToolPlugin } from "../tools/tool.ts";
 import { mcp_connector } from "./connector.ts";
-import { mcp_manifest, mcp_provider_of, sends_outside, type McpServerRecord } from "./model.ts";
+import { mcp_manifest, mcp_provider_of, runs_on, sends_outside, type McpServerRecord } from "./model.ts";
 import { read_servers } from "./records.ts";
 
 // ── Plugin ───────────────────────────────────────────────────────────────────
@@ -30,7 +32,8 @@ export function mcp_plugin(database: SqlDatabase): ContextPlugin {
   return define_plugin<ContextPluginApi>({
     ...mcp_manifest,
     start: (context) => {
-      for (const server of read_servers(database)) if (server.enabled) context.provide("tools", mcp_provider_of(server.id), server_tools(server));
+      const here = device_id_of(database);
+      for (const server of read_servers(database)) if (server.enabled && runs_on(server, here)) context.provide("tools", mcp_provider_of(server.id), server_tools(server));
     },
   });
 }

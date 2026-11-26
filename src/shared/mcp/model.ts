@@ -58,6 +58,9 @@ export interface McpServerRecord {
   command: string;
   args: string[];
   variables: string[];
+  // For stdio: the id of the device that added it, the only one that starts it; empty for http, and for a server
+  // added before CODEX recorded it, which starts nowhere until it is moved to a device.
+  device: string;
   enabled: boolean;
   tools: McpToolRecord[];
   // When its tools were last listed.
@@ -92,6 +95,17 @@ export interface McpServerSummary {
   key: string;
   // Its tools count as sending their arguments outside this machine.
   sends_outside: boolean;
+  // Whether it runs on this device: always for http, and for stdio only on the device that added it.
+  runs_here: boolean;
+  // For stdio: the id of the device it runs on, empty when none was recorded, and its name, empty when not known here.
+  device: string;
+  device_name: string;
+}
+
+// What the user confirms to move a local server to this device: the program and its arguments, as they were shown.
+export interface McpCommandConfirmation {
+  command: string;
+  args: string[];
 }
 
 // ── Where it runs ────────────────────────────────────────────────────────────
@@ -105,6 +119,12 @@ export function is_loopback_address(address: string): boolean {
     return false;
   }
   return host === "localhost" || host.endsWith(".localhost") || /^127\.\d+\.\d+\.\d+$/.test(host) || host === "::1" || /^::ffff:127\./.test(host);
+}
+
+// Whether a server may be started or reached from the device given: one at an address from anywhere, a local command
+// only on the device that added it.
+export function runs_on(server: Pick<McpServerRecord, "transport" | "device">, device_id: string): boolean {
+  return server.transport === "http" || (server.device !== "" && server.device === device_id);
 }
 
 // A server's tools stay on this machine only when it is a local command or answers on a loopback address.

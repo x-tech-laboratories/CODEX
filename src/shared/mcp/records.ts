@@ -41,6 +41,7 @@ export function server_records(value: unknown): McpServerRecord[] {
       command: text_of(each.command),
       args: texts_of(each.args),
       variables: texts_of(each.variables),
+      device: each.transport === "stdio" ? text_of(each.device) : "",
       enabled: each.enabled !== false,
       tools: tools_of(each.tools),
       listed_at: text_of(each.listed_at),

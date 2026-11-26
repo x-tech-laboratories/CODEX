@@ -191,7 +191,10 @@ words and clears when the embedder answers or its settings change, a proposal's 
 front of it, Suggest links is shaped for a small model, similar items are judged against the rest rather than a fixed
 cosine, a job's conversation is no longer the pane's default, and each tool plugin has a "May be sent to a hosted engine"
 mark, without which a hosted engine is not offered its tools and is sent nothing that drew on them; the
-self-maintenance loop is built and one device, chosen in a synced setting, does all background work):
+self-maintenance loop is built and one device, chosen in a synced setting, does all background work; that mark starts
+on for the bundled Web plugin alone, so a remote MCP server holding private data is not sent to a hosted engine until
+the user marks it; a local MCP server's command runs only on the device that added it, and moving it to another is the
+user's at the page after reading the command):
 
 - No real model has run a background job: a scripted fake engine has, in tests and in the desktop app. How a real model
   keeps to a job's instruction with nobody to ask, and how many rounds and tokens real jobs need, is unknown.
@@ -226,12 +229,9 @@ self-maintenance loop is built and one device, chosen in a synced setting, does 
 - The Claude-subscription engine and the SmartHarness engine are not built.
 - Engine-written tools (decision 5's fourth place) are not built. No real model has used a plugin tool: a scripted fake
   engine has, in tests and in the desktop app, and only fake MCP servers have been added.
-- An MCP server's command runs wherever a reply is written, the desktop daemon or the server, since the servers sync
-  between the user's devices; a command that exists on one only fails plainly on the other. MCP servers that ask for
-  OAuth, prompts and resources are not supported; only tools, with a bearer token at most.
-- A tool plugin's "May be sent to a hosted engine" starts on for a plugin whose tools all send outside, which takes in
-  an MCP server at a remote address; such a server reading private data held elsewhere (a hosted notes service with a
-  token) has it sent to a hosted engine until the user turns the mark off.
+- MCP servers that ask for OAuth, prompts and resources are not supported; only tools, with a bearer token at most.
+- A local MCP server added before 2026-11-27 recorded no device, so it starts nowhere until the user moves it to one
+  under Settings → Plugins.
 - No hosted model has been tried. A local 4B reasoning model (llama.cpp's server, 8,192 tokens of context, on a CPU)
   answered end to end on 2026-11-26, and again after the first fixes: tool calls, proposals, trusted sources and
   stopping worked. What the second run found (requests settling far under the context, a huge message costing every

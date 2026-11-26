@@ -9,6 +9,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { open_plugin_host, type ContextPluginApi } from "../collectors/host.ts";
 import { settings_feature } from "../settings.ts";
+import { web_manifest, web_tools_id } from "./manifests.ts";
 import { namespace_mark, tool_plugins_setting, type ToolMarks, type ToolPluginRecord } from "./model.ts";
 import type { PluginTool, ToolPlugin } from "./tool.ts";
 
@@ -20,16 +21,15 @@ export function stored_tool_plugins(database: SqlDatabase): Record<string, ToolP
   return saved as Record<string, ToolPluginRecord>;
 }
 
-// Whether a plugin's results may go to a hosted engine before the user says: only when it has tools and every one
-// sends what it is given outside this computer, as the Web plugin's do, so what they read is outside already.
-export function sends_all_outside(tools: Pick<PluginTool, "sends_outside">[]): boolean {
-  return tools.length > 0 && tools.every((tool) => tool.sends_outside);
-}
+// The one plugin whose results may go to a hosted engine before the user says: the bundled Web plugin, which reads only
+// public pages and search results. Every other plugin, an MCP server at a remote address among them, may return the
+// user's private data, so it starts off.
+export const hosted_by_default: ReadonlySet<string> = new Set([`${web_manifest.id}/${web_tools_id}`]);
 
-// The marks the user set, and send_to_hosted from the plugin's tools where the user has not set it.
-export function marks_of(record: ToolPluginRecord | undefined, tools: Pick<PluginTool, "sends_outside">[] = []): ToolMarks {
+// The marks the user set, and send_to_hosted from the plugin's key where the user has not set it.
+export function marks_of(record: ToolPluginRecord | undefined, key: string): ToolMarks {
   return {
-    send_to_hosted: typeof record?.send_to_hosted === "boolean" ? record.send_to_hosted : sends_all_outside(tools),
+    send_to_hosted: typeof record?.send_to_hosted === "boolean" ? record.send_to_hosted : hosted_by_default.has(key),
     trusted: record?.trusted === true,
     after_private: record?.after_private === true,
   };
@@ -121,7 +121,7 @@ export async function open_tool_plugins(database: SqlDatabase, host?: PluginHost
     const value: ToolPlugin = provided.value;
     const key = `${provided.plugin_id}/${provided.id}`;
     const record = stored[key];
-    const plugin: OpenedPlugin = { key, plugin_id: provided.plugin_id, label: value.label, marks: marks_of(record), tools: [], problem: "" };
+    const plugin: OpenedPlugin = { key, plugin_id: provided.plugin_id, label: value.label, marks: marks_of(record, key), tools: [], problem: "" };
     plugins.push(plugin);
     const namespace = namespace_of(provided.id);
     let listed: unknown;
@@ -132,8 +132,7 @@ export async function open_tool_plugins(database: SqlDatabase, host?: PluginHost
       continue;
     }
     const checked = (Array.isArray(listed) ? listed : []).map(checked_tool).filter((tool): tool is PluginTool => tool !== null);
-    const marks = marks_of(record, checked);
-    plugin.marks = marks;
+    const marks = plugin.marks;
     for (const tool of checked) {
       const name = tool_name_of(namespace, tool.name);
       // Two plugins under one namespace, or two tools made alike, keep the first.

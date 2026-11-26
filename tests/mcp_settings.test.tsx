@@ -7,11 +7,13 @@ import type { Client } from "@x-tech-laboratories/x-libs/electron/bridge";
 import { Dialogs } from "@x-tech-laboratories/x-libs/web/react/dialog";
 
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
+import { drizzle_of } from "../src/shared/feature.ts";
+import { background_devices } from "../src/shared/jobs/schema.ts";
 import { use_mcp_connector, type McpConnector } from "../src/shared/mcp/connector.ts";
-import type { McpServerRecord } from "../src/shared/mcp/model.ts";
+import type { McpServerRecord, McpServerSummary } from "../src/shared/mcp/model.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
-import { set_page_api } from "../src/web/api.ts";
-import { fields_of } from "../src/web/mcp/McpServers.tsx";
+import { data_watch, set_page_api } from "../src/web/api.ts";
+import { device_words, fields_of } from "../src/web/mcp/McpServers.tsx";
 import { forget_page_plugins } from "../src/web/plugins.tsx";
 import { SettingsView } from "../src/web/settings/SettingsView.tsx";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
@@ -77,6 +79,38 @@ describe("the MCP servers in Settings", () => {
     const confirm = (await screen.findAllByRole("dialog")).at(-1)!;
     fireEvent.click(within(confirm).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(fixture.calls.list_mcp_servers()).toEqual([]));
+  });
+
+  it("show a local server added on another device as running there, and move it here only once its command is confirmed", async () => {
+    const { fixture, listed } = start();
+    drizzle_of(fixture.database).insert(background_devices).values({ id: "laptop-id", name: "Laptop", kind: "desktop", started_at: new Date().toISOString() }).run();
+    fixture.calls.set_setting("mcp_servers", [
+      { id: "notes", name: "Notes", transport: "stdio", command: "/usr/bin/mcp-files", args: ["--root", "/home/notes"], variables: ["NOTES_TOKEN"], device: "laptop-id", enabled: true, tools: [{ name: "read_file", description: "", read_only: true, input_schema: {} }], listed_at: "" },
+    ]);
+    data_watch.bump();
+    expect(await screen.findByText("Runs on Laptop")).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open Notes" }));
+    const dialog = (await screen.findAllByRole("dialog")).at(-1)!;
+    expect(within(dialog).getByText(/Not offered on this device/)).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "Refresh" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to this device…" }));
+    const confirm = (await screen.findAllByRole("dialog")).at(-1)!;
+    expect(within(confirm).getByText(/--root/).textContent).toBe("/usr/bin/mcp-files\n--root\n/home/notes");
+    expect(within(confirm).getByText("Variables passed: NOTES_TOKEN")).toBeTruthy();
+    expect(within(confirm).getByText("It stops running on Laptop.")).toBeTruthy();
+    expect(listed).toEqual([]);
+    fireEvent.click(within(confirm).getByRole("button", { name: "Run it here" }));
+    await waitFor(() => expect(fixture.calls.list_mcp_servers()[0]).toMatchObject({ runs_here: true }));
+    expect(listed).toHaveLength(1);
+  });
+
+  it("name where a server runs in plain words", () => {
+    const words = (runs_here: boolean, device: string, device_name: string) => device_words({ runs_here, device, device_name } as McpServerSummary);
+    expect(words(true, "here", "")).toBe("This device");
+    expect(words(false, "laptop", "Laptop")).toBe("Runs on Laptop");
+    expect(words(false, "laptop", "")).toBe("Runs on another device");
+    expect(words(false, "", "")).toBe("Runs on no device yet");
   });
 
   it("send an address server's token only when one is typed, keeping the stored one otherwise", () => {
