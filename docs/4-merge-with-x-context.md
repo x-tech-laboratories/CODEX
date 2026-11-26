@@ -143,6 +143,15 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 - **Curiosity:** the assistant keeps interests of its own, started by conversations with the user, and researches them in idle time within a budget. What it finds goes in a context of its own that the user can read.
 - **Limits:** a mood never changes a fact, a permission or an action policy level; it never asks for attention or blames the user; research queries carry no personal data.
 
+*Mood built 2026-11-27 (`src/shared/mood/`, described in doc 1): one mood in synced data (neutral, happy, celebrating,
+sad, curious or concerned, all faces RoboBuddy already has) with a strength fading to half each hour and a plain reason;
+set by the engine through `set_mood` at once and kept with the reply, by dates the user lists under Settings → Assistant
+→ Mood (there is no user profile to hold a birthday), and mildly by background work finding something new or a job
+failing; a sad or celebrating mood ends when a later reply in its conversation does not keep it. It shows on the face,
+with why on hover or tap, and in one instruction line about tone, its reason screened like the reply it came from. It is
+never an input to the action policy, screening, the tools offered or budgets, and never notifies, fills the Inbox or
+starts a run, each held by a test. Drives (levels that start jobs) are not built: a mood starts nothing.*
+
 ## Order of work
 
 1. **Engine interface:** replace the interim one (`legacy/src/engine/engine.ts`, which has the task tree's signature) with conversation in, CODEX's tools in, events out. The hosted model adapters (`legacy/src/assistant/*Model.ts`, `models.ts`) and the direct loop carry over. *Done 2026-11-26: `src/shared/engines/engine.ts`, with the Anthropic and OpenAI-compatible engine plugins on the ported direct loop; the legacy files are deleted.*
@@ -257,6 +266,12 @@ user's at the page after reading the command):
   in from the range it gave; a run with a real model should check it on a larger set. Search's scores with real
   embeddings, the embedder's query prefix, and similar-item proposals, which now use the same rule, are all still
   untested on a real model.
+- No real model has set a mood; the scripted fake engine has, in tests and in the desktop app. How often a real model
+  calls `set_mood`, and whether the tone line keeps to tone, is unknown.
+- A sad or celebrating mood "ends with the topic" when a later reply in its conversation does not set it again; a reply
+  that stays on the topic without setting it ends it too.
+- A date's mood is read in the local time of the device answering, the server for a browser.
+- Drives (levels that start jobs) are not built; a mood starts nothing, by design.
 
 ## Later, as separate projects
 
