@@ -14,7 +14,7 @@ import { Notifier } from "@x-tech-laboratories/x-libs/agent/desktop_notify";
 import { keep_backing_up, type BackupSchedule } from "@x-tech-laboratories/x-libs/backups";
 import { create_certificate_trust } from "@x-tech-laboratories/x-libs/certificates";
 import { create_local_mcp } from "@x-tech-laboratories/x-libs/electron/mcp";
-import { daemon_socket_path, DaemonRunningError, listen_on_socket } from "@x-tech-laboratories/x-libs/local_daemon";
+import { DaemonRunningError, listen_on_socket } from "@x-tech-laboratories/x-libs/local_daemon";
 import { register_call_table } from "@x-tech-laboratories/x-libs/server/call_table";
 import { EventStream } from "@x-tech-laboratories/x-libs/server/events";
 import { register_error_replies, register_lenient_json_body } from "@x-tech-laboratories/x-libs/server/replies";
@@ -35,6 +35,7 @@ import { keep_refreshing } from "../server/refreshing.ts";
 import { keep_indexing, open_index } from "../shared/search/indexer.ts";
 import { keep_running_jobs } from "../shared/jobs/runner.ts";
 import type { JobRun } from "../shared/jobs/model.ts";
+import { socket_of } from "./profile.ts";
 
 // ── Profile ──────────────────────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ if (!database_path) {
   console.error("codex daemon: CODEX_DB must name the database");
   process.exit(2);
 }
-const socket_path = process.env.CODEX_SOCKET || daemon_socket_path({ app: "codex", data_file: database_path });
+const socket_path = socket_of(process.env, database_path, false);
 const version = process.env.CODEX_VERSION || "0.0.0";
 // The built daemon sits in out/main, and resources/ beside out/ both in the source tree and in the package.
 const icon_path = process.env.CODEX_ICON || join(import.meta.dirname, "../../resources/icon.png");
