@@ -18,7 +18,7 @@ import { calls, data_watch, succeeds, use_data } from "../api.ts";
 
 export const state_words: Record<InterestState, string> = {
   proposed: "Proposed, waiting for you",
-  accepted: "Accepted: researched in the background",
+  accepted: "Accepted",
   paused: "Paused",
   dropped: "Dropped",
 };
@@ -63,7 +63,7 @@ function TopicDialog({ interest, on_close }: { interest: Interest | null; on_clo
       {interest ? (
         interest.reason && <p className="muted small">Why the assistant proposed it: {interest.reason}</p>
       ) : (
-        <FormRow label="Why" id="interest-reason" hint="For you; it is never sent anywhere.">
+        <FormRow label="Why" id="interest-reason" hint="For you and the assistant; it is never sent to the search engine.">
           <input id="interest-reason" value={reason} onChange={(event) => set_reason(event.target.value)} />
         </FormRow>
       )}
@@ -92,7 +92,7 @@ function InterestRow({ interest }: { interest: Interest }) {
       }
       hint={interest_hint(interest)}
     >
-      <span className="row-actions">
+      <span className="interest-actions">
         {interest.context_id && <a href={`#/context/${interest.context_id}`}>Findings</a>}
         {interest.state !== "accepted" && <button type="button" onClick={() => open_topic_dialog(interest)}>Accept…</button>}
         {interest.state === "accepted" && <button type="button" onClick={() => set_state(interest, "paused")}>Pause</button>}
