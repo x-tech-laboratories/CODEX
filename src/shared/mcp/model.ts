@@ -97,7 +97,8 @@ export interface McpServerSummary {
   sends_outside: boolean;
   // Whether it runs on this device: always for http, and for stdio only on the device that added it.
   runs_here: boolean;
-  // For stdio: the name of the device it runs on, empty when that device is not known here or none was recorded.
+  // For stdio: the id of the device it runs on, empty when none was recorded, and its name, empty when not known here.
+  device: string;
   device_name: string;
 }
 

@@ -140,7 +140,8 @@ function ServerTools({ server }: { server: McpServerSummary }) {
 // Where a local server runs, in plain words.
 export function device_words(server: McpServerSummary): string {
   if (server.runs_here) return "This device";
-  return server.device_name ? `Runs on ${server.device_name}` : "Runs on no device yet";
+  if (server.device_name) return `Runs on ${server.device_name}`;
+  return server.device ? "Runs on another device" : "Runs on no device yet";
 }
 
 function MoveHere({ server }: { server: McpServerSummary }) {
@@ -152,7 +153,7 @@ function MoveHere({ server }: { server: McpServerSummary }) {
           <p>CODEX will start this command on this device now, to list its tools, and whenever the assistant uses them. Read it first:</p>
           <pre className="mcp-command">{[server.command, ...server.args].join("\n")}</pre>
           {server.variables.length > 0 ? <p>Variables passed: {server.variables.join(", ")}</p> : null}
-          <p>{server.device_name ? `It stops running on ${server.device_name}.` : "No other device runs it."}</p>
+          <p>{server.device_name ? `It stops running on ${server.device_name}.` : server.device ? "It stops running on the device that added it." : "No other device runs it."}</p>
         </>
       ),
       confirm_label: "Run it here",
@@ -161,7 +162,11 @@ function MoveHere({ server }: { server: McpServerSummary }) {
   return (
     <SettingRow
       label={device_words(server)}
-      hint={`${server.device_name ? `It was added on ${server.device_name}, so it is started only there` : "It was added before CODEX recorded where it runs, so it is started nowhere"}, and the assistant is offered its tools only there. A command is never started on a device you did not choose.`}
+      hint={`${
+        server.device
+          ? `It was added on ${server.device_name || "another device"}, so it is started only there, and the assistant is offered its tools only there.`
+          : "It was added before CODEX recorded where it runs, so it is started nowhere and the assistant is offered none of its tools."
+      } A command is never started on a device you did not choose.`}
     >
       <button type="button" onClick={move}>Move to this device…</button>
     </SettingRow>
@@ -199,7 +204,7 @@ function ServerDialogBody({ server }: { server: McpServerSummary }) {
           <button type="submit" disabled={busy}>{busy ? "Listing its tools…" : "Save"}</button>
         </SettingRow>
       </form>
-      {server.runs_here ? <ServerTools server={server} /> : <p className="muted small">Not offered on this device: its {server.tools.length} tools are offered only where it runs.</p>}
+      {server.runs_here ? <ServerTools server={server} /> : <p className="muted small">Not offered on this device: its tools are offered only where it runs.</p>}
       <SettingRow label="Remove" hint="Stop offering its tools.">
         <button type="button" className="danger" onClick={remove}>Remove…</button>
       </SettingRow>

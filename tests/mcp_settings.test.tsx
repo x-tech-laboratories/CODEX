@@ -10,10 +10,10 @@ import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { drizzle_of } from "../src/shared/feature.ts";
 import { background_devices } from "../src/shared/jobs/schema.ts";
 import { use_mcp_connector, type McpConnector } from "../src/shared/mcp/connector.ts";
-import type { McpServerRecord } from "../src/shared/mcp/model.ts";
+import type { McpServerRecord, McpServerSummary } from "../src/shared/mcp/model.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { data_watch, set_page_api } from "../src/web/api.ts";
-import { fields_of } from "../src/web/mcp/McpServers.tsx";
+import { device_words, fields_of } from "../src/web/mcp/McpServers.tsx";
 import { forget_page_plugins } from "../src/web/plugins.tsx";
 import { SettingsView } from "../src/web/settings/SettingsView.tsx";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
@@ -103,6 +103,14 @@ describe("the MCP servers in Settings", () => {
     fireEvent.click(within(confirm).getByRole("button", { name: "Run it here" }));
     await waitFor(() => expect(fixture.calls.list_mcp_servers()[0]).toMatchObject({ runs_here: true }));
     expect(listed).toHaveLength(1);
+  });
+
+  it("name where a server runs in plain words", () => {
+    const words = (runs_here: boolean, device: string, device_name: string) => device_words({ runs_here, device, device_name } as McpServerSummary);
+    expect(words(true, "here", "")).toBe("This device");
+    expect(words(false, "laptop", "Laptop")).toBe("Runs on Laptop");
+    expect(words(false, "laptop", "")).toBe("Runs on another device");
+    expect(words(false, "", "")).toBe("Runs on no device yet");
   });
 
   it("send an address server's token only when one is typed, keeping the stored one otherwise", () => {

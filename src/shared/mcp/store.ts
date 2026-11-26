@@ -35,6 +35,7 @@ function summary_of(database: SqlDatabase, server: McpServerRecord): McpServerSu
     key: mcp_key_of(server.id),
     sends_outside: sends_outside(server),
     runs_here: runs_on(server, device_id_of(database)),
+    device: server.device,
     device_name,
   };
 }
