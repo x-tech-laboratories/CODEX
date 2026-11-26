@@ -215,10 +215,11 @@ no call to the engine while nothing changed.
 - **Maintenance** lists the built-in jobs, which can be turned off but not removed: **Refresh the index**, **Embed
   documents**, **Links from rules**, **Similar items**, **Tidy the graph** (ending links to items gone from their apps,
   keeping them as what was once so, and proposing to join entities that share a name), **Suggest links** (off until
-  you turn it on, since it is the only one that calls a model) and a **Daily digest**: one Inbox entry a day saying what
+  you turn it on, since it calls a model), **Research interests** (off until you turn it on; see **Curiosity** below)
+  and a **Daily digest**: one Inbox entry a day saying what
   background work did and what waits for you, written without a model, and none when there is nothing to say.
-- **Budgets.** Each job has its runs a day, the most it handles in one run and its longest run; Suggest links also its
-  model calls and tokens a day. A job that uses up a day's budget waits until the next day, and the digest says so.
+- **Budgets.** Each job has its runs a day, the most it handles in one run and its longest run; Suggest links and
+  Research interests also their model calls and tokens a day, and Research interests its web requests in one run. A job that uses up a day's budget waits until the next day, and the digest says so.
   Each job's **Open** shows its budget with today's use, its last run and what it did.
 - **Your rules still hold.** Background work changes something only where its level under the Action policy is
   **Allowed, even in the background**; everything else waits in the Inbox, such as ending a link you made, which waits
@@ -226,6 +227,23 @@ no call to the engine while nothing changed.
 - **A local engine** does background model work unless you turn on **Background work may use a hosted engine**; with
   it off and no local engine, Suggest links waits and says why. When it is on, the marks on your sources and tool
   plugins, and the log of what hosted engines were sent, still apply.
+
+**Curiosity.** The assistant can keep interests of its own: topics it would like to read about on the public web for
+its own knowledge, such as one a conversation showed you care about. In a conversation it may propose one
+(`propose_interest`); it only ever proposes. Under **Settings → Assistant → Interests** you see each with its state
+(proposed, accepted, paused, dropped), who made it and from which conversation; **Accept…** shows the exact topic, the
+text a search engine is sent, and lets you edit it first, whatever the Action policy says; you can also add your own,
+pause and drop them, and set the most accepted at once (five unless changed). With **Research interests** on under
+Maintenance, the Web plugin on with a search endpoint, and a local engine (or **Background work may use a hosted
+engine**), the job takes the accepted interest researched longest ago and has the assistant search and read about it
+within its budget. That run is built to hold none of your data: it is told only the topic and the titles of what it
+found before, and it may use only the Web plugin's two tools and one that saves a finding; no search of your items,
+contexts, conversations, blueprints, mood or other plugins, and no open context. What it saves, at most three findings a
+run with their addresses and date, goes in a context of its own, **The assistant's interests**, with one context inside
+it per interest, where you can read, move or remove them. Findings count as the web's text: fenced when an engine reads
+them, and kept from a hosted engine while Web is not marked for one. The digest lists new findings, a new finding leaves
+the face mildly curious, ordinary search finds them, and the assistant mentions one only when it bears on what you ask.
+A research run may propose one new interest, which waits for you like any other.
 
 **The Inbox** in the sidebar, with its count, lists everything that waits for you, newest first: changes proposed in
 conversations and jobs, with why and from what; proposed links and entities; proposed blueprints and changes to them;
@@ -490,7 +508,7 @@ context points to are not CODEX's items; their own apps answer for them.
 
 ## Not yet
 
-- **More of the assistant:** curiosity, in the order
+- **More of the assistant:** SmartHarness as an engine, in the order
   [docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) gives.
 - **Notifications from the server** through X-Libs' channels; only the desktop app notifies so far.
 - **Android.** Collectors need Node, so a phone app would show what is kept but search nothing; it waits for collectors

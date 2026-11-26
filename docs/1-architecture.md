@@ -353,7 +353,7 @@ stored messages never change, so an over-long message cannot keep a conversation
 
 Tools offered: below 16,384 tokens of context, or when the plugin's **Tools offered** is **Core set**, the engine offers
 the core set (`core_tools` in `policy.ts`: the four reads `list_contexts`, `get_context`, `get_item`, `search_index`,
-seven changes, the graph's two proposing calls, `get_blueprint` and the blueprints' two proposing calls, each with a one-line description and its fields' descriptions left
+seven changes, the graph's two proposing calls, `get_blueprint`, the blueprints' two proposing calls, `propose_interest` and `set_mood`, each with a one-line description and its fields' descriptions left
 out); otherwise every offered call.
 The core set is the same calls under the same policy, and a test holds it to a written list as it does the whole set.
 
@@ -729,7 +729,7 @@ run and device, an on switch, Run now, Change, History and Remove; a context's j
 
 ### Self-maintenance
 
-Built 2026-11-27 on doc 4's step 7. `src/shared/maintenance/` keeps CODEX's own upkeep as seven built-in jobs
+Built 2026-11-27 on doc 4's step 7. `src/shared/maintenance/` keeps CODEX's own upkeep as eight built-in jobs
 (`model.ts`), which the user can turn on or off and budget but not remove, apart from the jobs the assistant makes:
 
 | Job | Where | What it does |
@@ -740,6 +740,7 @@ Built 2026-11-27 on doc 4's step 7. `src/shared/maintenance/` keeps CODEX's own 
 | `similarity` Similar items | chosen device | `propose_similar` for the items waiting under `similarity`. |
 | `tidy` Tidy the graph | chosen device | Ends (sets `valid_until`, never deletes) open links touching an item whose app no longer has it (`status` `missing`); proposes `same_as` between accepted entities of one kind sharing a name or other name (made by the rule `same_name`), never twice and never once rejected. No model call. |
 | `suggest` Suggest links | chosen device | The only model job, off until turned on: for contexts holding items whose `context_mark` changed since it last ran on them (`maintenance_contexts`), longest waiting first, a background `start_run` shaped like Suggest links (its message, tools, instructions and closing note) in one conversation per context named "Suggest links (background)". |
+| `research` Research interests | chosen device | Off until turned on, calling a model: for the accepted interest researched longest ago, an isolated background run (see Curiosity) in the conversation `research-<interest id>`, within its model calls and tokens a day and `web_requests_per_run`. |
 | `digest` Daily digest | chosen device | Once a day, plain lines (`digest_lines`) of what each job applied and proposed since the last digest, failures, budgets used up, and how much waits in the Inbox; kept as the run's `applied`, listed in the Inbox as kind `digest` until set aside. Nothing to say, no entry. |
 
 The index and its vectors are never synced, so every device keeps its own: `index` and `embed` run on every device,
@@ -822,6 +823,44 @@ the user is not a mood. Nothing in `src/shared/mood/` imports the policy, the jo
 holds its imports to a list), the tool list and `decide()` are tested unchanged under every mood, and the Mood section
 under Settings → Assistant (`src/web/mood/MoodSettings.tsx`) has the two switches, the mood now and the dates.
 
+### Curiosity
+
+`src/shared/interests/` keeps the assistant's interests in the synced table `interests` (`topic`, `reason`, `state`
+proposed, accepted, paused or dropped, `made_by`, engine and model, `conversation_id`, the `sources` its proposing run
+had read, the `context_id` of its findings and `researched_at`). `propose_interest(topic, reason)` is one of
+`proposing_calls`, offered to engines (and in the core set) and to programs, and only ever proposes; a topic already
+listed, a dropped one included, is not proposed again. `list_interests` is offered too, screened by each interest's
+sources (`screen_interests`). The page-only calls are `add_interest` (the user's own, accepted as typed),
+`accept_interest(id, topic)` (with the topic as the user read and edited it), `set_interest_state` (paused, dropped or
+proposed) and `set_max_interests`; the cap (`interests.max_accepted`, 5) and the findings' root context
+(`interests.context`) are `user_only_settings`.
+
+A finding is an item of CODEX's own, collector `codex.findings`, kind `finding`, answered for by the internal
+`findings_plugin` from its own row, refused by `add_item`: its title, its text as the snippet, its first address as the
+uri, and in `detail` the interest, topic, addresses, date, run and `sources` holding the Web plugin's source
+(`finding_source`). `item_sources` gives a finding that source as well as its own, so the context listing in the
+instructions, the tool results, search documents and graph nodes fence it as the web's text and keep it from a hosted
+engine while Web is unmarked. `save_finding` puts it in the interest's context inside "The assistant's interests", each
+made when first needed (`findings_context`).
+
+The `research` maintenance job (`maintenance/research.ts`) checks for an accepted interest, the Web plugin's
+`web__web_search` turned on (offered only with a search endpoint), and `background_engine` (a hosted engine also needs
+Web marked for hosted engines). Its run is `start_run` with `isolated: true`: the instructions are only
+`research_instructions` (how to work, the topic, and the titles of its earlier findings, fenced) plus the plugin tools'
+line, the conversation sent is only the research message, and there is no identity, date, context, blueprint recall or
+mood; `tools` is `research_tools` (`web__web_search`, `web__web_fetch`) and `own_tools` the run's own `save_finding`,
+handled in `engine_tools` and kept with the reply like `set_mood`; `max_plugin_calls` is the budget's
+`web_requests_per_run`; and `reads_nothing_private` keeps the run's outside-sending tools from being refused for what
+it read, since it holds nothing private. The web's text taints the run as usual, but it has no change to make, so
+nothing becomes a proposal. `save_finding` keeps at most three findings a run and proposes at most one `next_topic` as
+an interest, made by the engine with the web as its source. The run's `applied` lines name each finding, so the digest
+lists them, and the maintenance loop's `note_finding_mood` leaves the mood mildly curious. The identity lines tell the
+engine when to propose an interest and to mention a finding only when it bears on what the user asks.
+
+Settings → Assistant → Interests (`src/web/interests/InterestSettings.tsx`) lists each interest with its state, who
+made it, why and its findings, with Accept… (a dialog showing the exact topic as an editable field and what it is sent
+to), Pause and Drop, then Add an interest… and Most accepted at once.
+
 ### Still to come
 
-Curiosity, in doc 4's order.
+SmartHarness as an engine, in doc 4's order.

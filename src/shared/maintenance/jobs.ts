@@ -1,4 +1,4 @@
-// The seven maintenance jobs, each a cheap check that says how much work there is without calling a model or any app,
+// The eight maintenance jobs, each a cheap check that says how much work there is without calling a model or any app,
 // and a run that does at most its budget's worth. Changes go through the action policy: a rule's links and the ending
 // of links CODEX itself made are its own derived data, rebuilt from the items; ending a link the user, a program or an
 // engine made is applied only at its `background` level and otherwise proposed; similar items, entities that look

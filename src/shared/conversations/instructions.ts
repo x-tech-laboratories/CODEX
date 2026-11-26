@@ -38,6 +38,8 @@ const identity = [
   "Items from a source the user has not allowed to reach you are left out, with a line saying how many; tell the user when that matters.",
   "CODEX keeps a graph linking contexts, items and entities (people, organisations, topics, places): get_node_links shows a node's links; propose_entity and propose_link only propose, for the user to accept or reject.",
   "When the user has just taught you rules or the order of steps for a task, offer to save them as a blueprint (propose_blueprint), or to amend the blueprint you followed (propose_blueprint_change); the user accepts it first.",
+  "When a conversation shows a topic the user cares about that you could learn more of on the public web, you may propose it as an interest of your own (propose_interest), worded with nothing personal in it; the user reads and accepts it first.",
+  "What your research found is kept as findings, items search_index finds like any other; mention one only when it bears on what the user asks, and never bring one up unasked.",
 ].join("\n");
 
 export function shortened(text: string): string {

@@ -152,6 +152,17 @@ with why on hover or tap, and in one instruction line about tone, its reason scr
 never an input to the action policy, screening, the tools offered or budgets, and never notifies, fills the Inbox or
 starts a run, each held by a test. Drives (levels that start jobs) are not built: a mood starts nothing.*
 
+*Curiosity built 2026-11-27 (`src/shared/interests/`, `src/shared/maintenance/research.ts`, described in doc 1):
+interests (proposed, accepted, paused, dropped) that an engine only proposes, through `propose_interest`, and the user
+adds, accepts, pauses and drops at the page alone, accepting with the exact topic shown and editable since it is the text
+sent to a search engine, at most five accepted unless changed. An eighth maintenance job, Research interests, off by
+default and budgeted in model calls, tokens and web requests, researches the accepted interest looked at longest ago in
+a run built to hold no private data: told only the topic and its earlier findings' titles, offered only the Web plugin's
+two tools and `save_finding`, with no context, history, blueprint or mood, which a test holds to that exact list and
+that request. Findings are items of CODEX's own in "The assistant's interests", carrying the web as their source so they
+stay fenced and screened; the digest lists them, search finds them, a new one leaves the mood mildly curious, and a run
+may propose one interest.*
+
 ## Order of work
 
 1. **Engine interface:** replace the interim one (`legacy/src/engine/engine.ts`, which has the task tree's signature) with conversation in, CODEX's tools in, events out. The hosted model adapters (`legacy/src/assistant/*Model.ts`, `models.ts`) and the direct loop carry over. *Done 2026-11-26: `src/shared/engines/engine.ts`, with the Anthropic and OpenAI-compatible engine plugins on the ported direct loop; the legacy files are deleted.*
@@ -182,7 +193,10 @@ starts a run, each held by a test. Drives (levels that start jobs) are not built
    tick every 30 minutes, waiting for a live reply and stopping at a pause; changes under the action policy, the rest
    proposed; a local engine unless the user allows a hosted one; and one device, named in a synced setting the user
    changes at the page, doing the work, though every device keeps its own index.*
-8. **Mood and curiosity.**
+8. **Mood and curiosity.** *Built 2026-11-27: the mood (one fading state the face and one tone line show, set by
+   replies, dates the user lists and background work, never an input to the policy, screening, tools or budgets) and
+   curiosity (interests proposed by the engine and accepted at the page, researched in the background by a run built to
+   hold no private data, its findings kept in a context of the assistant's own), both described in doc 1.*
 9. **SmartHarness as an engine:** conversation history and CODEX's tools in the task tree; a recorded set of real assistant jobs as the eval, with a hosted engine as the baseline. SmartHarness takes over one class of job at a time once it matches the baseline there.
 
 **Sources to start with:** X-Tasks and Trilium, read-only until the bugs are ironed out.
@@ -272,6 +286,17 @@ user's at the page after reading the command):
   that stays on the topic without setting it ends it too.
 - A date's mood is read in the local time of the device answering, the server for a browser.
 - Drives (levels that start jobs) are not built; a mood starts nothing, by design.
+- No real model has researched an interest or proposed one; the scripted fake engine has, in tests and in the desktop
+  app, against a fake search engine and fake pages. How well a real model keeps personal details out of a proposed
+  topic, and how much a run finds within its budget, is unknown; the user's reading of the topic at acceptance is the
+  guard.
+- A research run's tools are the Web plugin's alone: an interest cannot be researched through another plugin or MCP
+  server, and the Web plugin must have a search endpoint.
+- The topic is sent as accepted, but what the engine types into each search is its own choice; the run holds nothing
+  private to put there, and each search is in the hosted log like any other use of a tool that sends outside.
+- A finding taken out of every context stays as an item in no context, as items do; its interest no longer counts it.
+- Interests are not in the Inbox: a proposed one waits under Settings → Assistant → Interests, and the reply that
+  proposed it says so.
 
 ## Later, as separate projects
 
