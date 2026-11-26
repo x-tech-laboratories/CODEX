@@ -60,6 +60,20 @@ describe("refreshing in the background", () => {
     refreshing.stop();
   });
 
+  it("refreshes only on the device chosen for background work, and not while it is paused", async () => {
+    use_plugins([tasks_plugin(async () => ({ t1: { source_id: "t1", kind: "task", title: "Order more seeds" } }))]);
+    const { database, store } = open_database();
+    const on_report = vi.fn();
+    const refreshing = keep_refreshing(() => database, { on_report });
+    store.set_setting("background.paused", true);
+    await refreshing.check();
+    store.set_setting("background.paused", false);
+    store.set_setting("background.device", "another-device");
+    await refreshing.check();
+    expect(on_report).not.toHaveBeenCalled();
+    refreshing.stop();
+  });
+
   it("refreshes nothing while refresh_minutes is off", async () => {
     const { database, store } = open_database();
     store.set_setting("refresh_minutes", 0);

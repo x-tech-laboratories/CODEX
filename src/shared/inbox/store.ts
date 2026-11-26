@@ -15,7 +15,7 @@ import { summaries_of } from "../conversations/records.ts";
 import { define_feature, drizzle_of } from "../feature.ts";
 import { list_graph_proposals } from "../graph/reading.ts";
 import { as_run } from "../jobs/records.ts";
-import { maintenance_prefix } from "../jobs/model.ts";
+import { maintenance_conversation_id, maintenance_prefix } from "../jobs/model.ts";
 import { job_runs, jobs } from "../jobs/schema.ts";
 import { list_proposals_of } from "../policy/proposals.ts";
 import type { InboxEntry } from "./model.ts";
@@ -39,9 +39,9 @@ function list_inbox(database: SqlDatabase): InboxEntry[] {
 
   for (const proposal of list_proposals_of(database, null, "waiting")) {
     conversation_ids.add(proposal.conversation_id);
-    // One with no conversation was proposed by background maintenance, about the graph.
-    const by_maintenance = !proposal.conversation_id;
-    entries.push({ key: `change:${proposal.id}`, kind: "change", id: proposal.id, title: proposal.summary, detail: proposal.reason === "outside content" ? "Proposed after reading text from other apps." : "Its level asks for your approval.", made_by: by_maintenance ? "background maintenance" : "the assistant", created_at: proposal.created_at, conversation_id: proposal.conversation_id, conversation_title: "", job_title: job_conversations.get(proposal.conversation_id) ?? "", route: by_maintenance ? "#/graph" : conversation_route(proposal.conversation_id), proposal });
+    // One in background maintenance's own conversation was proposed by it, about the graph.
+    const by_maintenance = proposal.conversation_id === maintenance_conversation_id;
+    entries.push({ key: `change:${proposal.id}`, kind: "change", id: proposal.id, title: proposal.summary, detail: proposal.reason === "outside content" ? "Proposed after reading text from other apps." : "Its level asks for your approval.", made_by: by_maintenance ? "background maintenance" : "the assistant", created_at: proposal.created_at, conversation_id: proposal.conversation_id, conversation_title: "", job_title: job_conversations.get(proposal.conversation_id) ?? "", route: conversation_route(proposal.conversation_id), proposal });
   }
 
   const graph = list_graph_proposals(database);

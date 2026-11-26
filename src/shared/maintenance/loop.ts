@@ -168,24 +168,26 @@ export function tick(): Promise<TickReport> {
   if (ticking) return ticking;
   const host = current;
   if (!host) return Promise.resolve({ reason: "Maintenance runs only where the store runs.", jobs: [] });
-  ticking = (async (): Promise<TickReport> => {
+  const looking = async (): Promise<TickReport> => {
     const jobs: JobOutcome[] = [];
-    try {
-      if (is_paused(host.database())) return { reason: "Background work is paused.", jobs };
-      for (const key of maintenance_keys) {
-        if (maintenance_jobs[key].where === "chosen" && !runs_here(host.database())) continue;
-        if (!(await wait_for_quiet(host))) return { reason: stopping.signal.aborted ? "Stopped." : "Background work is paused.", jobs };
-        try {
-          jobs.push(await run_maintenance_job(host, key));
-        } catch (error) {
-          console.warn(`maintenance ${key}:`, error);
-        }
+    if (is_paused(host.database())) return { reason: "Background work is paused.", jobs };
+    for (const key of maintenance_keys) {
+      // A job turned off, or not this device's, is not looked at at all.
+      if ((maintenance_jobs[key].where === "chosen" && !runs_here(host.database())) || !job_on(host.database(), key)) continue;
+      if (!(await wait_for_quiet(host))) return { reason: stopping.signal.aborted ? "Stopped." : "Background work is paused.", jobs };
+      try {
+        jobs.push(await run_maintenance_job(host, key));
+      } catch (error) {
+        console.warn(`maintenance ${key}:`, error);
       }
-      return { reason: "", jobs };
-    } finally {
-      ticking = null;
     }
-  })();
+    return { reason: "", jobs };
+  };
+  // Let go of only once settled, after it is kept here, even when it ends at once.
+  const started = looking().finally(() => {
+    if (ticking === started) ticking = null;
+  });
+  ticking = started;
   return ticking;
 }
 

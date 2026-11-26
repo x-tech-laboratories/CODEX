@@ -66,9 +66,9 @@ async function decide_and_tell(entries: InboxEntry[], yes: boolean): Promise<voi
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
 
-// A change opens its conversation in the pane; anything else, and a change background maintenance proposed, its own page.
+// A change opens its conversation in the pane; anything else its own page.
 function open_entry(entry: InboxEntry): void {
-  if (entry.kind === "change" && entry.conversation_id) {
+  if (entry.kind === "change") {
     open_conversation(entry.conversation_id, [], null);
     return;
   }

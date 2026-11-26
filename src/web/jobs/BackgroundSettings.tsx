@@ -47,29 +47,26 @@ function status_of(job: MaintenanceJobEntry, state: BackgroundState): string {
   return "On";
 }
 
-// The line under a job's name: what it last did, or why it last did nothing.
-function JobAbout({ job }: { job: MaintenanceJobEntry }) {
+// The line under a job's name: its state, where it runs, and what it last did or why it last did nothing.
+function JobStatus({ job, state }: { job: MaintenanceJobEntry; state: BackgroundState }) {
   const where = job.where === "every" ? "Every device runs it for its own index." : job.device ? `Runs on ${job.device}.` : "";
   const last = job.last_run;
   const skipped_later = job.skipped_at && (!last || job.skipped_at > last.started_at);
   return (
-    <span className="maintenance-about">
-      <span>{job.about}</span>
-      <span className="muted small">
-        {where}{" "}
-        {skipped_later ? (
-          <>
-            Last looked <When at={job.skipped_at} />: {job.skip_reason}
-          </>
-        ) : last ? (
-          <>
-            Last ran <When at={last.started_at} />: {run_words(last)}
-          </>
-        ) : (
-          "It has not looked for work yet."
-        )}
-      </span>
-    </span>
+    <>
+      <strong>{status_of(job, state)}.</strong> {where}{" "}
+      {skipped_later ? (
+        <>
+          Last looked <When at={job.skipped_at} />: {job.skip_reason}
+        </>
+      ) : last ? (
+        <>
+          Last ran <When at={last.started_at} />: {run_words(last)}
+        </>
+      ) : (
+        "It has not looked for work yet."
+      )}
+    </>
   );
 }
 
@@ -178,7 +175,7 @@ function BackgroundRows() {
       <Loaded resource={jobs} lines={3}>
         {(entries) =>
           entries.map((job) => (
-            <SettingsDialogRow key={job.key} name={job.title} status={status_of(job, now)} about={<JobAbout job={job} />}>
+            <SettingsDialogRow key={job.key} name={job.title} status={<JobStatus job={job} state={now} />} about={job.about}>
               <JobSettings job_key={job.key} />
             </SettingsDialogRow>
           ))

@@ -12,7 +12,8 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { context_items, contexts, items } from "../contexts/schema.ts";
 import { assistant_host } from "../conversations/host.ts";
 import { conversation_collector, conversation_item_id } from "../conversations/model.ts";
-import { has_conversation } from "../conversations/records.ts";
+import { add_conversation_record, has_conversation, rename_conversation_record } from "../conversations/records.ts";
+import { maintenance_conversation_id } from "../jobs/model.ts";
 import { find_engine, start_run, stop_run_of, type RunEnd } from "../conversations/run.ts";
 import { is_hosted } from "../engines/engine.ts";
 import { drizzle_of } from "../feature.ts";
@@ -256,6 +257,16 @@ function sources_of_ends(database: SqlDatabase, link: LinkRow): string[] {
   return [...new Set(drizzle_of(database).select({ collector: items.collector }).from(items).where(inArray(items.id, ids)).all().map((row) => row.collector))].sort();
 }
 
+// The conversation background maintenance's proposals are kept in, in no context, made the first time one is needed;
+// approving or rejecting one is recorded there.
+export function maintenance_conversation(database: SqlDatabase): string {
+  if (!has_conversation(database, maintenance_conversation_id)) {
+    add_conversation_record(database, null, maintenance_conversation_id);
+    rename_conversation_record(database, maintenance_conversation_id, "Background maintenance");
+  }
+  return maintenance_conversation_id;
+}
+
 const tidy_job: MaintenanceJob = {
   check({ database }) {
     const asked = ending_asked(database);
@@ -266,6 +277,7 @@ const tidy_job: MaintenanceJob = {
     const asked = ending_asked(database);
     let left = budget.items_per_run;
     let ended = 0;
+    let asking = 0;
     let handled = 0;
     const applied: string[] = [];
     const proposed: string[] = [];
@@ -291,8 +303,9 @@ const tidy_job: MaintenanceJob = {
         continue;
       }
       const summary = `End the link “${words}”, since ${label_of(database, missing)} is gone from its app.`;
-      add_proposal(database, { conversation_id: "", method: "close_graph_link", arguments: { id: link.id }, summary, reason: "level", sources: sources_of_ends(database, link) });
+      add_proposal(database, { conversation_id: maintenance_conversation(database), method: "close_graph_link", arguments: { id: link.id }, summary, reason: "level", sources: sources_of_ends(database, link) });
       proposed.push(summary);
+      asking++;
     }
     if (ended > applied.length) applied.unshift(`Ended ${count_words(ended - applied.length, "link", "links")} CODEX had made to items gone from their apps.`);
     let joined = 0;
@@ -314,7 +327,9 @@ const tidy_job: MaintenanceJob = {
       joined++;
     }
     if (joined > 0) proposed.push(`Proposed joining ${count_words(joined, "pair", "pairs")} of entities that share a name.`);
-    return { ...done(handled, applied, proposed, [...new Set(notes)].join(" ")), changed_store: handled > 0 };
+    // A run that proposed in the maintenance conversation names it, which marks it as a background job's, not one the user talks in.
+    const proposed_in = asking > 0 ? { conversation_id: maintenance_conversation_id } : {};
+    return { ...done(handled, applied, proposed, [...new Set(notes)].join(" ")), changed_store: handled > 0, ...proposed_in };
   },
 };
 

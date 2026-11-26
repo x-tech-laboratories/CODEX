@@ -15,7 +15,7 @@ import { register_device } from "../src/shared/jobs/records.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { set_page_api } from "../src/web/api.ts";
 import { InboxPage } from "../src/web/inbox/InboxPage.tsx";
-import { background_section } from "../src/web/jobs/BackgroundSettings.tsx";
+import { background_section, run_words } from "../src/web/jobs/BackgroundSettings.tsx";
 import { JobsPage } from "../src/web/jobs/JobsPage.tsx";
 import { sidebar_views } from "../src/web/Sidebar.tsx";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
@@ -224,6 +224,62 @@ describe("the Jobs page's other states", () => {
     const confirm = await screen.findByRole("dialog");
     fireEvent.click(within(confirm).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(fixture.calls.list_jobs().map((job) => job.title)).toEqual(["Often"]));
+  });
+});
+
+describe("Settings → Background work's maintenance jobs", () => {
+  it("pause everything, list each job with why it last did nothing, and set one's switch and budget in its dialog", async () => {
+    const fixture = open_page();
+    register_device(fixture.database, "Test laptop", "desktop", Date.now());
+    const now = new Date().toISOString();
+    fixture.database.prepare("INSERT INTO maintenance_checks (job, device, checked_at, day, skips, skip_reason, skipped_at, used_up) VALUES ('tidy', 'Test laptop', ?, '2000-01-01', 3, 'Nothing changed, so there was nothing to do.', ?, '')").run(now, now);
+    render(
+      <>
+        {background_section.content}
+        <Dialogs />
+      </>,
+    );
+    fireEvent.click(await screen.findByRole("switch", { name: "Pause background work" }));
+    await waitFor(() => expect(fixture.calls.get_background_state().paused).toBe(true));
+    expect(await screen.findByText("Tidy the graph")).toBeTruthy();
+    expect(document.body.textContent).toMatch(/Last looked .+: Nothing changed, so there was nothing to do\./);
+    expect(screen.getAllByText(/Every device runs it for its own index\./)).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Suggest links" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/Off until you turn it on, since it calls a model/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("switch", { name: "Suggest links on" }));
+    await waitFor(() => expect(fixture.calls.list_maintenance_jobs().find((job) => job.key === "suggest")!.on).toBe(true));
+    fireEvent.change(within(dialog).getByLabelText("Suggest links: Tokens a day"), { target: { value: "20000" } });
+    fireEvent.blur(within(dialog).getByLabelText("Suggest links: Tokens a day"));
+    await waitFor(() => expect(fixture.calls.list_maintenance_jobs().find((job) => job.key === "suggest")!.budget.tokens_per_day).toBe(20_000));
+
+    fireEvent.change(screen.getByLabelText("Look for work every"), { target: { value: "60" } });
+    fireEvent.blur(screen.getByLabelText("Look for work every"));
+    await waitFor(() => expect(fixture.calls.get_background_state().tick_minutes).toBe(60));
+    fireEvent.click(screen.getByRole("switch", { name: "Background work may use a hosted engine" }));
+    await waitFor(() => expect(fixture.calls.get_background_state().hosted_allowed).toBe(true));
+  });
+
+  it("say what a run did in a line", () => {
+    const run = { applied: ["Embedded 3 pieces of text."], proposed: [], note: "", outcome: "done" } as never;
+    expect(run_words(run)).toBe("Embedded 3 pieces of text.");
+    expect(run_words({ ...(run as object), applied: [], outcome: "error", note: "away" } as never)).toBe("It failed: away");
+    expect(run_words({ ...(run as object), applied: [] } as never)).toBe("It found nothing to change.");
+  });
+});
+
+describe("the Inbox's daily digest", () => {
+  it("lists what background work did, and is set aside", async () => {
+    const fixture = open_page();
+    fixture.database
+      .prepare("INSERT INTO job_runs (id, job_id, title, started_at, ended_at, outcome, applied, items) VALUES ('d1', 'maintenance:digest', 'Daily digest', ?, ?, 'done', ?, 1)")
+      .run("2026-11-27T08:00:00.000Z", "2026-11-27T08:00:01.000Z", JSON.stringify(["Links from rules: The rules made 2 links.", "Nothing waits for you in the Inbox."]));
+    render(<InboxPage />);
+    expect(await screen.findByText("Background work, 2026-11-27")).toBeTruthy();
+    expect(screen.getByText("Links from rules: The rules made 2 links.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Set aside" }));
+    await waitFor(() => expect(fixture.calls.list_inbox()).toEqual([]));
   });
 });
 
