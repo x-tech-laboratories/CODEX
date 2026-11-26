@@ -185,6 +185,21 @@ carrying a source not marked for it is withheld whole, and each link whose own s
 `suggest_links(context_id)` starts an ordinary conversation in the context with a message asking the engine to read
 its items and propose; no background job proposes links yet.
 
+### The views
+
+`src/web/graph/` draws the graph with X-Libs' `GraphView` (on force-graph), every colour from Halon's tokens:
+contexts as squares in the accent, items as circles by kind, entities as hexagons, proposed links dashed, and lines
+labelled "holds" for where contexts and items sit. The same `GraphPanel` is a context's **Graph** view (`set_context_view`
+takes `graph`), with a switch to show everything, and the **Graph** page in the sidebar (`#/graph`, or
+`#/graph/<node key>` to open on a node), with a box that finds a node by name and centres on it. Filters choose
+contexts, items and entities, one link type, and accepted or proposed links; a filter change keeps the last drawing
+until the next arrives. The selected node shows beside the drawing (`NodePanel`): what it is, opening it, its links
+with who made each and its evidence, Accept and Reject on proposals, Close and Remove, a link to another node picked
+through `search_index`, and for an entity Rename, Remove, Join with another and Undo join. A selected link shows its two
+ends with the same buttons. **Proposed links** lists what waits with its evidence and maker, and accepts or rejects a
+ticked selection after asking. **New entity…** adds one by hand. On a context's page, **Suggest links** starts the run
+and opens the pane on it, and each linked item shows its count of links, which opens the Graph page on it.
+
 Entities are documents of the search index too (`entity:<id>`, their name, kind and other names), placed in the
 contexts they are linked to, directly or through an item, so `search_index` finds them with their sources screened.
 
@@ -352,4 +367,4 @@ head badges the engine local or hosted.
 
 ### Still to come
 
-The Inbox and background queue, the graph's views, jobs and blueprints, in doc 4's order.
+The Inbox and background queue, jobs and blueprints, in doc 4's order.

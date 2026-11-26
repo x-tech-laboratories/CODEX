@@ -10,6 +10,8 @@ export default defineConfig({
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     // The pre-merge assistant in legacy/ is kept for porting and is never run.
     exclude: [...configDefaults.exclude, "legacy/**"],
+    // X-Libs' graph widget is run through Vite, so a test can stand in for force-graph, which needs a real canvas.
+    server: { deps: { inline: [/x-libs\/dist\/web\/react\/graph/] } },
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,tsx}", "thunderbird/**/*.{ts,tsx}"],

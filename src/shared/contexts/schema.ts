@@ -87,7 +87,7 @@ export const context_views = sqliteTable("context_views", {
   context_id: text()
     .primaryKey()
     .references(() => contexts.id, { onDelete: "cascade" }),
-  // "list" or "cards".
+  // "list", "cards", "grouped" or "graph".
   view: text().notNull().default("list"),
   // Each card's place in the grid as a JSON list of { id, x, y, w, h }, by item id.
   card_places: text().notNull().default("[]"),

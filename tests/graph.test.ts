@@ -314,6 +314,7 @@ describe("proposals", () => {
     await wait_for_runs();
     const conversation = fixture.calls.get_conversation(started.conversation_id);
     expect(conversation.contexts.map((each) => each.id)).toEqual([garden]);
+    expect(conversation.title).toBe("Suggest links");
     expect(conversation.messages[0]).toMatchObject({ role: "user", text: suggest_links_message });
     const names = fixture.requests[0]!.tools.definitions.map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining(["get_node_links", "propose_entity", "propose_link"]));

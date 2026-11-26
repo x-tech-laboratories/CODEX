@@ -1,8 +1,9 @@
-// The sidebar: Contexts and History on top, the tree of contexts below them, and Sync above the Shell's own foot.
+// The sidebar: Contexts, Graph and History on top, the tree of contexts below them, and Sync above the Shell's own foot.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { HistoryIcon, HomeIcon } from "@x-tech-laboratories/x-libs/web/react/icons";
+import { Waypoints } from "lucide-react";
 import type { ShellView } from "@x-tech-laboratories/x-libs/web/react/shell";
 import { SyncButton } from "@x-tech-laboratories/x-libs/web/react/sync_settings";
 
@@ -12,6 +13,7 @@ import { data_watch, page } from "./api.ts";
 
 export const sidebar_views: ShellView[] = [
   { id: "overview", label: "Contexts", href: "#/overview", icon: HomeIcon },
+  { id: "graph", label: "Graph", href: "#/graph", icon: Waypoints },
   { id: "history", label: "History", href: "#/history", icon: HistoryIcon },
 ];
 

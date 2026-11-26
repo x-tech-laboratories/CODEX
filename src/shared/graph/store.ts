@@ -320,9 +320,13 @@ export const suggest_links_message = [
   "Everything you propose waits for me to accept or reject it; tell me briefly what you proposed.",
 ].join(" ");
 
-// Starts an ordinary conversation in the context, asking the engine to read its items and propose entities and links.
+// Starts an ordinary conversation in the context, named Suggest links, asking the engine to read its items and propose
+// entities and links.
 async function suggest_links(_database: SqlDatabase, context_id: string): Promise<{ conversation_id: string; run_id: string }> {
-  return (await assistant_host().call("send_message", [context_id, suggest_links_message, null])) as { conversation_id: string; run_id: string };
+  const host = assistant_host();
+  const started = (await host.call("send_message", [context_id, suggest_links_message, null])) as { conversation_id: string; run_id: string };
+  await host.call("rename_conversation", [started.conversation_id, "Suggest links"]);
+  return started;
 }
 
 // ── After indexing ───────────────────────────────────────────────────────────

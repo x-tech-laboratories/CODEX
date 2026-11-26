@@ -20,7 +20,7 @@ code sits in [`legacy/`](legacy/README.md), where nothing builds or tests it.
 - **Collectors** are plugins that bring items from other apps. Each searches its app, or takes items typed in by hand,
   or is sent items from elsewhere, and says what became of them: a refresh keeps new titles and states, and marks
   missing an item its app no longer has.
-- **Cards:** a context's items show as a list grouped by kind, or switched to **Cards**, as cards in a grid you drag
+- **Cards:** a context's items show as a list grouped by kind, as a **Graph** (see below), or switched to **Cards**, as cards in a grid you drag
   by their handle and resize from their corner (or move with the arrow keys, and resize with Shift and the arrows).
   **Grouped** puts a card per kind instead, such as one holding every task and one every link, each listing its items.
   Where each card sits is kept with the context, for each view, and syncs, but leaves no version in History.
@@ -56,6 +56,15 @@ link that stops being true is closed rather than deleted.
 - **Yours to decide:** a proposal waits until you accept or reject it, only from CODEX's own page; a rejection is
   remembered, so the same link is never proposed again. Two entities found to be one are joined, never merged, and
   the join can be undone.
+
+**Seeing it:** **Graph** beside List, Cards and Grouped on a context's page draws the context, what it holds, their
+entities and links, with proposed links dashed; **Show everything** widens it to the whole graph, which the **Graph**
+page in the sidebar also draws, with a box to find a node by name. Choosing a node shows what it is and its links
+beside the drawing: open it, link it to another node found by search, close or remove a link, accept or reject a
+proposal, or rename, remove or join an entity (and undo a join). **Proposed links** under the drawing lists what waits,
+with where each came from, to accept or reject one by one or a ticked selection at once. Every node and link is also
+in a list under the drawing, worked by keyboard. An item's row shows how many links it has; the count opens the graph
+on it.
 
 An excerpt of where a proposal came from is kept only when its source is marked **May be sent to a hosted engine**;
 otherwise the proposal names the item without quoting it.
@@ -240,7 +249,7 @@ such as a Trilium token, are left out of what the API and MCP read.
 
 ## Not yet
 
-- **More of the assistant:** the Inbox, background jobs, the knowledge graph's views and blueprints, in the order
+- **More of the assistant:** the Inbox, background jobs and blueprints, in the order
   [docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) gives.
 - **Android.** Collectors need Node, so a phone app would show what is kept but search nothing; it waits for collectors
   that run on the server alone.
