@@ -9,6 +9,7 @@ import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { set_page_api } from "../src/web/api.ts";
 import { call_words } from "../src/web/assistant/AssistantSettings.tsx";
+import { day_words } from "../src/web/mood/MoodSettings.tsx";
 import { forget_page_plugins } from "../src/web/plugins.tsx";
 import { SettingsView } from "../src/web/settings/SettingsView.tsx";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
@@ -30,6 +31,26 @@ function open_settings(choose_engine: boolean): Fixture {
 function section(heading: string): HTMLElement {
   return screen.getByRole("heading", { name: heading }).closest("section")!;
 }
+
+describe("the mood's settings", () => {
+  it("switch the mood and its tone, show it now, and keep dates the user adds and removes", async () => {
+    const fixture = open_settings(true);
+    const mood = await waitFor(() => section("Mood"));
+    fireEvent.click(await within(mood).findByLabelText("Mood colours the tone of replies"));
+    await waitFor(() => expect(fixture.calls.get_settings()["mood.tone"]).toBe(false));
+    fireEvent.click(within(mood).getByLabelText("Mood"));
+    await waitFor(() => expect(fixture.calls.get_settings()["mood.enabled"]).toBe(false));
+
+    fireEvent.change(within(mood).getByLabelText("Day"), { target: { value: "2026-11-27" } });
+    fireEvent.change(within(mood).getByLabelText("What it is"), { target: { value: "My birthday" } });
+    fireEvent.click(within(mood).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(fixture.calls.list_mood_dates()).toEqual([{ day: "11-27", label: "My birthday", kind: "birthday" }]));
+    expect(await within(mood).findByText(/: My birthday$/)).toBeTruthy();
+    fireEvent.click(within(mood).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(fixture.calls.list_mood_dates()).toEqual([]));
+    expect(day_words("11-27")).toMatch(/27/);
+  });
+});
 
 describe("the assistant's settings", () => {
   it("choose the engine that answers, and list each bundled engine with its own settings", async () => {
