@@ -18,7 +18,9 @@ import { assistant_host, use_assistant_host, type AssistantHost } from "./conver
 import { conversations_feature } from "./conversations/store.ts";
 import { graph_feature } from "./graph/store.ts";
 import { forget_synced_changes, history_feature, install_history, record_history } from "./history/store.ts";
+import { inbox_feature } from "./inbox/store.ts";
 import { items_feature } from "./items/store.ts";
+import { jobs_feature } from "./jobs/store.ts";
 import { is_read_only, is_user_only_setting_write, page_only_methods, page_only_refusal } from "./page_api.ts";
 import { policy_feature } from "./policy/store.ts";
 import { privacy_feature } from "./privacy/store.ts";
@@ -30,7 +32,7 @@ import { sources_feature } from "./sources/store.ts";
 
 // ── Features ─────────────────────────────────────────────────────────────────
 
-export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature];
+export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature, jobs_feature, inbox_feature];
 
 export const sync_engine = create_sync_engine({ tables: features.flatMap((feature) => feature.tables), after_apply: forget_synced_changes });
 
@@ -69,7 +71,9 @@ const all_methods = {
     typeof graph_feature.methods &
     typeof items_feature.methods &
     typeof sources_feature.methods &
-    typeof blueprints_feature.methods),
+    typeof blueprints_feature.methods &
+    typeof jobs_feature.methods &
+    typeof inbox_feature.methods),
   // Every setting, the ones never set at their defaults, with plugin keys and apps' tokens hidden from the page and other programs.
   get_settings: (database: SqlDatabase): Record<string, unknown> => {
     const settings: Record<string, unknown> = { ...setting_defaults, ...settings_feature.methods.get_settings(database) };
@@ -133,9 +137,9 @@ export function bind_methods(database: () => SqlDatabase, on_change: () => void,
 export function start_assistant(options: Omit<AssistantHost, "call">): void {
   use_assistant_host({
     ...options,
-    call: async (method, args) => {
+    call: async (method, args, caller = "page") => {
       if (!(method_names as string[]).includes(method)) throw new Error(`There is no call ${method}.`);
-      const bound = bind_methods(options.database, options.announce) as unknown as Record<string, (...args: unknown[]) => unknown>;
+      const bound = bind_methods(options.database, options.announce, caller) as unknown as Record<string, (...args: unknown[]) => unknown>;
       return bound[method]!(...args);
     },
   });

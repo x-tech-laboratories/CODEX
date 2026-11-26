@@ -9,6 +9,8 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { contexts, items } from "../contexts/schema.ts";
 import { conversation_collector } from "../conversations/model.ts";
 import { drizzle_of } from "../feature.ts";
+import { checked_schedule, describe_schedule } from "../jobs/schedule.ts";
+import { jobs } from "../jobs/schema.ts";
 import { offered_api } from "./policy.ts";
 
 // ── Names ────────────────────────────────────────────────────────────────────
@@ -77,7 +79,33 @@ const summaries: Record<string, (database: SqlDatabase, args: Args) => string> =
   },
   add_contexts_from_feed_group: (database, args) => `Make contexts from the group ${String(args.group_id)} in ${String(args.collector)}, ${parent_place(database, args.parent_id)}.`,
   stop_feed_group_news: (database, args) => `Stop offering ${context_name(database, args.id)} the feeds added to the group it was made from.`,
+  add_job: (database, args) => job_words(database, "Add the job", (args.fields ?? {}) as Args),
+  change_job: (database, args) => job_words(database, `Change the job ${job_name(database, args.id)}:`, (args.fields ?? {}) as Args),
+  remove_job: (database, args) => `Remove the job ${job_name(database, args.id)}; its runs and conversation stay.`,
 };
+
+function job_name(database: SqlDatabase, id: unknown): string {
+  const row = typeof id === "string" ? drizzle_of(database).select({ title: jobs.title }).from(jobs).where(eq(jobs.id, id)).get() : undefined;
+  return row ? quote(row.title) : `that does not exist (${String(id)})`;
+}
+
+// A job in plain words: its title, when it runs, where, what it does, and its condition.
+function job_words(database: SqlDatabase, lead: string, fields: Args): string {
+  const parts: string[] = [];
+  if (fields.title !== undefined) parts.push(quote(fields.title));
+  if (fields.schedule !== undefined) {
+    try {
+      parts.push(describe_schedule(checked_schedule(fields.schedule)));
+    } catch {
+      parts.push(`on the schedule ${JSON.stringify(fields.schedule)}`);
+    }
+  }
+  if (fields.context_id !== undefined) parts.push(fields.context_id ? `in ${context_name(database, fields.context_id)}` : "in no context");
+  if (fields.instruction !== undefined) parts.push(`doing ${quote(fields.instruction)}`);
+  if (fields.only_when_changed === true) parts.push("only when its context changed");
+  if (fields.limits !== undefined) parts.push(`within ${JSON.stringify(fields.limits)}`);
+  return `${lead} ${parts.join(", ")}.`;
+}
 
 // The change in plain words; a call without words of its own gets its description and arguments.
 export function summarize_call(database: SqlDatabase, method: string, args: Args): string {

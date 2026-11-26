@@ -33,6 +33,8 @@ import { register_context_calls } from "../server/calls.ts";
 import { load_collectors } from "../server/collectors/index.ts";
 import { keep_refreshing } from "../server/refreshing.ts";
 import { keep_indexing, open_index } from "../shared/search/indexer.ts";
+import { keep_running_jobs } from "../shared/jobs/runner.ts";
+import type { JobRun } from "../shared/jobs/model.ts";
 
 // ── Profile ──────────────────────────────────────────────────────────────────
 
@@ -101,9 +103,34 @@ const notifier = new Notifier({ app_name: "CODEX", icons: { app: icon_path }, on
 const refreshing = keep_refreshing(() => database, {
   on_change: announce_change,
   on_report: (report) => {
-    if (report.missing === 0) return;
+    if (report.missing === 0 || !read_desktop().notify_missing) return;
     const items = report.missing === 1 ? "An item is" : `${report.missing} items are`;
     void notifier.show({ key: "missing", title: "Items gone", body: `${items} no longer in its app; it is marked missing in its contexts.`, icon: "app" });
+  },
+});
+
+// ── Jobs ─────────────────────────────────────────────────────────────────────
+
+// Whether a window is in front, as the window tells; nothing about the Inbox is shown while the user is looking.
+let window_in_front = false;
+
+// What a finished run left waiting, in a line, or nothing when it left nothing.
+function waiting_words(run: JobRun): string {
+  if (run.outcome === "error") return `“${run.title}” failed: ${run.note}`;
+  if (run.outcome === "limit") return `“${run.title}” stopped at a limit.`;
+  if (run.proposed.length > 0) return `“${run.title}” proposed ${run.proposed.length === 1 ? "a change" : `${run.proposed.length} changes`} for you to decide.`;
+  return "";
+}
+
+// Only once this device is chosen to run them; a job that leaves something waiting says so while the window is not in front.
+const jobs = keep_running_jobs({
+  database: () => database,
+  device: `CODEX on ${hostname()}`,
+  now: () => Date.now(),
+  on_finished: (run) => {
+    const words = waiting_words(run);
+    if (!words || window_in_front || !read_desktop().notify_inbox) return;
+    void notifier.show({ key: "inbox", title: "Waiting in the Inbox", body: words, url: "codex://inbox", icon: "app" });
   },
 });
 
@@ -189,6 +216,7 @@ function daemon_methods(shut_down: () => void): DaemonMethods {
     set_desktop_setting: (key, value) => writeFileSync(desktop_file, JSON.stringify(read_desktop_settings({ ...read_desktop(), [key]: value }), null, 2)),
     // Stops once the answer has gone back.
     stop_daemon: () => void setTimeout(shut_down, 0),
+    set_window_in_front: (in_front) => void (window_in_front = in_front === true),
   };
 }
 
@@ -226,6 +254,7 @@ async function main(): Promise<void> {
     clearInterval(unused_timer);
     stop_all_runs();
     refreshing.stop();
+    void jobs.stop();
     void indexing.stop().then(() => index.close());
     sync.stop();
     backing_up.stop();

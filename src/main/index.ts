@@ -126,8 +126,14 @@ const page = {
   file: join(import.meta.dirname, "../renderer/index.html"),
 };
 
+// The daemon shows nothing about the Inbox while a window is in front, so it is told as that changes.
+function tell_in_front(): void {
+  const in_front = BrowserWindow.getAllWindows().some((each) => each.isFocused() && each.isVisible());
+  void call("daemon/set_window_in_front", [in_front]).catch(() => undefined);
+}
+
 function open_window(): BrowserWindow {
-  return create_window(BrowserWindow, {
+  const window = create_window(BrowserWindow, {
     ...page,
     title: "CODEX",
     icon: icon_path,
@@ -140,6 +146,8 @@ function open_window(): BrowserWindow {
     screen,
     state_file: join(profile, "window.json"),
   });
+  for (const event of ["focus", "blur", "show", "hide", "closed"] as const) window.on(event as "focus", tell_in_front);
+  return window;
 }
 
 // Brings the window forward, making one if it was closed, and hands it the route once its page listens.
@@ -162,7 +170,8 @@ async function quit_completely(): Promise<void> {
 // ── Tray icon ────────────────────────────────────────────────────────────────
 
 async function read_tray_state(): Promise<TrayState> {
-  return { contexts: (await call("call/list_contexts", [])) as ContextSummary[] };
+  const [contexts, waiting] = await Promise.all([call("call/list_contexts", []), call("call/get_inbox_count", [])]);
+  return { contexts: contexts as ContextSummary[], waiting: Number(waiting) || 0 };
 }
 
 // The tray brings the window forward, making one again if it was closed, and opens the page where a row points.

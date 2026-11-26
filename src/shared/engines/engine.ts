@@ -41,6 +41,8 @@ export interface EngineRequest {
   // Oldest first, ending with the user's new message.
   conversation: EngineTurn[];
   tools: EngineTools;
+  // Set for a background job: the most rounds of model calls the reply may take.
+  limits?: { max_rounds?: number };
 }
 
 // ── Events ───────────────────────────────────────────────────────────────────

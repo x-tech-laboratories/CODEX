@@ -8,6 +8,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { blueprints_feature } from "../blueprints/store.ts";
 import { contexts_feature } from "../contexts/store.ts";
+import { jobs_feature } from "../jobs/store.ts";
 import { graph_feature } from "../graph/store.ts";
 import { search_feature } from "../search/store.ts";
 import { is_read_only } from "../page_api.ts";
@@ -26,8 +27,8 @@ const not_offered = new Set(["export_contexts", "import_contexts", "set_context_
 // approval and are not changes under the policy.
 export const proposing_calls: ReadonlySet<string> = new Set(["propose_entity", "propose_link", "propose_blueprint", "propose_blueprint_change"]);
 
-// Only the contexts, items, collectors and feeds calls, the search, what a node is linked to, the blueprints' reads and
-// the four proposing calls; never accounts, settings, plugins, sync, backups, History, the conversations, this policy,
+// Only the contexts, items, collectors and feeds calls, the search, what a node is linked to, the blueprints' reads,
+// the four proposing calls, and listing, adding, changing and removing the assistant's own jobs; never accounts, settings, plugins, sync, backups, History, the conversations, this policy,
 // any other change to the graph or to a blueprint.
 export const offered_api: Record<string, MethodSpec> = {
   ...Object.fromEntries(Object.entries(contexts_feature.api as Record<string, MethodSpec>).filter(([name]) => !not_offered.has(name))),
@@ -39,6 +40,10 @@ export const offered_api: Record<string, MethodSpec> = {
   get_blueprint: blueprints_feature.api.get_blueprint as MethodSpec,
   propose_blueprint: blueprints_feature.api.propose_blueprint as MethodSpec,
   propose_blueprint_change: blueprints_feature.api.propose_blueprint_change as MethodSpec,
+  list_jobs: jobs_feature.api.list_jobs as MethodSpec,
+  add_job: jobs_feature.api.add_job as MethodSpec,
+  change_job: jobs_feature.api.change_job as MethodSpec,
+  remove_job: jobs_feature.api.remove_job as MethodSpec,
 };
 
 // The core set offered to a model with a small context, each briefly described: the reads, the most-used changes, the
@@ -72,9 +77,9 @@ export function changing_calls(): string[] {
   return Object.keys(offered_api).filter((method) => !is_read_only(method) && !proposing_calls.has(method));
 }
 
-// Reads that give back only what the user wrote in CODEX; every other offered read carries text from other apps, such
+// Reads that give back only what the user wrote in CODEX, its jobs included; every other offered read carries text from other apps, such
 // as a collector's search, an item's title or a feed.
-const own_reads = new Set(["list_contexts", "list_collectors"]);
+const own_reads = new Set(["list_contexts", "list_collectors", "list_jobs"]);
 
 // Changes whose answer carries text from other apps: what a refresh found, or the items a feed brought.
 const changes_with_outside_content = new Set(["refresh_items", "follow_feed"]);

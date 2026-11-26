@@ -7,19 +7,30 @@ export interface DesktopSettings {
   show_tray_icon: boolean;
   keep_running_in_background: boolean;
   start_at_login: boolean;
+  // Which kinds of notification this computer shows: items gone from their apps, and what background work left waiting.
+  notify_missing: boolean;
+  notify_inbox: boolean;
 }
 
 export const desktop_setting_defaults: DesktopSettings = {
   show_tray_icon: true,
   keep_running_in_background: true,
   start_at_login: true,
+  notify_missing: true,
+  notify_inbox: true,
 };
 
 // Settings saved on the device, each default where it is missing or damaged.
 export function read_desktop_settings(saved: unknown): DesktopSettings {
   const settings = (saved ?? {}) as Partial<Record<keyof DesktopSettings, unknown>>;
   const flag = (key: keyof DesktopSettings): boolean => (typeof settings[key] === "boolean" ? settings[key] : desktop_setting_defaults[key]);
-  return { show_tray_icon: flag("show_tray_icon"), keep_running_in_background: flag("keep_running_in_background"), start_at_login: flag("start_at_login") };
+  return {
+    show_tray_icon: flag("show_tray_icon"),
+    keep_running_in_background: flag("keep_running_in_background"),
+    start_at_login: flag("start_at_login"),
+    notify_missing: flag("notify_missing"),
+    notify_inbox: flag("notify_inbox"),
+  };
 }
 
 // ── Window ───────────────────────────────────────────────────────────────────
@@ -49,11 +60,12 @@ export interface DesktopMethods {
 
 export const desktop_method_names = ["get_desktop_settings", "set_desktop_setting", "quit_completely"] as const satisfies readonly (keyof DesktopMethods)[];
 
-// What the daemon answers about itself: its settings, and stopping.
+// What the daemon answers about itself: its settings, stopping, and whether a window is in front, which the window tells.
 export interface DaemonMethods {
   get_desktop_settings: () => DesktopSettings;
   set_desktop_setting: (key: keyof DesktopSettings, value: boolean) => void;
   stop_daemon: () => void;
+  set_window_in_front: (in_front: boolean) => void;
 }
 
-export const daemon_method_names = ["get_desktop_settings", "set_desktop_setting", "stop_daemon"] as const satisfies readonly (keyof DaemonMethods)[];
+export const daemon_method_names = ["get_desktop_settings", "set_desktop_setting", "stop_daemon", "set_window_in_front"] as const satisfies readonly (keyof DaemonMethods)[];

@@ -21,11 +21,11 @@ import type { ContextSummary } from "../src/shared/contexts/model.ts";
 describe("the desktop settings", () => {
   it("are all on when none were saved", () => {
     expect(read_desktop_settings(null)).toEqual(desktop_setting_defaults);
-    expect(desktop_setting_defaults).toEqual({ show_tray_icon: true, keep_running_in_background: true, start_at_login: true });
+    expect(desktop_setting_defaults).toEqual({ show_tray_icon: true, keep_running_in_background: true, start_at_login: true, notify_missing: true, notify_inbox: true });
   });
 
   it("keep what was saved and default anything damaged", () => {
-    expect(read_desktop_settings({ show_tray_icon: false, start_at_login: "yes" })).toEqual({ show_tray_icon: false, keep_running_in_background: true, start_at_login: true });
+    expect(read_desktop_settings({ show_tray_icon: false, start_at_login: "yes", notify_inbox: false })).toEqual({ show_tray_icon: false, keep_running_in_background: true, start_at_login: true, notify_missing: true, notify_inbox: false });
   });
 
   it("start hidden only when asked and there is a tray icon to open the window from", () => {
@@ -45,25 +45,28 @@ describe("the tray menu", () => {
   const actions = (): TrayActions => ({ open_route: vi.fn(), show: vi.fn(), quit: vi.fn(), quit_completely: vi.fn() });
   const labels = (state: TrayState) => tray_view(state, actions()).rows.map((row) => (row.kind === "item" ? row.label : "—"));
 
-  it("lists the top-level contexts, then the commands", () => {
-    const state: TrayState = { contexts: [context("a", "Garden"), context("b", "Beds", "a"), context("c", "Taxes")] };
+  it("lists the Inbox with what waits, the top-level contexts, then the commands", () => {
+    const state: TrayState = { contexts: [context("a", "Garden"), context("b", "Beds", "a"), context("c", "Taxes")], waiting: 0 };
 
-    expect(labels(state)).toEqual(["Garden", "Taxes", "—", "Show CODEX", "Quit", "Quit completely"]);
+    expect(labels(state)).toEqual(["Inbox", "—", "Garden", "Taxes", "—", "Show CODEX", "Quit", "Quit completely"]);
     expect(tray_view(state, actions()).tooltip).toBe("CODEX");
+    expect(labels({ ...state, waiting: 3 })[0]).toBe("Inbox (3 waiting)");
+    expect(tray_view({ ...state, waiting: 3 }, actions()).tooltip).toBe("CODEX · 3 waiting in the Inbox");
   });
 
   it("opens the window on the context a row names", () => {
     const done = actions();
-    const rows = tray_view({ contexts: [context("a", "Garden")] }, done).rows.filter((row) => row.kind === "item");
+    const rows = tray_view({ contexts: [context("a", "Garden")], waiting: 1 }, done).rows.filter((row) => row.kind === "item");
 
     for (const row of rows) row.run();
 
     expect(done.open_route).toHaveBeenCalledWith("#/context/a");
+    expect(done.open_route).toHaveBeenCalledWith("#/inbox");
     expect(done.quit_completely).toHaveBeenCalled();
   });
 
-  it("shows only the commands when there are no contexts", () => {
-    expect(labels({ contexts: [] })).toEqual(["Show CODEX", "Quit", "Quit completely"]);
+  it("shows only the Inbox and the commands when there are no contexts", () => {
+    expect(labels({ contexts: [], waiting: 0 })).toEqual(["Inbox", "—", "Show CODEX", "Quit", "Quit completely"]);
   });
 });
 
