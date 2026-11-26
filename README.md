@@ -140,8 +140,9 @@ such as a Trilium token, are left out of what the API and MCP read.
 
 ## Not yet
 
-- **The assistant:** engines, hosted models, conversations, the Inbox, the mascot and the knowledge graph, ported from
-  `legacy/` in the order [docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) gives.
+- **The assistant's pane:** engines, conversations and the action policy are in the store and its API
+  (`send_message`, `get_conversation`, `resolve_proposal`); the window's pane with the mascot, the Inbox and the
+  knowledge graph come next, in the order [docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) gives.
 - **Android.** Collectors need Node, so a phone app would show what is kept but search nothing; it waits for collectors
   that run on the server alone.
 - **CSV export.** Contexts export and import as JSON only so far.

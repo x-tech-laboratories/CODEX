@@ -31,7 +31,7 @@ const off = { state: "off", server_url: "", user: "", last_synced_at: "", pendin
 describe("settings", () => {
   it("saves how often items refresh, and shows no Sync in a browser", async () => {
     const calls = fake_calls({});
-    set_page_api({ host: "web", calls, device: null, on_change: () => () => undefined });
+    set_page_api({ host: "web", calls, device: null, on_change: () => () => undefined, on_conversation: () => () => undefined });
     render(<SettingsView />);
 
     const minutes = await screen.findByLabelText("Refresh every");
@@ -44,7 +44,7 @@ describe("settings", () => {
 
   it("lists every collector with whether it is set up", async () => {
     const calls = fake_calls({ plugins: { "codex.trilium": { enabled: true, settings: { address: "https://notes.example.org", token: "hidden" } } } });
-    set_page_api({ host: "web", calls, device: null, on_change: () => () => undefined });
+    set_page_api({ host: "web", calls, device: null, on_change: () => () => undefined, on_conversation: () => () => undefined });
     render(<><SettingsView /><Dialogs /></>);
 
     for (const name of ["Files", "X-Tasks", "Trilium", "Web links", "Email"]) expect(await screen.findByText(name)).toBeTruthy();
@@ -61,7 +61,7 @@ describe("settings", () => {
       disconnect_sync: vi.fn(),
       sync_now: vi.fn(),
     } as unknown as Client<DeviceMethods>;
-    set_page_api({ host: "desktop", calls: fake_calls({}), device, on_change: () => () => undefined });
+    set_page_api({ host: "desktop", calls: fake_calls({}), device, on_change: () => () => undefined, on_conversation: () => () => undefined });
     render(<><SettingsView /><Dialogs /></>);
 
     fireEvent.change(await screen.findByLabelText("Server address"), { target: { value: "https://context.example.org" } });
@@ -82,7 +82,7 @@ describe("settings", () => {
       get_backup_schedule: vi.fn(async () => ({ automatic: true, to_keep: 14 })),
       set_backup_schedule: vi.fn(),
     };
-    set_page_api({ host: "web", calls: fake_calls({}), device: null, backups, on_change: () => () => undefined });
+    set_page_api({ host: "web", calls: fake_calls({}), device: null, backups, on_change: () => () => undefined, on_conversation: () => () => undefined });
     render(<><SettingsView /><Dialogs /></>);
 
     expect((await screen.findAllByText("Server")).length).toBeGreaterThan(0);

@@ -20,7 +20,9 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { context_bridge } from "../shared/bridge.ts";
 import { mcp_instructions as instructions } from "../shared/mcp.ts";
-import { bind_methods, context_api, is_read_only, sync_engine } from "../shared/store.ts";
+import { stop_all_runs } from "../shared/conversations/run.ts";
+import { conversation_event } from "../shared/page_api.ts";
+import { bind_methods, context_api, is_read_only, start_assistant, sync_engine } from "../shared/store.ts";
 import { register_context_calls } from "./calls.ts";
 
 // ── Options ──────────────────────────────────────────────────────────────────
@@ -50,6 +52,9 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
 
   const changes = new EventStream();
   const database = () => options.database;
+  // A reply streams to every page as it is written; a change it makes is announced to every page, since no page made it.
+  start_assistant({ database, announce: () => changes.announce_change(), emit: (event) => changes.send(JSON.stringify(event), { event: conversation_event }) });
+  app.addHook("onClose", async () => stop_all_runs());
 
   await app.register(
     async (api) => {

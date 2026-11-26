@@ -26,8 +26,9 @@ import { codex_backup_naming, read_schedule } from "../shared/backups.ts";
 import { context_bridge } from "../shared/bridge.ts";
 import { read_desktop_settings, type DaemonMethods, type DesktopSettings } from "../shared/desktop.ts";
 import { mcp_instructions } from "../shared/mcp.ts";
-import type { DeviceMethods } from "../shared/page_api.ts";
-import { bind_methods, context_api, is_read_only, needs_upgrade, open_store, sync_engine } from "../shared/store.ts";
+import { stop_all_runs } from "../shared/conversations/run.ts";
+import { conversation_event, type DeviceMethods } from "../shared/page_api.ts";
+import { bind_methods, context_api, is_read_only, needs_upgrade, open_store, start_assistant, sync_engine } from "../shared/store.ts";
 import { register_context_calls } from "../server/calls.ts";
 import { load_collectors } from "../server/collectors/index.ts";
 import { keep_refreshing } from "../server/refreshing.ts";
@@ -66,6 +67,9 @@ let database = open_database();
 // Every window's event stream, told when the data changed or sync's status moved.
 const changes = new EventStream();
 const announce_change = (): void => changes.announce_change();
+
+// Replies run here, beside the database, and stream to every window as they are written.
+start_assistant({ database: () => database, announce: announce_change, emit: (event) => changes.send(JSON.stringify(event), { event: conversation_event }) });
 
 // ── Backups ──────────────────────────────────────────────────────────────────
 
@@ -209,6 +213,7 @@ async function main(): Promise<void> {
     if (is_stopping) return;
     is_stopping = true;
     clearInterval(unused_timer);
+    stop_all_runs();
     refreshing.stop();
     sync.stop();
     backing_up.stop();

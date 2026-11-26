@@ -12,13 +12,16 @@ import { plugins_setting } from "./collectors/collector.ts";
 import { bundled_manifests } from "./collectors/manifests.ts";
 
 import { contexts_feature } from "./contexts/store.ts";
+import { use_assistant_host, type AssistantHost } from "./conversations/host.ts";
+import { conversations_feature } from "./conversations/store.ts";
 import { forget_synced_changes, history_feature, install_history, record_history } from "./history/store.ts";
 import { is_read_only } from "./page_api.ts";
+import { policy_feature } from "./policy/store.ts";
 import { settings_feature } from "./settings.ts";
 
 // ── Features ─────────────────────────────────────────────────────────────────
 
-export const features = [settings_feature, contexts_feature, history_feature];
+export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature];
 
 export const sync_engine = create_sync_engine({ tables: features.flatMap((feature) => feature.tables), after_apply: forget_synced_changes });
 
@@ -47,7 +50,11 @@ export function open_store(database: SqlDatabase): void {
 // ── Calls ────────────────────────────────────────────────────────────────────
 
 const all_methods = {
-  ...(Object.assign({}, ...features.map((feature) => feature.methods)) as typeof settings_feature.methods & typeof contexts_feature.methods & typeof history_feature.methods),
+  ...(Object.assign({}, ...features.map((feature) => feature.methods)) as typeof settings_feature.methods &
+    typeof contexts_feature.methods &
+    typeof history_feature.methods &
+    typeof conversations_feature.methods &
+    typeof policy_feature.methods),
   // Every setting, the ones never set at their defaults, with plugin keys hidden from the page and other programs.
   get_settings: (database: SqlDatabase): Record<string, unknown> => {
     const settings: Record<string, unknown> = { ...setting_defaults, ...settings_feature.methods.get_settings(database) };
@@ -96,4 +103,18 @@ export function bind_methods(database: () => SqlDatabase, on_change: () => void)
     return [name, call];
   });
   return Object.fromEntries(bound) as ContextMethods;
+}
+
+// ── The assistant ────────────────────────────────────────────────────────────
+
+// Lets runs start where this store runs, changing data through the same calls the page makes and streaming to its pages.
+export function start_assistant(options: Omit<AssistantHost, "call">): void {
+  use_assistant_host({
+    ...options,
+    call: async (method, args) => {
+      if (!(method_names as string[]).includes(method)) throw new Error(`There is no call ${method}.`);
+      const bound = bind_methods(options.database, options.announce) as unknown as Record<string, (...args: unknown[]) => unknown>;
+      return bound[method]!(...args);
+    },
+  });
 }

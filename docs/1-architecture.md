@@ -79,13 +79,65 @@ the login entry.
 `src/shared/history/store.ts` keeps a version of a context, its row and its memberships, after every write through
 X-Libs `create_history`. Versions sync; writes that arrive by sync are recorded by the device that made them.
 
-## Where the assistant goes
+## The assistant
 
-Doc 4 sets the order; the skeleton already fixes where each part lands.
+Built 2026-11-26 on [doc 4](4-merge-with-x-context.md)'s decisions 4 and 5: a conversation per context, answered by
+an engine plugin that reaches CODEX's data only through CODEX's own calls, under the action policy.
 
-- **Its records are features:** conversations, the graph, jobs and blueprints each get a folder in `src/shared/`, with
-  tables, migrations, calls and specs, so they sync, keep History and are served over the API and MCP like contexts.
-- **Engines are plugins:** an engine is an X-Libs plugin providing an `engine`, as a collector is one providing a
-  `collector`, run by the daemon or the server, never by the page.
-- **Tools are the calls:** an engine reaches CODEX's data through the same calls `context_api` describes, so the action
-  policy is enforced once, in the store, for the page, MCP clients and engines alike.
+### Engines
+
+An engine is an X-Libs plugin providing an `engine` (`src/shared/engines/engine.ts`), beside the collectors in the
+same plugin host. It has a label and a `model()`, and `run(request, signal)` gives back an async iterable of events:
+text, a tool call started, its result, usage, done with the final text, or an error. The request holds CODEX's
+instructions, the conversation so far as user and assistant turns, and the tools: their definitions and a
+`call(name, args)`. An engine never touches the store, MCP or the settings; it may run its own tool loop, as long as
+every tool call goes through that `call`. The `engine` setting names the one that answers, by the id it is provided
+under.
+
+Both bundled engines (`src/server/engines/`) run on one direct loop (`src/shared/engines/direct.ts`), ported from the
+pre-merge assistant: it streams each round, drops the oldest tool results when the conversation outgrows the context
+size, gives up after 20 rounds with a last one offered no tools, and fails a reply that repeats itself. `codex.anthropic`
+reaches Claude through the official SDK, never sends a temperature, and turns a refusal into an error; `codex.openai`
+reaches any OpenAI-compatible endpoint. Each plugin's settings hold its model, context size and an API key command,
+whose first line of output is the key, read for each run and kept nowhere. They need Node, so they are bundled where
+the store runs, by `load_collectors`, and never in the page.
+
+### Conversations and runs
+
+`src/shared/conversations/` keeps `conversation_messages`, synced: one conversation per context, keyed by the
+context's id, and `general` for when none is open. A message is the user's, an answer (with the engine, model, tool
+calls with their results, error and token counts) or an event, such as an approved change. `send_message` keeps the
+user's message, starts a run (`run.ts`) and answers at once; one run at a time per conversation, held in memory where
+the store runs. As the engine streams, the run sends `conversation` events on the host's event stream: the server's
+`api/events` for a browser, and the daemon's, which the main process passes to the window as a `conversation` event
+(`PageApi.on_conversation`). When the run ends its answer is kept and `changed` is announced; `get_conversation`
+gives the messages, the proposals and the run still going, so a page opened mid-reply catches up.
+
+The instructions (`instructions.ts`) say who the engine is, today's date and the open context: its name, its place in
+the tree, its notes, the contexts inside it and its items, whose titles, snippets and notes go inside an
+`<untrusted-data>` fence (`src/shared/engines/untrusted.ts`, which also blanks sentences that give orders).
+
+### Tools and the action policy
+
+The tools are the contexts feature's calls (contexts, items, collectors and feeds), built from their api specs, less
+export, import and the card layout calls (`src/shared/policy/policy.ts`). A read runs at once; what it gives back is
+fenced unless it is only the user's own words (`list_contexts`, `list_collectors`), and a fenced result marks the run
+as having read outside content. Every call that changes something has a level in the synced `action_policy` setting,
+`proposal` until the user sets another:
+
+| Level | In a conversation |
+| --- | --- |
+| `restricted` | refused; the engine is told it is not permitted |
+| `proposal` | kept in `proposals` with a plain-words summary, for the user to approve or reject; the engine is told it waits |
+| `auto` | run, recorded on the call as made by the engine at auto |
+| `background` | as auto; the only level a background job with nobody present may act on (no such jobs exist yet) |
+
+Once a run has read outside content, every change it asks for becomes a proposal whatever its level. Approving
+(`resolve_proposal`) runs the call through the store as the page would, so History records it, and adds an event to the
+conversation saying the user approved it and what came back; rejecting adds one saying so. The engine reads those
+events at the start of the user's next message. The policy's own calls and the conversations' are never offered.
+
+### Still to come
+
+The window's right pane with the mascot (the next step), the Inbox and background queue, the knowledge graph, jobs and
+blueprints, in doc 4's order.

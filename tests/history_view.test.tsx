@@ -24,6 +24,7 @@ function fake_page(): ContextMethods {
     calls: calls as unknown as Client<ContextMethods>,
     device: null,
     on_change: (listener: () => void) => (listeners.add(listener), () => listeners.delete(listener)),
+    on_conversation: () => () => undefined,
   });
   return methods;
 }

@@ -40,6 +40,11 @@ Every function that changes something has a level, set by the user per function.
 | Auto allowed | Applied without asking, while the user is in the conversation. |
 | Background allowed | Also applied by background jobs with nobody present. The most dangerous level. |
 
+Built 2026-11-26 for conversations (`src/shared/policy/`, described in doc 1): the four levels in a synced setting, a
+proposal kept on the conversation it was asked for in (the Inbox comes later), and a run that read outside content
+proposing every change. An applied change records whether the user approved it or the engine made it at auto; the
+evidence and the undo wait for the Inbox, and History already keeps every context change.
+
 - **New functions start at proposal only.**
 - **Every applied change is recorded** with what made it (user, rule or engine), the evidence, and an undo.
 - **Outside content lowers a run:** a run that has read mail, a web page or any other untrusted text is treated as proposal only, whatever the level.
@@ -73,8 +78,8 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 
 ## Order of work
 
-1. **Engine interface:** replace the interim one (`legacy/src/engine/engine.ts`, which has the task tree's signature) with conversation in, CODEX's tools in, events out. The hosted model adapters (`legacy/src/assistant/*Model.ts`, `models.ts`) and the direct loop carry over.
-2. **Skeleton and conversation:** X-Context's code moves in (done 2026-11-26: it is `src/`, under CODEX's name, and the old code is in `legacy/`); conversations per context; the right pane with the mascot; engines as plugins. Needs a three-pane shell in X-Libs.
+1. **Engine interface:** replace the interim one (`legacy/src/engine/engine.ts`, which has the task tree's signature) with conversation in, CODEX's tools in, events out. The hosted model adapters (`legacy/src/assistant/*Model.ts`, `models.ts`) and the direct loop carry over. *Done 2026-11-26: `src/shared/engines/engine.ts`, with the Anthropic and OpenAI-compatible engine plugins on the ported direct loop; the legacy files are deleted.*
+2. **Skeleton and conversation:** X-Context's code moves in (done 2026-11-26: it is `src/`, under CODEX's name, and the old code is in `legacy/`); conversations per context; the right pane with the mascot; engines as plugins. Needs a three-pane shell in X-Libs. *Conversations, engines as plugins and the action policy for them done 2026-11-26.*
 3. **Inbox and background queue** ported onto the new store, with the action policy.
 4. **Index and graph:** content extraction, embeddings, fused search, entities, links, proposals, the graph view.
 5. **Workspace:** an editor per kind of item, writing back through collectors.

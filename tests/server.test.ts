@@ -6,9 +6,12 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance, InjectOptions } from "fastify";
 
+import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 import { hash_password } from "@x-tech-laboratories/x-libs/server/passwords";
 
 import { build_app } from "../src/server/app.ts";
+import { use_plugins, type ContextPluginApi } from "../src/shared/collectors/host.ts";
+import { wait_for_runs } from "../src/shared/conversations/run.ts";
 import { method_names, open_store } from "../src/shared/store.ts";
 
 let app: FastifyInstance;
@@ -149,5 +152,54 @@ describe("server", () => {
     expect((await signed({ method: "POST", url: "/api/backup/create_backup", payload: [] })).json()).toEqual(taken);
     expect(fake_backups.create_backup).toHaveBeenCalled();
     expect((await signed({ method: "POST", url: "/api/backup/drop_everything", payload: [] })).statusCode).toBe(404);
+  });
+
+  it("streams a reply to the pages over the event stream as it is written, and keeps it", async () => {
+    use_plugins([
+      define_plugin<ContextPluginApi>({
+        id: "tests.echo",
+        name: "Echo",
+        version: "1.0.0",
+        start: (context) =>
+          context.provide("engine", "echo", {
+            label: "Echo",
+            model: () => "echo-1",
+            run: async function* (request) {
+              const said = request.conversation.at(-1)!.text;
+              yield { type: "text", text: "You said " };
+              yield { type: "text", text: said };
+              yield { type: "done", text: `You said ${said}` };
+            },
+          }),
+      }),
+    ]);
+    await start();
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const address = app.server.address() as { port: number };
+    const base = `http://127.0.0.1:${address.port}`;
+    const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+    await fetch(`${base}/api/call/set_setting`, { method: "POST", headers, body: JSON.stringify(["engine", "echo"]) });
+    const stream = await fetch(`${base}/api/events`, { headers });
+    const reader = stream.body!.getReader();
+    let seen = "";
+    const read_until = async (text: string) => {
+      while (!seen.includes(text)) seen += new TextDecoder().decode((await reader.read()).value);
+    };
+    await read_until("event: hello");
+
+    const sent = await fetch(`${base}/api/call/send_message`, { method: "POST", headers, body: JSON.stringify({ context_id: null, message: "hi" }) });
+    expect(sent.status).toBe(200);
+    await read_until('"type":"finished"');
+    await reader.cancel();
+    await wait_for_runs();
+
+    const pieces = [...seen.matchAll(/event: conversation\ndata: (.+)/g)].map((match) => JSON.parse(match[1]!) as { type: string; text?: string });
+    expect(pieces.map((piece) => piece.type)).toEqual(["started", "text", "text", "finished"]);
+    expect(pieces.filter((piece) => piece.type === "text").map((piece) => piece.text).join("")).toBe("You said hi");
+    const conversation = (await signed({ method: "POST", url: "/api/call/get_conversation", payload: [] })).json() as { messages: { text: string; engine: string }[] };
+    expect(conversation.messages.map((message) => [message.text, message.engine])).toEqual([
+      ["hi", ""],
+      ["You said hi", "Echo"],
+    ]);
   });
 });

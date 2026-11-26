@@ -1,0 +1,13 @@
+// Written by x-libs-bundle-migrations from the migration folders beside it; run it again after drizzle-kit generate.
+
+import type { DrizzleMigration } from "@x-tech-laboratories/x-libs/drizzle";
+
+export const migrations: DrizzleMigration[] = [
+  {
+    "name": "20261126072655_start",
+    "statements": [
+      "CREATE TABLE `conversation_messages` (\n\t`id` text PRIMARY KEY,\n\t`conversation_id` text NOT NULL,\n\t`role` text NOT NULL,\n\t`text` text DEFAULT '' NOT NULL,\n\t`engine` text DEFAULT '' NOT NULL,\n\t`model` text DEFAULT '' NOT NULL,\n\t`tool_calls` text DEFAULT '[]' NOT NULL,\n\t`error` text DEFAULT '' NOT NULL,\n\t`input_tokens` integer DEFAULT 0 NOT NULL,\n\t`output_tokens` integer DEFAULT 0 NOT NULL,\n\t`created_at` text NOT NULL\n);",
+      "CREATE INDEX `conversation_messages_by_conversation` ON `conversation_messages` (`conversation_id`,`created_at`);"
+    ]
+  }
+];

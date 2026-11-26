@@ -27,7 +27,7 @@ describe("the page's calls", () => {
         return name === "get_settings" ? { refresh_minutes: 30 } : undefined;
       },
     });
-    set_page_api({ host: "web", calls: host_calls, device: null, on_change: () => () => undefined });
+    set_page_api({ host: "web", calls: host_calls, device: null, on_change: () => () => undefined, on_conversation: () => () => undefined });
 
     const before = data_watch.version();
     expect(await calls().get_settings()).toEqual({ refresh_minutes: 30 });
@@ -45,5 +45,31 @@ describe("the page's calls", () => {
 
     expect(await calls().get_settings()).toEqual({ refresh_minutes: 5 });
     expect(fetch).toHaveBeenCalledWith("api/call/get_settings", expect.objectContaining({ method: "POST", body: "[]" }));
+  });
+
+  it("hear a reply's progress on the server's event stream", () => {
+    const sources: ListeningEventSource[] = [];
+    class ListeningEventSource {
+      static readonly CLOSED = 2;
+      readyState = 0;
+      readonly listeners = new Map<string, (event: { data: string }) => void>();
+      constructor() {
+        sources.push(this);
+      }
+      addEventListener(name: string, listener: (event: { data: string }) => void): void {
+        this.listeners.set(name, listener);
+      }
+    }
+    vi.stubGlobal("EventSource", ListeningEventSource);
+    const api = web_api();
+    const heard: unknown[] = [];
+    const stop = api.on_conversation((event) => heard.push(event));
+    const event = { conversation_id: "general", run_id: "r1", type: "text", text: "Hel" };
+
+    sources[0]!.listeners.get("conversation")!({ data: JSON.stringify(event) });
+    stop();
+    sources[0]!.listeners.get("conversation")!({ data: JSON.stringify(event) });
+
+    expect(heard).toEqual([event]);
   });
 });

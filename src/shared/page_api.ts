@@ -9,6 +9,7 @@ import type { CertificateClient } from "@x-tech-laboratories/x-libs/certificate_
 import type { LocalMcpClient } from "@x-tech-laboratories/x-libs/local_mcp_protocol";
 import { sync_device_method_names, type SyncDeviceMethods, type SyncStatus } from "@x-tech-laboratories/x-libs/sync_protocol";
 
+import type { ConversationEvent } from "./conversations/model.ts";
 import type { DesktopMethods } from "./desktop.ts";
 import type { ContextMethods } from "./store.ts";
 
@@ -28,9 +29,12 @@ export type DeviceMethods = SyncDeviceMethods & BackupMethods;
 
 export const device_method_names = [...sync_device_method_names, ...backup_method_names] as const;
 
-// What the main process tells the page on its own: the data changed elsewhere, sync's status moved, or the tray asked
-// for a route such as "#/context/<id>".
-export type ContextEvents = { changed: null; sync_status: SyncStatus; open: string };
+// The named event a reply's progress streams under, from the server or the daemon.
+export const conversation_event = "conversation";
+
+// What the main process tells the page on its own: the data changed elsewhere, sync's status moved, the tray asked
+// for a route such as "#/context/<id>", or a reply being written moved on.
+export type ContextEvents = { changed: null; sync_status: SyncStatus; open: string; conversation: ConversationEvent };
 
 // ── The page's api ───────────────────────────────────────────────────────────
 
@@ -54,6 +58,8 @@ export interface PageApi {
   desktop?: Client<DesktopMethods>;
   // Runs whenever the data changed somewhere else; returns the function that stops listening.
   on_change: (listener: () => void) => () => void;
+  // Runs as a reply being written moves on, wherever it runs; returns the function that stops listening.
+  on_conversation: (listener: (event: ConversationEvent) => void) => () => void;
 }
 
 // ── Calls ────────────────────────────────────────────────────────────────────

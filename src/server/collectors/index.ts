@@ -1,18 +1,19 @@
-// Every collector plugin where the store runs on Node, the server or the desktop daemon: the bundled ones, Files
-// among them, Firefox bookmarks on the desktop alone, and any from the plugins folder.
+// Every plugin where the store runs on Node, the server or the desktop daemon: the bundled collectors, Files among
+// them, the bundled engines, Firefox bookmarks on the desktop alone, and any from the plugins folder.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { load_plugin_folder } from "@x-tech-laboratories/x-libs/plugin_folder";
 
 import { network_plugins } from "../../shared/collectors/bundled.ts";
+import { engine_plugins } from "../engines/index.ts";
 import { use_plugins, type ContextPlugin, type ContextPluginApi } from "../../shared/collectors/host.ts";
 import { bookmarks_plugin } from "./bookmarks.ts";
 import { files_plugin } from "./files.ts";
 
 // ── Plugins ──────────────────────────────────────────────────────────────────
 
-export const bundled_plugins: ContextPlugin[] = [files_plugin, ...network_plugins];
+export const bundled_plugins: ContextPlugin[] = [files_plugin, ...network_plugins, ...engine_plugins];
 
 // The ones that read what only the user's own computer has, such as Firefox's profile.
 export const desktop_plugins: ContextPlugin[] = [bookmarks_plugin];
