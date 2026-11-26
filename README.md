@@ -219,9 +219,16 @@ under **Settings → Assistant → Action policy**, after CODEX's own, **Ask me 
 approving its card runs it. Background jobs use the same tools under the same rules. Their names carry their plugin's
 name, such as `web__web_fetch`, so they never clash with CODEX's own calls or each other.
 
+What a tool plugin gives back is a source of its own, with its own **May be sent to a hosted engine** mark. Off, a
+hosted engine is not offered that plugin's tools at all, since what they give back would be kept from it, and it is
+never replayed an earlier answer, shown a search hit or sent anything else that drew on them, only a line saying it
+was left out. The mark is on to begin with for a plugin whose tools all send what they are given outside this
+computer, such as Web or an MCP server at a remote address, since what they read is outside already, and off for
+every other, such as an MCP server run as a command, which may read your private files.
+
 A tool that sends what it is given outside this computer, such as a web search, is an outside destination like a hosted
-engine. Each tool plugin has a second mark, **May be used after reading private sources**, off at first: without it,
-once a reply has had anything in front of it from a source not marked **May be sent to a hosted engine** (an item
+engine. Each tool plugin has another mark, **May be used after reading private sources**, off at first: without it,
+once a reply has had anything in front of it from a source or tool plugin not marked **May be sent to a hosted engine** (an item
 listed in the open context's instructions counts), that plugin's outside-sending tools are refused for the rest of the
 reply, and the assistant is told why so it can tell you. Each use of such a tool is listed under **Settings →
 Assistant → Sent to hosted engines** with the tool, the engine that asked, and how many arguments of how many
@@ -260,7 +267,7 @@ CODEX lists the server's tools as you add it (and on **Refresh**), so a server t
 tool the server marks read-only runs at once; every other tool counts as changing something and asks you first until
 you set another level under **Action policy**. A command's tools, and those of a server on a loopback address, stay on
 this computer; any other server's tools send what they are given outside. Each server is a tool plugin of its own with
-its own **Trusted content** and **May be used after reading private sources**, can be turned off whole with its **On**
+its own **May be sent to a hosted engine**, **Trusted content** and **May be used after reading private sources**, can be turned off whole with its **On**
 switch, and each of its tools on its own. Its tools are named after it, such as `mcp_files__read_file`, so a server
 cannot take the place of CODEX's own calls, and what it says of its tools and what they give back reach the model fenced
 as outside data, its descriptions clipped. Adding, changing, refreshing and removing a server, above all the command it

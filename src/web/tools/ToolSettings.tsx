@@ -1,4 +1,4 @@
-// The tool plugins' settings: in each tool plugin's row under Plugins, its two marks and each tool, whether it is
+// The tool plugins' settings: in each tool plugin's row under Plugins, its three marks and each tool, whether it is
 // offered and whether small models are offered it too; under Action policy, the level of each tool that changes something.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
@@ -16,13 +16,17 @@ import { level_words } from "../assistant/AssistantSettings.tsx";
 // ── Marks ────────────────────────────────────────────────────────────────────
 
 export const tool_mark_words: Record<ToolMarkName, { label: string; hint: string }> = {
+  send_to_hosted: {
+    label: "May be sent to a hosted engine",
+    hint: "What its tools give back may go to an engine that is not on this computer or your own network. Off, such an engine is not offered its tools at all, since what they give back would be kept from it, and earlier answers that used them are kept from it too. On to begin with for a plugin whose tools all send what they are given outside this computer, such as Web, since what they read is outside already.",
+  },
   trusted: {
     label: "Trusted content",
     hint: "What its tools give back carries no one else's instructions. Off, once the assistant uses one of its tools, every change it asks for waits for your approval. Either way the model reads it as data, never as orders.",
   },
   after_private: {
     label: "May be used after reading private sources",
-    hint: "Its tools that send what they are given outside this computer may still be used once the conversation has read something from a source not marked “May be sent to a hosted engine”. Off, they are refused from then on for that reply, so nothing private can leave through them.",
+    hint: "Its tools that send what they are given outside this computer may still be used once the conversation has read something from a source or tool plugin not marked “May be sent to a hosted engine”. Off, they are refused from then on for that reply, so nothing private can leave through them.",
   },
 };
 

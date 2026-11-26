@@ -151,7 +151,11 @@ export function plugin_tools_part(tools: OpenedTool[]): string {
 export function engine_tools(context: ToolContext): EngineTools {
   const { only } = context;
   const offered = (name: string) => is_offered(name) && (!only || only.has(name));
-  const plugin_tools = new Map((context.plugin_tools ?? []).filter((tool) => tool.enabled && (!only || only.has(tool.name))).map((tool) => [tool.name, tool]));
+  const screen = (context.screen ??= local_screen());
+  // A hosted engine is not offered a plugin's tools when what they give back would be withheld from it.
+  const plugin_tools = new Map(
+    (context.plugin_tools ?? []).filter((tool) => tool.enabled && (!only || only.has(tool.name)) && may_send(screen, tool_source_of(tool.key))).map((tool) => [tool.name, tool]),
+  );
   const definitions = [
     ...Object.entries(offered_api)
       .filter(([name]) => !only || only.has(name))
@@ -183,7 +187,6 @@ export function engine_tools(context: ToolContext): EngineTools {
     const excerpt = [...sources].every((source) => may_send(hosted, source)) ? clip_excerpt(text) : "";
     reads.push({ call_id: "", name, arguments: given, sources: [...sources].sort(), excerpt });
   };
-  const screen = (context.screen ??= local_screen());
   // Other apps' text is screened by source: a hosted engine is not sent what it may not see, and only a source not
   // marked trusted makes the run's later changes wait; what is left is fenced either way.
   const run = async (name: string, args: unknown[]): Promise<{ text: string; sources: Set<string>; plain: string }> => {
@@ -232,7 +235,7 @@ export function engine_tools(context: ToolContext): EngineTools {
         name,
         { outcome: "refused" },
         {
-          result: `Not run: ${name} sends what it is given outside this computer, and this conversation has had content in front of it from a source the user has not marked “May be sent to a hosted engine”, so the ${tool.label} plugin's tools that send outside are not used for the rest of this reply. Tell the user; they can allow it with the mark “May be used after reading private sources” on ${tool.label} under Settings → Plugins.`,
+          result: `Not run: ${name} sends what it is given outside this computer, and this conversation has had content in front of it from a source or tool plugin the user has not marked “May be sent to a hosted engine”, so the ${tool.label} plugin's tools that send outside are not used for the rest of this reply. Tell the user; they can allow it with the mark “May be used after reading private sources” on ${tool.label} under Settings → Plugins.`,
           is_error: true,
         },
       );
@@ -471,7 +474,8 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   const found = await find_engine(database);
   if (!found.running || !found.engine) throw new Error(found.problem);
   const screen = await open_screen(database, is_hosted(found.running));
-  const plugin_tools = (await open_plugin_tools(database)).filter((tool) => tool.enabled && (!options.tools || options.tools.includes(tool.name)));
+  // A hosted engine is told of no plugin tool it is not offered, one whose results would be withheld from it.
+  const plugin_tools = (await open_plugin_tools(database)).filter((tool) => tool.enabled && (!options.tools || options.tools.includes(tool.name)) && may_send(screen, tool_source_of(tool.key)));
   if (chosen !== undefined && (runs.has(chosen) || !has_conversation(database, chosen))) throw new Error(runs.has(chosen) ? "A reply is still being written here; stop it or wait for it first." : `There is no conversation ${chosen}.`);
   const conversation_id = chosen ?? add_conversation_record(database, context_id);
   const instructions = screened_instructions(database, context_id, conversation_id, new Date().toISOString().slice(0, 10), screen);

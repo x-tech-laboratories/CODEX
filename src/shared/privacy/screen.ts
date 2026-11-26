@@ -12,7 +12,7 @@ import { blueprint_collector } from "../blueprints/model.ts";
 import { conversation_collector } from "../conversations/model.ts";
 import { settings_feature } from "../settings.ts";
 import { is_tool_source, tool_source_of } from "../tools/model.ts";
-import { marks_of, stored_tool_plugins } from "../tools/offered.ts";
+import { open_tool_plugins } from "../tools/offered.ts";
 import { mark_names, unmarked, type SourceCount, type SourceMark } from "./model.ts";
 import { unrecorded_label, unrecorded_source } from "./sources.ts";
 
@@ -57,16 +57,12 @@ export interface Screen {
 // conversation's exchanges, and a proposed blueprint carries the sources its run read as well (`item_sources`).
 const own_mark: SourceMark = { send_to_hosted: true, trusted: true };
 
-// A tool plugin's results went to the engine as they came, so they may be sent to a hosted one; they count as outside
-// content unless the plugin is marked trusted.
-const tool_mark: SourceMark = { send_to_hosted: true, trusted: false };
-
 function make_screen(is_hosted: boolean, marks: Map<string, SourceMark>, labels: Map<string, string>): Screen {
   return {
     is_hosted,
     mark_of: (collector) => {
       if (collector === conversation_collector || collector === blueprint_collector) return own_mark;
-      if (is_tool_source(collector)) return marks.get(collector) ?? tool_mark;
+      // A source not running now, a tool plugin removed since an answer drew on it among them, is unmarked.
       return marks.get(collector) ?? unmarked;
     },
     label_of: (collector) => (collector === unrecorded_source ? unrecorded_label : (labels.get(collector) ?? collector)),
@@ -88,11 +84,10 @@ export async function open_screen(database: SqlDatabase, is_hosted: boolean): Pr
   const collectors = host.providers("collector");
   const marks = new Map(collectors.map((collector) => [collector.id, stored[mark_key_of(collector)] ?? unmarked]));
   const labels = new Map(collectors.map(({ id, value }) => [id, value.label]));
-  const tool_records = stored_tool_plugins(database);
-  for (const { id, plugin_id, value } of host.providers("tools")) {
-    const key = `${plugin_id}/${id}`;
-    marks.set(tool_source_of(key), { send_to_hosted: true, trusted: marks_of(tool_records[key]).trusted });
-    labels.set(tool_source_of(key), value.label);
+  // Each tool plugin's results are a source of their own, under its marks.
+  for (const plugin of await open_tool_plugins(database, host)) {
+    marks.set(tool_source_of(plugin.key), { send_to_hosted: plugin.marks.send_to_hosted, trusted: plugin.marks.trusted });
+    labels.set(tool_source_of(plugin.key), plugin.label);
   }
   return make_screen(is_hosted, marks, labels);
 }

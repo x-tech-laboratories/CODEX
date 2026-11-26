@@ -61,13 +61,19 @@ describe("the tool plugins in Settings", () => {
     const trusted = (await within(dialog).findByLabelText("Trusted content")) as HTMLInputElement;
     const after_private = within(dialog).getByLabelText("May be used after reading private sources") as HTMLInputElement;
     expect([trusted.checked, after_private.checked]).toEqual([false, false]);
+    // Its tools all send outside, so what they read may go to a hosted engine until the user says otherwise.
+    const hosted = within(dialog).getByLabelText("May be sent to a hosted engine") as HTMLInputElement;
+    expect(hosted.checked).toBe(true);
+    expect(within(dialog).getByText(/such an engine is not offered its tools at all/)).toBeTruthy();
     expect(within(dialog).getByText(/nothing private can leave through them/)).toBeTruthy();
     expect((within(dialog).getByLabelText("Offer web_fetch") as HTMLInputElement).checked).toBe(true);
     expect((within(dialog).getByLabelText("Also offer web_search to small models") as HTMLInputElement).checked).toBe(false);
     expect(within(dialog).getAllByText(/It only reads and sends what it is given outside this computer\./)).toHaveLength(2);
 
+    fireEvent.click(hosted);
+    await waitFor(() => expect(fixture.calls.get_settings().tool_plugins).toEqual({ "codex.web/web": { send_to_hosted: false } }));
     fireEvent.click(after_private);
-    await waitFor(() => expect(fixture.calls.get_settings().tool_plugins).toEqual({ "codex.web/web": { after_private: true } }));
+    await waitFor(() => expect(fixture.calls.get_settings().tool_plugins).toEqual({ "codex.web/web": { send_to_hosted: false, after_private: true } }));
     fireEvent.click(within(dialog).getByLabelText("Offer web_search"));
     await waitFor(() => expect((fixture.calls.get_settings().tool_plugins as Record<string, { tools?: unknown }>)["codex.web/web"]!.tools).toEqual({ web_search: { off: true } }));
     fireEvent.click(within(dialog).getByLabelText("Also offer web_fetch to small models"));

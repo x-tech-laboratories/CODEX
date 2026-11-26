@@ -499,7 +499,9 @@ tool plugins need Node and are bundled where the store runs, by `load_collectors
 the tool's own name made safe, cut with a hash at 64 characters. CODEX's own calls never hold `__`, so a tool cannot
 shadow one, and of two tools named alike the first is kept. A plugin whose `tools()` throws or takes over 15 seconds is
 listed with its problem and no tools. The synced setting `tool_plugins`, one of `user_only_settings`, holds per key the
-marks `trusted` and `after_private` and, per tool, `off` and `small`; levels go in `action_policy` under the tool's
+marks `send_to_hosted`, `trusted` and `after_private` and, per tool, `off` and `small`; `send_to_hosted` left unset
+reads as on only for a plugin with tools that all send outside, such as Web or a remote MCP server (`marks_of` in
+`tools/offered.ts`), and the others as off; levels go in `action_policy` under the tool's
 name. The feature's calls (`tools/store.ts`) are `list_plugin_tools` and the page-only `set_tool_plugin_mark`,
 `set_plugin_tool_offer` and `set_plugin_tool_level`.
 
@@ -522,9 +524,12 @@ the same `call` as CODEX's own, so it is recorded with its arguments and result:
   read outside content proposes it. `resolve_proposal` runs an approved plugin tool through `find_plugin_tool`, and
   its event carries the plugin's source. Undo says it cannot be undone, as History keeps nothing of it.
 - What comes back is always fenced and noted on the screen as the source `tool:<key>`, which marks the answer's
-  `sources`, so replaying it later counts again; it lowers the run unless the plugin is marked trusted. A tool source
-  may be sent to a hosted engine (its answer already went to the engine that asked) and is trusted only by its mark.
-  A plugin's error is fenced too.
+  `sources`, so replaying it later counts again; it lowers the run unless the plugin is marked trusted. `open_screen`
+  gives each tool source its plugin's `send_to_hosted` and `trusted`, and a tool source of no plugin running is
+  unmarked, so a hosted engine is never replayed an answer or event, shown a search hit or sent a proposal's evidence
+  excerpt that carries what an unmarked plugin gave back, and a hosted embedder never embeds it; a withheld line says
+  so, as for a source. A hosted engine is not offered an unmarked plugin's tools at all (`engine_tools` and `start_run`
+  leave them out), and reading one in a local run counts for `has_read_private`. A plugin's error is fenced too.
 - Each use of an outside-sending tool, whatever engine asked, and each approved one, adds a `hosted_sends` row of
   `kind` `tool` (`record_tool_send` in `privacy/store.ts`): the tool by its plugin's label and name, the engine, the
   run, and how many arguments of how many characters, never their content.
@@ -569,7 +574,8 @@ the next call starts afresh. Failures are plain words naming the server (not fou
 reached at host and port, refused the token, stopped with what it wrote, did not answer in time), never the token. A
 tool's answer is its text parts, a resource's text and the rest named in brackets; one marked `isError` fails the call.
 
-Settings: each tool plugin's row under Plugins shows its marks and each tool with its facts, an on switch and "Also
+Settings: each tool plugin's row under Plugins shows its three marks, the first saying a hosted engine is not offered
+the tools while it is off, and each tool with its facts, an on switch and "Also
 offer to small models" (`src/web/tools/ToolSettings.tsx`); Action policy lists the plugin tools that change something
 after CODEX's own; the hosted log shows tool uses in words. MCP servers have a row each under Plugins
 (`src/web/mcp/McpServers.tsx`): its On switch, how it is reached, Save, its tools with Refresh, its marks and each

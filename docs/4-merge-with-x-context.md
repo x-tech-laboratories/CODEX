@@ -36,7 +36,8 @@ the conversations no other context holds.*
    - **Tool plugins:** prebuilt tools installed like any other plugin, beside collector and engine plugins.
      *Built 2026-11-27 (`src/shared/tools/`, described in doc 1): a `tools` provider whose tools are offered beside
      CODEX's calls through the same wrapper, under the action policy (a change at `proposal` until set, set in Settings
-     → Action policy), fenced and lowering the run unless the plugin is marked "Trusted content". A tool that sends its
+     → Action policy), fenced and lowering the run unless the plugin is marked "Trusted content", and kept from hosted
+     engines, as an unmarked source is, unless marked "May be sent to a hosted engine". A tool that sends its
      arguments outside is refused once the run has had a source not marked for hosted engines in front of it, unless
      the plugin is marked "May be used after reading private sources", and each use is in the hosted log. Each tool can
      be turned off, and the core set takes one only when the user ticks it. The bundled Web plugin reads public pages
@@ -181,7 +182,8 @@ over-long earlier messages are shortened before whole turns are left out, the Th
 follows the stream, an absolute `CODEX_USER_DATA` and `CODEX_SOCKET` are honoured, the index's last problem is in plain
 words and clears when the embedder answers or its settings change, a proposal's "From" names only what its run had in
 front of it, Suggest links is shaped for a small model, similar items are judged against the rest rather than a fixed
-cosine, and a job's conversation is no longer the pane's default):
+cosine, a job's conversation is no longer the pane's default, and each tool plugin has a "May be sent to a hosted engine"
+mark, without which a hosted engine is not offered its tools and is sent nothing that drew on them):
 
 - No real model has run a background job: a scripted fake engine has, in tests and in the desktop app. How a real model
   keeps to a job's instruction with nobody to ask, and how many rounds and tokens real jobs need, is unknown.
@@ -206,9 +208,9 @@ cosine, and a job's conversation is no longer the pane's default):
 - An MCP server's command runs wherever a reply is written, the desktop daemon or the server, since the servers sync
   between the user's devices; a command that exists on one only fails plainly on the other. MCP servers that ask for
   OAuth, prompts and resources are not supported; only tools, with a bearer token at most.
-- A tool plugin's results are not screened from hosted engines: they reach the engine that asked as they came, and a
-  later reply may replay them to any engine. A tool whose results are private would need a mark like a source's
-  "May be sent to a hosted engine".
+- A tool plugin's "May be sent to a hosted engine" starts on for a plugin whose tools all send outside, which takes in
+  an MCP server at a remote address; such a server reading private data held elsewhere (a hosted notes service with a
+  token) has it sent to a hosted engine until the user turns the mark off.
 - No hosted model has been tried. A local 4B reasoning model (llama.cpp's server, 8,192 tokens of context, on a CPU)
   answered end to end on 2026-11-26, and again after the first fixes: tool calls, proposals, trusted sources and
   stopping worked. What the second run found (requests settling far under the context, a huge message costing every
