@@ -1,7 +1,8 @@
 // The knowledge graph: entities found in the items, and typed links between contexts, items and entities, each with
-// who made it, its evidence, when it was true and whether the user accepted it. What the user makes is accepted at
-// once, and so is what a rule makes on an exact key; what an engine or similarity makes is proposed, and only the user
-// at the page accepts or rejects it. A rejected proposal is remembered and never made again.
+// who made it, its evidence, when it was true and whether the user accepted it. What the user at the page makes is
+// accepted at once, and so is what a rule makes on an exact key; what an engine, similarity or a program through a
+// token or MCP makes is proposed, and only the user at the page accepts or rejects it. A rejected proposal is
+// remembered and never made again.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -9,6 +10,7 @@ import { eq, synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
+import { current_caller } from "../caller.ts";
 import { assistant_host } from "../conversations/host.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { may_send, open_screen } from "../privacy/screen.ts";
@@ -69,13 +71,19 @@ function accept_end_entities(database: SqlDatabase, keys: string[]): void {
 
 // ── Links ────────────────────────────────────────────────────────────────────
 
-// The user's own link, accepted at once; one waiting or once rejected between the same nodes is accepted instead.
+// The user's own link, accepted at once; one waiting or once rejected between the same nodes is accepted instead. From a
+// program it is only proposed, made by a program, and one already waiting or once rejected is left as it is.
 function add_graph_link(database: SqlDatabase, from: string, to: string, type: LinkType, label = "", valid_from = ""): string {
   const checked = checked_type(type);
   const ends = checked_ends(database, from, to, checked);
   const at = now();
   const existing = same_links(database, ends.from, ends.to, checked).filter((row) => is_open(row, at));
   if (existing.some((row) => row.status === "accepted")) throw new Error("Those two are already linked that way.");
+  if (current_caller() === "program") {
+    const kept = existing.find((row) => row.status === "proposed") ?? existing.find((row) => row.status === "rejected");
+    if (kept?.status === "rejected") throw new Error("The user rejected this link before, so it is not proposed again.");
+    return kept?.id ?? insert_link(database, { ...ends, type: checked, label, status: "proposed", made_by: "program", valid_from: checked_moment(valid_from, "When it became true") });
+  }
   const earlier = existing.find((row) => row.status === "proposed") ?? existing.find((row) => row.status === "rejected");
   accept_end_entities(database, [ends.from, ends.to]);
   if (earlier) {
@@ -139,14 +147,23 @@ function entities_named(database: SqlDatabase, kind: EntityKind, names: string[]
     .filter((row) => [row.name, ...parse_names(row.alt_names)].some((name) => keys.has(name_key(name))));
 }
 
+// The user's own entity, accepted at once; from a program it is only proposed, made by a program, and one of that name
+// already waiting or once rejected is left as it is.
 function add_entity(database: SqlDatabase, kind: EntityKind, name: string, alt_names: string[] = []): string {
   const checked = checked_kind(kind);
   const trimmed = checked_name(name);
-  if (entities_named(database, checked, [trimmed]).some((row) => row.status === "accepted")) throw new Error(`There is already a ${checked} named ${trimmed}; rename it, or join the two.`);
+  const known = entities_named(database, checked, [trimmed]);
+  if (known.some((row) => row.status === "accepted")) throw new Error(`There is already a ${checked} named ${trimmed}; rename it, or join the two.`);
+  const by_program = current_caller() === "program";
+  if (by_program) {
+    const kept = known.find((row) => row.status === "proposed") ?? known.find((row) => row.status === "rejected");
+    if (kept?.status === "rejected") throw new Error(`The user rejected the ${checked} ${kept.name} before, so it is not proposed again.`);
+    if (kept) return kept.id;
+  }
   const id = new_id();
   drizzle_of(database)
     .insert(graph_entities)
-    .values({ id, kind: checked, name: trimmed, alt_names: JSON.stringify(checked_names(alt_names, trimmed)), status: "accepted", made_by: "user", created_at: now() })
+    .values({ id, kind: checked, name: trimmed, alt_names: JSON.stringify(checked_names(alt_names, trimmed)), status: by_program ? "proposed" : "accepted", made_by: by_program ? "program" : "user", created_at: now() })
     .run();
   return id;
 }
@@ -250,7 +267,14 @@ function maker_of(maker: ProposalMaker | undefined): ProposalMaker {
   return { engine: String(maker?.engine ?? ""), model: String(maker?.model ?? ""), sources: Array.isArray(maker?.sources) ? maker.sources.map(String) : [] };
 }
 
+// An engine proposes with a maker; a program through a token or MCP proposes as a program.
+function made_by_of(maker: ProposalMaker | undefined): MadeBy {
+  return maker === undefined && current_caller() === "program" ? "program" : "engine";
+}
+
 async function propose_entity(database: SqlDatabase, kind: EntityKind, name: string, alt_names: string[] = [], evidence: EvidenceInput | null = null, maker?: ProposalMaker): Promise<ProposalOutcome> {
+  // Read before the first wait, while the call's caller is still known.
+  const made_by = made_by_of(maker);
   const checked = checked_kind(kind);
   const trimmed = checked_name(name);
   const names = checked_names(alt_names, trimmed);
@@ -270,7 +294,7 @@ async function propose_entity(database: SqlDatabase, kind: EntityKind, name: str
       name: trimmed,
       alt_names: JSON.stringify(names),
       status: "proposed",
-      made_by: "engine",
+      made_by,
       engine: by.engine,
       model: by.model,
       evidence_ref: weighed.ref,
@@ -283,6 +307,7 @@ async function propose_entity(database: SqlDatabase, kind: EntityKind, name: str
 }
 
 async function propose_link(database: SqlDatabase, from: string, to: string, type: LinkType, label = "", evidence: EvidenceInput | null = null, maker?: ProposalMaker): Promise<ProposalOutcome> {
+  const made_by = made_by_of(maker);
   const checked = checked_type(type);
   const ends = checked_ends(database, from, to, checked);
   for (const key of [ends.from, ends.to]) {
@@ -301,7 +326,7 @@ async function propose_link(database: SqlDatabase, from: string, to: string, typ
     type: checked,
     label,
     status: "proposed",
-    made_by: "engine",
+    made_by,
     engine: by.engine,
     model: by.model,
     evidence_ref: weighed.ref,
@@ -418,7 +443,8 @@ export const graph_feature = define_feature({
       params: [],
     },
     add_graph_link: {
-      description: "Links two nodes as the user, accepted at once; a link proposed or once rejected between them of that type is accepted instead. Gives back the link's id.",
+      description:
+        "Links two nodes, giving back the link's id. From CODEX's own page it is the user's, accepted at once, and a link proposed or once rejected between them of that type is accepted instead; from a token or an MCP client it is proposed, made by a program, for the user to accept or reject, and one the user rejected before is refused.",
       params: [
         { name: "from", schema: node_schema },
         { name: "to", schema: node_schema },
@@ -454,7 +480,8 @@ export const graph_feature = define_feature({
       destructive: true,
     },
     add_entity: {
-      description: "Adds an entity as the user, accepted at once, and gives back its id.",
+      description:
+        "Adds an entity and gives back its id. From CODEX's own page it is the user's, accepted at once; from a token or an MCP client it is proposed, made by a program, for the user to accept or reject, and one of that name the user rejected before is refused.",
       params: [
         { name: "kind", schema: kind_schema },
         { name: "name", schema: text("Its name.") },

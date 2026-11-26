@@ -12,7 +12,7 @@ import type { ConversationEvent } from "../src/shared/conversations/model.ts";
 import { wait_for_runs } from "../src/shared/conversations/run.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { data_watch, set_page_api } from "../src/web/api.ts";
-import { AssistantPane } from "../src/web/assistant/AssistantPane.tsx";
+import { AssistantPane, ProposalCard } from "../src/web/assistant/AssistantPane.tsx";
 import { Mascot } from "../src/web/assistant/Mascot.tsx";
 import { lasting_mood, moment_after, screen_placement } from "../src/web/assistant/mascot.ts";
 import { want_conversation } from "../src/web/assistant/selection.ts";
@@ -224,6 +224,11 @@ describe("the assistant's pane", () => {
     const card = await screen.findByRole("article", { name: "Proposed change" });
     expect(within(card).getByText("Rename the context “Kitchen” to “Cooking”.")).toBeTruthy();
     expect(screen.getByText("waits for you")).toBeTruthy();
+    // Folded under the summary: the message that asked for it, and that nothing was read first.
+    const why = within(card).getByText("Why, and from what").closest("details")!;
+    expect(why.open).toBe(false);
+    expect(within(why).getByText("“Call it Cooking”")).toBeTruthy();
+    expect(within(why).getByText("It read nothing before proposing.")).toBeTruthy();
     fireEvent.click(within(card).getByRole("button", { name: "Approve" }));
 
     expect(await screen.findByText("Approved and done: Rename the context “Kitchen” to “Cooking”.")).toBeTruthy();
@@ -231,6 +236,71 @@ describe("the assistant's pane", () => {
     // The proposed call's row and the approval's row both say who decided.
     expect(screen.getAllByText("approved by you")).toHaveLength(2);
     await waitFor(() => expect(screen.queryByRole("article", { name: "Proposed change" })).toBeNull());
+
+    // The approved change can be undone from the conversation, once.
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    expect(await screen.findByText("Undone by you: Rename the context “Kitchen” to “Cooking”.")).toBeTruthy();
+    expect(fixture.calls.get_context(kitchen).name).toBe("Kitchen");
+    expect(await screen.findByText("Undone by you.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+  });
+
+  it("shows a proposal's reads, quoting only what may leave this computer and naming the rest's sources", () => {
+    open_page();
+    const proposal = {
+      id: "p1",
+      conversation_id: "c1",
+      method: "rename_context",
+      arguments: {},
+      summary: "Rename the context “Kitchen” to “Tiling”.",
+      reason: "outside content" as const,
+      sources: ["links"],
+      status: "waiting" as const,
+      result: "",
+      created_at: "",
+      resolved_at: "",
+      evidence: {
+        asked_by: "m1",
+        run_id: "r1",
+        reads: [
+          { call_id: "t1", name: "list_contexts", arguments: {}, sources: [], excerpt: "Kitchen, Garden" },
+          { call_id: "t2", name: "get_item", arguments: { id: "links:tiles" }, sources: ["links"], excerpt: "" },
+        ],
+      },
+    };
+    render(<ProposalCard proposal={proposal} asked="Name it after the tiles" label_of={(source) => (source === "links" ? "Web links" : source)} />);
+
+    expect(screen.getByText("“Name it after the tiles”")).toBeTruthy();
+    expect(screen.getByText(/“Kitchen, Garden”/)).toBeTruthy();
+    expect(screen.getByText(/not quoted, as Web links may not leave this computer/)).toBeTruthy();
+    expect(screen.getByText("From: Web links")).toBeTruthy();
+    cleanup();
+    render(<ProposalCard proposal={{ ...proposal, evidence: { asked_by: "", run_id: "", reads: [] } }} />);
+    expect(screen.getByText("No evidence was kept for this proposal.")).toBeTruthy();
+  });
+
+  it("says on an applied change's row why it cannot be undone", async () => {
+    const fixture = open_page();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    fixture.calls.set_action_level("rename_context", "auto");
+    fixture.set_script(async function* (request) {
+      yield { type: "tool_call", id: "t1", name: "rename_context", arguments: { id: kitchen, name: "Cooking" } };
+      yield { type: "tool_result", id: "t1", ...(await request.tools.call("rename_context", { id: kitchen, name: "Cooking" })) };
+      yield { type: "done", text: "Renamed." };
+    });
+    render(<AssistantPane context_id={kitchen} />);
+    await screen.findByRole("textbox", { name: "Message" });
+    type_and_send("Call it Cooking");
+    await act(() => wait_for_runs());
+    expect(await screen.findByRole("button", { name: "Undo" })).toBeTruthy();
+
+    await act(async () => {
+      fixture.calls.set_context_notes(kitchen, "Tiles first.");
+      data_watch.bump();
+    });
+
+    expect(await screen.findByText("Cooking has changed since, so undoing this would undo that too.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
   });
 
   it("rejects a proposal, and deletes the conversation after asking in its own dialog", async () => {

@@ -8,6 +8,7 @@ import { migrate, type SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { hide_secrets, keep_secrets, type PluginRecords } from "@x-tech-laboratories/x-libs/plugins";
 import { create_sync_engine } from "@x-tech-laboratories/x-libs/sync_engine";
 
+import { as_caller, type Caller } from "./caller.ts";
 import { plugins_setting } from "./collectors/collector.ts";
 import { bundled_manifests } from "./collectors/manifests.ts";
 
@@ -102,13 +103,13 @@ export const context_api = Object.fromEntries(
 // The calls and setting writes only the user at the page may make, as the server's sign-in and both MCP endpoints refuse them.
 export const page_only = page_only_calls(context_api, { rule: is_user_only_setting_write, refusal: page_only_refusal });
 
-// The calls run on the database given; after each write the features catch up, the history records what it touched and
-// on_change tells the other pages and devices.
-export function bind_methods(database: () => SqlDatabase, on_change: () => void): ContextMethods {
+// The calls run on the database given, as the caller given; after each write the features catch up, the history records
+// what it touched and on_change tells the other pages and devices.
+export function bind_methods(database: () => SqlDatabase, on_change: () => void, caller: Caller = "page"): ContextMethods {
   const bound = method_names.map((name) => {
     const method = all_methods[name] as (database: SqlDatabase, ...args: unknown[]) => unknown;
     const call = (...args: unknown[]): unknown => {
-      const result = method(database(), ...args);
+      const result = as_caller(caller, () => method(database(), ...args));
       if (is_read_only(name)) return result;
       const after_write = () => {
         for (const feature of features) feature.after_write?.(database());

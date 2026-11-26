@@ -29,6 +29,9 @@ export const proposals = sqliteTable(
     result: text().notNull().default(""),
     created_at: text().notNull(),
     resolved_at: text().notNull().default(""),
+    // What it came from, as a JSON object: the user's message that asked for it, the run, and what the run had read
+    // before proposing, each read by its tool call with an excerpt only where its sources' marks allow; {} when not recorded.
+    evidence: text().notNull().default("{}"),
   },
   (table) => [index("proposals_by_conversation").on(table.conversation_id, table.status)],
 );

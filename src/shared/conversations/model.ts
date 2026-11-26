@@ -27,6 +27,8 @@ export interface ToolCallRecord {
   applied_by?: AppliedBy;
   // Set on a change left for approval.
   proposal_id?: string;
+  // Set on a change that was applied: what undoing it would put back.
+  undo?: ChangeUndo;
   // How far into the reply's text the call was made, in characters; left out on calls kept before it was recorded,
   // which show before the text.
   text_at?: number;
@@ -46,6 +48,14 @@ export function reply_parts(text: string, calls: ToolCallRecord[]): ReplyPart[] 
   }
   if (text.slice(from).trim()) parts.push({ text: text.slice(from) });
   return parts;
+}
+
+// What undoing an applied change puts back: each context it touched, by the version it made and the version before it
+// (null for a context it made), with the change in plain words and when it was undone.
+export interface ChangeUndo {
+  summary: string;
+  steps: { item_id: string; made: string; before: string | null }[];
+  undone_at?: string;
 }
 
 export type MessageRole = "user" | "assistant" | "event";

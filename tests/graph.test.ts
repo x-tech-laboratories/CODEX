@@ -15,7 +15,7 @@ import { open_screen } from "../src/shared/privacy/screen.ts";
 import { after_pass, index_now, open_index, settle_index, sync_documents, use_search_index, type IndexPass } from "../src/shared/search/indexer.ts";
 import { search } from "../src/shared/search/search.ts";
 import { to_blob, unit } from "../src/shared/search/text.ts";
-import { after_index_change, page_only, sync_engine } from "../src/shared/store.ts";
+import { after_index_change, bind_methods, page_only, sync_engine } from "../src/shared/store.ts";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
 
 afterEach(async () => {
@@ -131,6 +131,34 @@ describe("links and entities the user makes", () => {
     fixture.calls.remove_graph_link(join);
     expect(fixture.calls.get_graph(null, { node_types: ["entity"] }).nodes.map((node) => node.label).sort()).toEqual(["Seed Co", "The Seed Company"]);
     expect(fixture.calls.get_node_links(first).node.joined).toEqual([]);
+  });
+});
+
+describe("links and entities a program makes", () => {
+  it("are proposed, made by a program, through a token or MCP; the page's stay the user's, accepted at once", async () => {
+    const fixture = start_fixture();
+    const { garden, seeds } = garden_of(fixture);
+    const program = bind_methods(() => fixture.database, () => undefined, "program");
+
+    const entity = program.add_entity("person", "Alex Gardener");
+    const link = program.add_graph_link(node_key("item", seeds), node_key("entity", entity), "mentions");
+    const proposals = fixture.calls.list_graph_proposals();
+    expect(proposals.entities.map((each) => [each.id, each.status, each.made_by])).toEqual([[entity, "proposed", "program"]]);
+    expect(proposals.links.map((each) => [each.id, each.status, each.made_by])).toEqual([[link, "proposed", "program"]]);
+    // Asked again, the same proposal is given back rather than a second one.
+    expect(program.add_entity("person", "Alex Gardener")).toBe(entity);
+    expect(program.add_graph_link(node_key("item", seeds), node_key("entity", entity), "mentions")).toBe(link);
+    // A proposal through MCP, with no engine behind it, is a program's too.
+    await program.propose_entity("topic", "Seeds");
+    expect(fixture.calls.list_graph_proposals().entities.find((each) => each.name === "Seeds")!.made_by).toBe("program");
+
+    fixture.calls.reject_graph_proposals([link]);
+    expect(() => program.add_graph_link(node_key("item", seeds), node_key("entity", entity), "mentions")).toThrow("rejected this link before");
+    fixture.calls.reject_graph_proposals([entity]);
+    expect(() => program.add_entity("person", "Alex Gardener")).toThrow("rejected the person Alex Gardener before");
+
+    const own = fixture.calls.add_graph_link(node_key("context", garden), node_key("item", seeds), "about");
+    expect(fixture.calls.get_node_links(node_key("item", seeds)).links.find((each) => each.id === own)).toMatchObject({ status: "accepted", made_by: "user" });
   });
 });
 
@@ -527,6 +555,28 @@ describe("History", () => {
     fixture.calls.restore_item_version("entity", deleted.id);
     expect(fixture.calls.get_node_links(ada).links.map((link) => link.other.label)).toEqual(["Order seeds"]);
     expect(shop).toBeTruthy();
+  });
+
+  it("brings a removed context back with its links to what still exists", () => {
+    const fixture = start_fixture();
+    const { garden, seeds } = garden_of(fixture);
+    const shed = fixture.calls.add_context("Shed");
+    const ada = fixture.calls.add_entity("person", "Ada");
+    const bob = fixture.calls.add_entity("person", "Bob");
+    const about_ada = fixture.calls.add_graph_link(node_key("context", shed), node_key("entity", ada), "about");
+    fixture.calls.add_graph_link(node_key("context", shed), node_key("entity", bob), "about");
+    const with_garden = fixture.calls.add_graph_link(node_key("context", garden), node_key("context", shed), "related_to");
+
+    fixture.calls.remove_context(shed);
+    expect(fixture.calls.get_node_links(node_key("entity", ada)).links).toEqual([]);
+    fixture.calls.remove_entity(bob);
+    const deleted = fixture.calls.list_item_history("context", shed).find((version) => version.change === "deleted")!;
+    fixture.calls.restore_item_version("context", deleted.id);
+
+    const links = fixture.calls.get_node_links(node_key("context", shed)).links;
+    expect(links.map((link) => link.id).sort()).toEqual([about_ada, with_garden].sort());
+    expect(links.find((link) => link.id === about_ada)).toMatchObject({ status: "accepted", made_by: "user" });
+    expect(seeds).toBeTruthy();
   });
 
   it("keeps each link, which comes back only while both its ends exist", () => {

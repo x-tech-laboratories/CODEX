@@ -141,7 +141,9 @@ describe("server", () => {
     const listed = await mcp("tools/list");
     const tools = listed.tools as { name: string; annotations: { readOnlyHint: boolean } }[];
     // Approving a change and setting a level are the user's alone, so no MCP client is offered them.
-    expect(tools.map((tool) => tool.name).sort()).toEqual(method_names.filter((name) => !["resolve_proposal", "set_action_level", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals", "add_item_source", "change_item_source", "remove_item_source"].includes(name)).sort());
+    expect(tools.map((tool) => tool.name).sort()).toEqual(
+      method_names.filter((name) => !["resolve_proposal", "undo_change", "set_action_level", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals", "add_item_source", "change_item_source", "remove_item_source"].includes(name)).sort(),
+    );
     expect(tools.some((tool) => tool.name === "get_action_policy" || tool.name === "list_proposals")).toBe(true);
     expect(tools.find((tool) => tool.name === "list_contexts")!.annotations.readOnlyHint).toBe(true);
     expect(tools.find((tool) => tool.name === "add_context")!.annotations.readOnlyHint).toBe(false);
@@ -270,12 +272,30 @@ describe("server", () => {
     ]);
   });
 
-  it("lets only a signed-in browser approve a change or set a level, never a token or MCP", async () => {
+  it("records a link or entity added through a token or MCP as a program's proposal, and the page's as the user's", async () => {
+    await start();
+    const call = (method: string, payload: unknown[], as_browser = false) => (as_browser ? as_page : signed)({ method: "POST", url: `/api/call/${method}`, payload });
+    const by_token = (await call("add_entity", ["person", "Alex Gardener"])).json() as string;
+    await mcp("tools/call", { name: "add_entity", arguments: { kind: "topic", name: "Seeds" } });
+    const by_page = (await call("add_entity", ["place", "Allotment"], true)).json() as string;
+
+    const proposals = (await call("list_graph_proposals", [])).json() as { entities: { id: string; name: string; made_by: string; status: string }[] };
+    expect(proposals.entities.map((each) => [each.name, each.made_by, each.status]).sort()).toEqual([
+      ["Alex Gardener", "program", "proposed"],
+      ["Seeds", "program", "proposed"],
+    ]);
+    expect(proposals.entities.some((each) => each.id === by_token)).toBe(true);
+    const own = (await call("get_node_links", [`entity:${by_page}`])).json() as { node: { status: string } };
+    expect(own.node.status).toBe("accepted");
+  });
+
+  it("lets only a signed-in browser approve or undo a change or set a level, never a token or MCP", async () => {
     await start();
     const refused_level = await signed({ method: "POST", url: "/api/call/set_action_level", payload: ["rename_context", "auto"] });
     const refused_approval = await signed({ method: "POST", url: "/api/call/resolve_proposal", payload: { id: "anything", decision: "approve" } });
     const refused_mark = await signed({ method: "POST", url: "/api/call/set_source_mark", payload: ["codex.x-tasks", "send_to_hosted", true] });
-    expect([refused_level.statusCode, refused_approval.statusCode, refused_mark.statusCode]).toEqual([403, 403, 403]);
+    const refused_undo = await signed({ method: "POST", url: "/api/call/undo_change", payload: ["a-message", "a-call"] });
+    expect([refused_level.statusCode, refused_approval.statusCode, refused_mark.statusCode, refused_undo.statusCode]).toEqual([403, 403, 403, 403]);
     expect(refused_level.body).toContain("Only you can do this");
     const through_mcp = await mcp("tools/call", { name: "set_action_level", arguments: { method: "rename_context", level: "auto" } });
     // An unknown tool answers with a protocol error rather than a result.

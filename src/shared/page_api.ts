@@ -69,11 +69,22 @@ export function is_read_only(method: string): boolean {
   return /^(list|get|search|lookup|export)_/.test(method);
 }
 
-// Calls that keep the user in charge of the assistant, approving its changes and the graph's proposals, setting how
-// freely it may make them and what each source's items may reach, and which apps are read with which token, answered only for the user at the page: a signed-in
-// browser, or the desktop window. Their specs are marked page-only with X-Libs `api_spec`, so a token, MCP and any
-// engine are refused them and nothing a program does can approve a change or raise a level.
-export const page_only_methods: ReadonlySet<string> = new Set(["resolve_proposal", "set_action_level", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals", "add_item_source", "change_item_source", "remove_item_source"]);
+// Calls that keep the user in charge of the assistant, approving and undoing its changes and the graph's proposals,
+// setting how freely it may make them and what each source's items may reach, and which apps are read with which token,
+// answered only for the user at the page: a signed-in browser, or the desktop window. Their specs are marked page-only
+// with X-Libs `api_spec`, so a token, MCP and any engine are refused them and nothing a program does can approve a
+// change or raise a level.
+export const page_only_methods: ReadonlySet<string> = new Set([
+  "resolve_proposal",
+  "undo_change",
+  "set_action_level",
+  "set_source_mark",
+  "accept_graph_proposals",
+  "reject_graph_proposals",
+  "add_item_source",
+  "change_item_source",
+  "remove_item_source",
+]);
 
 // Settings that keep the user in charge, written only by the user at the page: the action policy, the source marks,
 // which engine answers and which embedder the index uses, how long the hosted log is kept, and every plugin's on or

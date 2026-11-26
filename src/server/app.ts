@@ -86,7 +86,7 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
         is_read_only,
         page_only,
         call: async (method, args) => {
-          const methods = bind_methods(database, () => changes.announce_change());
+          const methods = bind_methods(database, () => changes.announce_change(), "program");
           return context_bridge.dispatch(methods, method, args);
         },
       });

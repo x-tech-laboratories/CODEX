@@ -60,8 +60,10 @@ Every function that changes something has a level, set by the user per function.
 
 Built 2026-11-26 for conversations (`src/shared/policy/`, described in doc 1): the four levels in a synced setting, a
 proposal kept on the conversation it was asked for in (the Inbox comes later), and a run that read outside content
-proposing every change. An applied change records whether the user approved it or the engine made it at auto; the
-evidence and the undo wait for the Inbox, and History already keeps every context change.
+proposing every change. An applied change records whether the user approved it or the engine made it at auto. Since
+2026-11-26 a proposal carries its evidence (the message that asked, what the run read first, excerpts only where the
+source's marks allow), and an applied change can be undone from its conversation through History, by the user alone,
+while nothing has changed it since; one History keeps nothing of, such as a refresh, says it cannot be.
 
 Built 2026-11-26 as well: outside content is judged by source. Items from a source marked "Trusted content" do not
 lower a run (they are still fenced as data); items from an unmarked source do, whether a tool read them or they came
@@ -146,15 +148,14 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 
 ## Known gaps
 
-As of 2026-11-26 (closed on 2026-11-26: CODEX answers the four standard item calls, a reply's tool calls show
-where each was made in it, and a token can no longer restore or delete the server's backups):
+As of 2026-11-26 (closed on 2026-11-26: CODEX answers the four standard item calls; a reply's tool calls show where each
+was made in it; a token can no longer restore or delete the server's backups; proposals carry their evidence and
+applied changes can be undone; a link or entity added through a token or MCP is a program's proposal; History brings a
+removed context back with its links):
 
 - No background job proposes links yet: rules and similarity run after each index pass, and an engine proposes only
   when the user asks with Suggest links.
 - How well a real model extracts entities and proposes links is unverified; only a scripted fake engine has proposed.
-- History brings back a removed context without the links it had, which went with it.
-
-- Proposals carry no evidence and no undo beyond History.
 - The Claude-subscription engine and the SmartHarness engine are not built.
 - No hosted model has been tried. A local 4B reasoning model (llama.cpp's server, 8,192 tokens of context, on a CPU)
   answered end to end on 2026-11-26: tool calls, proposals, trusted sources and stopping worked. What that run found
@@ -174,6 +175,10 @@ where each was made in it, and a token can no longer restore or delete the serve
   every conversation whose id is not a context's, and syncs those deletions; every device should be updated together.
 - The graph proposes two items as related above a fixed cosine of 0.8 (`graph/similarity.ts`); with Qwen3-Embedding,
   where right matches score 0.65 to 0.75, that never fires. It wants a rule judged against the scores, as search's is.
+- Undo covers contexts only: a change's effect on the graph (its links closed or removed with a context) comes back
+  with the context, but an item row a change made stays, as items always do.
+- A change applied while another write runs at the same moment (an index pass or sync on the desktop) could count that
+  write's context versions as its own; changes are synchronous, so only a slow call, such as following a feed, can.
 - Search's meaning rule (`meaning_floor`) was set on one real run's scores, with the unrelated documents' scores filled
   in from the range it gave; a run with a real model should check it on a larger set.
 

@@ -344,6 +344,39 @@
   margin: 0;
 }
 
+/* What a proposal came from, folded under its summary. */
+.proposal-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.proposal-reads {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-inline-start: var(--space-6);
+}
+
+/* An applied change with its Undo, or why it cannot be undone, underneath. */
+.tool-call-applied {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tool-call-undo {
+  margin: 0;
+}
+
+.tool-call-undo button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* The conversation switcher under the face: the shown conversation's title, which opens the list, then its actions. */
 .assistant-switcher {
   display: flex;

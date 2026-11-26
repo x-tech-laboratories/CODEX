@@ -15,5 +15,11 @@ export const migrations: DrizzleMigration[] = [
     "statements": [
       "ALTER TABLE `proposals` ADD `sources` text DEFAULT '[\"*\"]' NOT NULL;"
     ]
+  },
+  {
+    "name": "20261126114227_evidence",
+    "statements": [
+      "ALTER TABLE `proposals` ADD `evidence` text DEFAULT '{}' NOT NULL;"
+    ]
   }
 ];

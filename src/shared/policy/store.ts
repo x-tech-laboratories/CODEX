@@ -1,6 +1,6 @@
-// The action policy: the level of each call an engine could change something with, kept in the synced settings, and
-// the changes waiting for the user, which approving runs and rejecting sets aside, either way recorded in the
-// conversation they were proposed in.
+// The action policy: the level of each call an engine could change something with, kept in the synced settings, the
+// changes waiting for the user, which approving runs and rejecting sets aside, either way recorded in the conversation
+// they were proposed in, and undoing a change that was applied, which only the user at the page can do.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -8,9 +8,10 @@ import { synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
 import { positional_args } from "@x-tech-laboratories/x-libs/api_spec";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
-import { id_of } from "../api_schemas.ts";
+import { id_of, text } from "../api_schemas.ts";
+import { contexts_feature } from "../contexts/store.ts";
 import { assistant_host } from "../conversations/host.ts";
-import { add_message, type NewMessage } from "../conversations/messages.ts";
+import { add_message, list_messages, message_of, update_tool_call, type NewMessage } from "../conversations/messages.ts";
 import { has_conversation } from "../conversations/records.ts";
 import { define_feature } from "../feature.ts";
 import { settings_feature } from "../settings.ts";
@@ -18,6 +19,7 @@ import { migrations } from "./migrations/index.ts";
 import { default_level, is_policy_level, policy_levels, type PolicyEntry, type PolicyLevel, type Proposal, type ProposalStatus } from "./model.ts";
 import { changing_calls, level_of, offered_api, policy_setting, stored_levels } from "./policy.ts";
 import { list_proposals_of, proposal_of, settle_proposal } from "./proposals.ts";
+import { mark_before_change, undo_of_change, undo_state, undo_states, undo_steps, type ChangeUndoState } from "./undo.ts";
 import { policy_tables } from "./schema.ts";
 
 // ── Levels ───────────────────────────────────────────────────────────────────
@@ -65,13 +67,16 @@ async function resolve_proposal(database: SqlDatabase, id: string, decision: "ap
   try {
     const spec = offered_api[proposal.method];
     if (!spec) throw new Error(`${proposal.method} is no longer offered.`);
+    // Noted as it is made, so the user can undo it from the conversation.
+    const mark = mark_before_change(host.database());
     const result = as_text(await host.call(proposal.method, positional_args(spec, proposal.arguments)));
+    const undo = undo_of_change(host.database(), mark, proposal.summary);
     settle_proposal(host.database(), id, "approved", result);
     add_event(host.database(), {
       conversation_id: proposal.conversation_id,
       role: "event",
       text: `Approved and done: ${proposal.summary}`,
-      tool_calls: [{ ...call_record, result, is_error: false, outcome: "ran", applied_by: "user_approval" }],
+      tool_calls: [{ ...call_record, result, is_error: false, outcome: "ran", applied_by: "user_approval", undo }],
       sources: proposal.sources,
     });
   } catch (error) {
@@ -90,6 +95,29 @@ async function resolve_proposal(database: SqlDatabase, id: string, decision: "ap
   return list_proposals_of(host.database(), proposal.conversation_id).find((each) => each.id === id) ?? { ...proposal, status: "approved", resolved_at: new Date().toISOString() };
 }
 
+// ── Undo ─────────────────────────────────────────────────────────────────────
+
+// Each change applied in a conversation, by approval or at the auto level, with whether it can still be undone.
+function list_change_undos(database: SqlDatabase, conversation_id: string): ChangeUndoState[] {
+  return undo_states(database, list_messages(database, conversation_id));
+}
+
+// Undoes one applied change through History, records the undo in its conversation and marks the change undone.
+function undo_change(database: SqlDatabase, message_id: string, call_id: string): ChangeUndoState {
+  const message = message_of(database, message_id);
+  const call = message?.tool_calls.find((each) => each.id === call_id && each.applied_by && each.outcome === "ran");
+  if (!message || !call) throw new Error("There is no applied change by that message and call.");
+  const { state, reason } = undo_state(database, call);
+  if (state === "undone") throw new Error("That change was already undone.");
+  if (state === "impossible") throw new Error(reason);
+  undo_steps(database, call.undo!, (id) => contexts_feature.methods.remove_context(database, id));
+  if (has_conversation(database, message.conversation_id)) {
+    update_tool_call(database, message_id, call_id, (each) => ({ ...each, undo: { ...each.undo!, undone_at: new Date().toISOString() } }));
+    add_message(database, { conversation_id: message.conversation_id, role: "event", text: `Undone by you: ${call.undo!.summary}`, sources: [] });
+  }
+  return { message_id, call_id, state: "undone", reason: "" };
+}
+
 // ── Feature ──────────────────────────────────────────────────────────────────
 
 const level_schema = {
@@ -102,7 +130,7 @@ export const policy_feature = define_feature({
   id: "policy",
   migrations: migrations.map((migration) => migration.statements),
   tables: synced_tables(policy_tables),
-  methods: { get_action_policy, set_action_level, list_proposals, resolve_proposal },
+  methods: { get_action_policy, set_action_level, list_proposals, resolve_proposal, list_change_undos, undo_change },
   api: {
     get_action_policy: {
       description: `Lists every call the assistant could change something with, each with its level; a call never given one is at ${default_level}.`,
@@ -120,6 +148,19 @@ export const policy_feature = define_feature({
       params: [
         { name: "conversation_id", schema: { type: ["string", "null"], description: "A conversation's id, from list_conversations, or null for every conversation." }, optional: true },
         { name: "status", schema: { type: "string", enum: ["waiting", "approved", "rejected", "failed"], description: "Only those in this state." }, optional: true },
+      ],
+    },
+    list_change_undos: {
+      description:
+        "Lists each change the assistant applied in one conversation, by approval or on its own, by the message and tool call that record it, with whether it can still be undone and, when not, why in plain words.",
+      params: [{ name: "conversation_id", schema: id_of("conversation") }],
+    },
+    undo_change: {
+      description:
+        "Undoes one change the assistant applied, through History: the contexts it touched go back to how they were before it, and the undo is recorded in the conversation. Refused once those contexts have changed since. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
+      params: [
+        { name: "message_id", schema: id_of("message") },
+        { name: "call_id", schema: text("The tool call's id on that message, from list_change_undos.") },
       ],
     },
     resolve_proposal: {

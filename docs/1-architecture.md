@@ -153,7 +153,7 @@ Built 2026-11-26 on doc 4's "Knowledge graph". `src/shared/graph/` keeps three s
 - `graph_entities`: a person, organisation, topic, place or other, with a name and other names (`alt_names`).
 - `graph_links`: a typed link between two nodes, each end a kind (`context`, `item`, `entity`; a conversation is an
   item) and an id. Its `type` is one of `mentions`, `about`, `related_to`, `part_of`, `depends_on` and `same_as`, with
-  an optional free `label`. Both tables record who made the row (`made_by`: `user`, `rule`, `similarity` or `engine`,
+  an optional free `label`. Both tables record who made the row (`made_by`: `user`, `rule`, `similarity`, `engine` or `program`,
   with the `rule`, or the `engine` and `model`), its evidence (`evidence_ref`, an `item:<id>` or `message:<id>`, and
   `evidence_excerpt`), a `status` of `proposed`, `accepted` or `rejected`, and a `sources` list like the conversations'.
   A link also has `valid_from` and `valid_until` (a link that stops being true is closed, never deleted) and
@@ -161,8 +161,12 @@ Built 2026-11-26 on doc 4's "Knowledge graph". `src/shared/graph/` keeps three s
 - `graph_decisions`: each accept and reject, with who made what was decided; `list_graph_decision_counts` totals them
   per maker, the signal later work learns from. They stay when the link or entity goes.
 
-Who decides: what the user makes (`add_graph_link`, `add_entity`, `join_entities`) is accepted at once, and so is what
-a rule makes. What an engine or similarity makes is proposed, and only the user at the page accepts or rejects it:
+Who decides: what the user at the page makes (`add_graph_link`, `add_entity`, `join_entities`) is accepted at once, and
+so is what a rule makes. The same calls from a token on the server's API or from either MCP endpoint are a program's:
+`bind_methods` takes the caller (`src/shared/caller.ts`, `page` unless the server's call route sees a bearer token or the
+call came through MCP), and a program's link or entity is kept as proposed with `made_by` `program`, one already
+waiting is given back, and one the user rejected is refused; a `propose_*` call from a program with no engine behind it
+is a program's too. What an engine or similarity makes is proposed, and only the user at the page accepts or rejects it:
 `accept_graph_proposals` and `reject_graph_proposals` are page-only like `resolve_proposal`, and never offered to an
 engine. A rejected proposal stays as a rejected row, so the same two nodes are never proposed the same type of link
 again; removing a link a rule, similarity or an engine made keeps it as rejected for the same reason, while the user's
@@ -278,8 +282,9 @@ the login entry.
 
 ## History
 
-`src/shared/history/store.ts` keeps a version of a context, its row and its memberships, and of each entity and link of
-the graph, after every write through X-Libs `create_history`. Versions sync; writes that arrive by sync are recorded by the device that made them.
+`src/shared/history/store.ts` keeps a version of a context, its row, its memberships, its feeds and the graph's links to
+it, and of each entity and link of the graph, after every write through X-Libs `create_history`. Restoring a removed
+context brings back each of its links that is gone while both its ends exist, leaving a link still there as it is. Versions sync; writes that arrive by sync are recorded by the device that made them.
 
 ## The assistant
 
@@ -444,6 +449,19 @@ conversation saying the user approved it and what came back; rejecting adds one 
 `set_action_level` (and the privacy feature's `set_source_mark`) answer only the page: `page_only_methods` in `page_api.ts` marks their specs `page_only` (X-Libs `api_spec`), so the server's sign-in refuses them to every bearer token, the
 daemon takes them over its socket from the window, neither MCP endpoint lists them, and the OpenAPI document marks them `x-page-only`. The engine reads those
 events at the start of the user's next message. The policy's own calls and the conversations' are never offered.
+
+A proposal keeps its `evidence` (a JSON column): the user's message that asked for it (`asked_by`), the run, and each
+read the run made before proposing, by its tool call's id with its name and arguments, the sources it carried, and an
+excerpt of what came back only when every one of those sources is marked for hosted engines, as graph evidence is
+kept. The card folds it under "Why, and from what".
+
+Every applied change, approved or made at auto, keeps an `undo` on its tool call (`policy/undo.ts`): the contexts
+History recorded it touching, each by the version it made and the version before (none for a context it made), with
+its summary. `list_change_undos(conversation_id)` says for each whether it can still be undone: not once a context it
+touched has changed since (its own rows; a link to it does not count), nor once History has pruned a version it needs,
+nor when it touched nothing History keeps, such as a refresh, which the row says instead of offering Undo.
+`undo_change(message_id, call_id)` restores each version before, parent contexts first, or removes a context the change
+made, marks the call undone and adds an event saying so. It is page-only like `resolve_proposal` and never offered.
 
 ### The pane
 

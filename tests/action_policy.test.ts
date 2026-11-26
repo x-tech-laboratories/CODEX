@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
+import { add_message } from "../src/shared/conversations/messages.ts";
+import type { ToolCallRecord } from "../src/shared/conversations/model.ts";
 import { add_conversation_record, has_conversation } from "../src/shared/conversations/records.ts";
 import { engine_tools, max_result_chars, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
 import { brings_outside_content, changing_calls, decide } from "../src/shared/policy/policy.ts";
@@ -22,7 +24,7 @@ function tools_of(fixture: Fixture, conversation_id = "general"): { context: Too
     conversation_id,
     presence: "conversation",
     has_outside_content: false,
-    on_decided: (name, record) => decided.push(`${name}:${record.outcome}${record.applied_by ? `:${record.applied_by}` : ""}`),
+    on_decided: (name, record) => void decided.push(`${name}:${record.outcome}${record.applied_by ? `:${record.applied_by}` : ""}`),
   };
   return { context, tools: engine_tools(context), decided };
 }
@@ -306,5 +308,143 @@ describe("proposals", () => {
     expect(said("set_context_notes", { id: 7, notes: "x".repeat(300) })).toMatch(/^Replace the notes of a context with “x+…”\.$/);
     expect(said("add_item", { context_ids: [], collector: "links" })).toBe("Add “” from links to no context.");
     expect(said("made_up", { a: 1 })).toBe('made_up ({"a":1})');
+  });
+});
+
+describe("undoing applied changes", () => {
+  // A conversation in the context in which the engine renames it, then answers.
+  async function renamed_by_engine(fixture: Fixture, kitchen: string): Promise<{ conversation_id: string; message_id: string }> {
+    fixture.set_script(async function* (request) {
+      yield { type: "tool_call", id: "t1", name: "rename_context", arguments: { id: kitchen, name: "Cooking" } };
+      const outcome = await request.tools.call("rename_context", { id: kitchen, name: "Cooking" });
+      yield { type: "tool_result", id: "t1", ...outcome };
+      yield { type: "done", text: "Renamed it." };
+    });
+    const { conversation_id } = await fixture.calls.send_message(kitchen, "Rename this to Cooking");
+    await wait_for_runs();
+    return { conversation_id, message_id: fixture.calls.get_conversation(conversation_id).messages[1]!.id };
+  }
+
+  it("undoes a change made at the auto level through History, records it in the conversation, and only once", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    fixture.calls.set_action_level("rename_context", "auto");
+    const { conversation_id, message_id } = await renamed_by_engine(fixture, kitchen);
+    expect(fixture.calls.get_context(kitchen).name).toBe("Cooking");
+    expect(fixture.calls.list_change_undos(conversation_id)).toEqual([{ message_id, call_id: "t1", state: "possible", reason: "" }]);
+
+    expect(fixture.calls.undo_change(message_id, "t1")).toMatchObject({ state: "undone" });
+
+    expect(fixture.calls.get_context(kitchen).name).toBe("Kitchen");
+    const messages = fixture.calls.get_conversation(conversation_id).messages;
+    expect(messages.at(-1)).toMatchObject({ role: "event", text: "Undone by you: Rename the context “Kitchen” to “Cooking”." });
+    expect(messages[1]!.tool_calls[0]!.undo!.undone_at).toBeTruthy();
+    expect(fixture.calls.list_change_undos(conversation_id)).toMatchObject([{ call_id: "t1", state: "undone" }]);
+    expect(() => fixture.calls.undo_change(message_id, "t1")).toThrow("already undone");
+    expect(() => fixture.calls.undo_change(message_id, "nothing")).toThrow("There is no applied change");
+  });
+
+  it("says why it cannot undo a change once the context changed since, and leaves it as it is", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    fixture.calls.set_action_level("rename_context", "auto");
+    const { conversation_id, message_id } = await renamed_by_engine(fixture, kitchen);
+    fixture.calls.set_context_notes(kitchen, "Tiles first.");
+
+    expect(fixture.calls.list_change_undos(conversation_id)).toEqual([{ message_id, call_id: "t1", state: "impossible", reason: "Cooking has changed since, so undoing this would undo that too." }]);
+    expect(() => fixture.calls.undo_change(message_id, "t1")).toThrow("has changed since");
+    expect(fixture.calls.get_context(kitchen)).toMatchObject({ name: "Cooking", notes: "Tiles first." });
+  });
+
+  it("undoes approved changes: a context made is removed, and a removed one comes back with what was inside it", async () => {
+    const fixture = start_fixture();
+    const home = fixture.calls.add_context("Home");
+    const kitchen = fixture.calls.add_context("Kitchen", home);
+    fixture.calls.add_item([kitchen], "links", { source_id: "https://example.org/tiles", kind: "link", title: "Tiles" });
+    const { tools } = tools_of(fixture);
+    await tools.call("add_context", { name: "Garden", parent_id: null });
+    await tools.call("remove_context", { id: home });
+    const [add, remove] = fixture.calls.list_proposals("general");
+    await fixture.calls.resolve_proposal(add!.id, "approve");
+    await fixture.calls.resolve_proposal(remove!.id, "approve");
+    expect(fixture.calls.list_contexts(false).map((context) => context.name)).toEqual(["Garden"]);
+    const events = fixture.calls.get_conversation("general").messages;
+    const undos = fixture.calls.list_change_undos("general");
+    expect(undos.map((each) => each.state)).toEqual(["possible", "possible"]);
+
+    fixture.calls.undo_change(events[1]!.id, remove!.id);
+    expect(fixture.calls.list_contexts(false).map((context) => context.name).sort()).toEqual(["Garden", "Home", "Kitchen"]);
+    expect(fixture.calls.get_context(kitchen).items.map((item) => item.title)).toEqual(["Tiles"]);
+    fixture.calls.undo_change(events[0]!.id, add!.id);
+    expect(fixture.calls.list_contexts(false).map((context) => context.name).sort()).toEqual(["Home", "Kitchen"]);
+  });
+
+  it("says a change History keeps nothing of, such as a refresh, cannot be undone", async () => {
+    const fixture = start_fixture();
+    fixture.calls.add_context("Kitchen");
+    fixture.calls.set_action_level("refresh_items", "auto");
+    const records: Pick<ToolCallRecord, "undo">[] = [];
+    const context: ToolContext = { ...tools_of(fixture).context, on_decided: (_name, record) => void records.push(record) };
+    await engine_tools(context).call("refresh_items", {});
+    expect(records).toMatchObject([{ undo: { summary: "Ask the apps what became of the items in every context.", steps: [] } }]);
+    // The call kept on an answer, as a run keeps it, beside one kept before undoing was recorded.
+    const call = { id: "r1", name: "refresh_items", arguments: {}, result: "", is_error: false, outcome: "ran" as const, applied_by: "engine_auto" as const, undo: records[0]!.undo! };
+    const message = add_message(fixture.database, { conversation_id: "general", role: "assistant", text: "Refreshed.", tool_calls: [call, { ...call, id: "r0", undo: undefined }], sources: [] });
+    expect(fixture.calls.list_change_undos("general")).toEqual([
+      { message_id: message.id, call_id: "r1", state: "impossible", reason: "It changed nothing History keeps, such as what a refresh found, so it cannot be undone." },
+      { message_id: message.id, call_id: "r0", state: "impossible", reason: "Made before undoing was recorded; History keeps its versions to restore by hand." },
+    ]);
+  });
+
+  it("is the user's alone: never offered to an engine", () => {
+    expect(changing_calls()).not.toContain("undo_change");
+    expect(changing_calls()).not.toContain("list_change_undos");
+  });
+});
+
+describe("a proposal's evidence", () => {
+  it("names the message that asked, the run, and what the run read before proposing, with excerpts only where marks allow", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const tiles = fixture.calls.add_item([kitchen], "links", { source_id: "https://example.org/tiles", kind: "link", title: "Tiles from the shop" });
+    fixture.set_script(async function* (request) {
+      yield { type: "tool_call", id: "t1", name: "list_contexts", arguments: {} };
+      yield { type: "tool_result", id: "t1", ...(await request.tools.call("list_contexts", {})) };
+      yield { type: "tool_call", id: "t2", name: "get_item", arguments: { id: tiles } };
+      yield { type: "tool_result", id: "t2", ...(await request.tools.call("get_item", { id: tiles })) };
+      yield { type: "tool_call", id: "t3", name: "rename_context", arguments: { id: kitchen, name: "Tiling" } };
+      yield { type: "tool_result", id: "t3", ...(await request.tools.call("rename_context", { id: kitchen, name: "Tiling" })) };
+      yield { type: "done", text: "Proposed." };
+    });
+
+    const { conversation_id, run_id } = await fixture.calls.send_message(kitchen, "Name this after its tiles");
+    await wait_for_runs();
+    const conversation = fixture.calls.get_conversation(conversation_id);
+    const [proposal] = conversation.proposals;
+
+    expect(proposal!.evidence.asked_by).toBe(conversation.messages[0]!.id);
+    expect(proposal!.evidence.run_id).toBe(run_id);
+    expect(proposal!.evidence.reads.map((read) => [read.call_id, read.name, read.sources])).toEqual([
+      ["t1", "list_contexts", []],
+      ["t2", "get_item", ["links"]],
+    ]);
+    // The user's own words may be quoted; Web links is not marked to leave this computer, so its read is named, not quoted.
+    expect(proposal!.evidence.reads[0]!.excerpt).toContain("Kitchen");
+    expect(proposal!.evidence.reads[1]!.excerpt).toBe("");
+    expect(proposal!.summary).toBe("Rename the context “Kitchen” to “Tiling”.");
+
+    fixture.calls.set_source_mark("codex.links", "send_to_hosted", true);
+    fixture.set_script(async function* (request) {
+      yield { type: "tool_call", id: "u1", name: "get_item", arguments: { id: tiles } };
+      yield { type: "tool_result", id: "u1", ...(await request.tools.call("get_item", { id: tiles })) };
+      yield { type: "tool_call", id: "u2", name: "rename_context", arguments: { id: kitchen, name: "Tiles" } };
+      yield { type: "tool_result", id: "u2", ...(await request.tools.call("rename_context", { id: kitchen, name: "Tiles" })) };
+      yield { type: "done", text: "Proposed." };
+    });
+    await fixture.calls.send_message(kitchen, "Or just Tiles", conversation_id);
+    await wait_for_runs();
+    const marked = fixture.calls.get_conversation(conversation_id).proposals.at(-1)!;
+    expect(marked.evidence.reads).toMatchObject([{ call_id: "u1", name: "get_item", sources: ["links"] }]);
+    expect(marked.evidence.reads[0]!.excerpt).toContain("Tiles from the shop");
   });
 });

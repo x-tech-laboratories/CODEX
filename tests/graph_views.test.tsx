@@ -286,6 +286,7 @@ describe("how graph things are named", () => {
     expect(type_name({ kind: "entity", type: "organisation" })).toBe("Organisation");
     expect(type_name({ kind: "item", type: "task" })).toBe("Task");
     expect(maker_text({ made_by: "user", rule: "", engine: "", model: "" })).toBe("you");
+    expect(maker_text({ made_by: "program", rule: "", engine: "", model: "" })).toBe("a program, through a token or MCP");
     expect(maker_text({ made_by: "rule", rule: "parent", engine: "", model: "" })).toBe("a rule: its app names its parent");
     expect(maker_text({ made_by: "rule", rule: "new", engine: "", model: "" })).toBe("a rule (new)");
     expect(maker_text({ made_by: "similarity", rule: "", engine: "e", model: "m" })).toBe("similarity of meaning (m)");

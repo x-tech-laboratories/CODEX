@@ -1,0 +1,1 @@
+ALTER TABLE `proposals` ADD `evidence` text DEFAULT '{}' NOT NULL;
