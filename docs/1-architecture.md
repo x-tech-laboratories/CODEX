@@ -263,8 +263,9 @@ engine counted (or a quarter fewer characters a token); the loop tells the user,
 stored messages never change, so an over-long message cannot keep a conversation failing.
 
 Tools offered: below 16,384 tokens of context, or when the plugin's **Tools offered** is **Core set**, the engine offers
-the core set (`core_tools` in `policy.ts`: the four reads `list_contexts`, `get_context`, `get_item`, `search_index` and
-seven changes, each with a one-line description and its fields' descriptions left out); otherwise every offered call.
+the core set (`core_tools` in `policy.ts`: the four reads `list_contexts`, `get_context`, `get_item`, `search_index`,
+seven changes and the graph's two proposing calls, each with a one-line description and its fields' descriptions left
+out); otherwise every offered call.
 The core set is the same calls under the same policy, and a test holds it to a written list as it does the whole set.
 
 Failures (`src/server/engines/errors.ts`) are put in plain words with the raw text as `detail`, shown under Details:

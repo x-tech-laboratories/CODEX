@@ -36,7 +36,8 @@ export const offered_api: Record<string, MethodSpec> = {
   propose_link: graph_feature.api.propose_link as MethodSpec,
 };
 
-// The core set offered to a model with a small context, each briefly described: the reads and the most-used changes.
+// The core set offered to a model with a small context, each briefly described: the reads, the most-used changes and
+// the graph's two proposing calls, so Suggest links works on a small model too.
 export const core_tools: Record<string, string> = {
   list_contexts: "Lists the contexts as a tree, with their ids.",
   get_context: "Gets one context: its notes and the items it holds.",
@@ -49,6 +50,8 @@ export const core_tools: Record<string, string> = {
   move_item: "Moves an item from one context to another.",
   add_item_to_contexts: "Puts an item already kept in more contexts.",
   remove_item: "Takes an item out of a context; it stays in its own app.",
+  propose_entity: "Proposes a person, organisation, topic or place found in the items.",
+  propose_link: "Proposes a typed link between two contexts, items or entities.",
 };
 
 export function is_offered(method: string): boolean {
