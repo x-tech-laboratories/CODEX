@@ -22,6 +22,7 @@ const budget_words: Record<BudgetName, { label: string; unit?: string; hint: str
   seconds_per_run: { label: "Longest run", unit: "seconds", hint: "A run stops here, and the rest waits for the next run." },
   model_calls_per_day: { label: "Model calls a day", hint: "Each round of the model's answer counts as one." },
   tokens_per_day: { label: "Tokens a day", hint: "Read and written by the model, every run together." },
+  web_requests_per_run: { label: "Web requests in one run", hint: "Searches and pages read; the run stops asking the web after this many." },
 };
 
 // When a run happened, as how long ago.
@@ -84,7 +85,7 @@ function JobSettings({ job_key }: { job_key: MaintenanceKey }) {
       {(jobs) => {
         const job = jobs.find((each) => each.key === job_key);
         if (!job) return null;
-        const parts = (Object.keys(budget_words) as BudgetName[]).filter((name) => job.uses_model || (name !== "model_calls_per_day" && name !== "tokens_per_day"));
+        const parts = (Object.keys(budget_words) as BudgetName[]).filter((name) => (job.uses_model || (name !== "model_calls_per_day" && name !== "tokens_per_day")) && (job.uses_web || name !== "web_requests_per_run"));
         const used: Partial<Record<BudgetName, number>> = { runs_per_day: job.today.runs, items_per_run: job.today.items, model_calls_per_day: job.today.model_calls, tokens_per_day: job.today.tokens };
         return (
           <>
@@ -94,7 +95,7 @@ function JobSettings({ job_key }: { job_key: MaintenanceKey }) {
             {parts.map((name) => {
               const words = budget_words[name];
               const [min, max] = budget_bounds[name];
-              const today = name === "items_per_run" ? `Today, ${job.today.items.toLocaleString()} ${job.items} in all.` : name === "seconds_per_run" ? "" : `Today: ${(used[name] ?? 0).toLocaleString()}.`;
+              const today = name === "items_per_run" ? `Today, ${job.today.items.toLocaleString()} ${job.items} in all.` : name === "seconds_per_run" || name === "web_requests_per_run" ? "" : `Today: ${(used[name] ?? 0).toLocaleString()}.`;
               return (
                 <SettingRow key={name} label={words.label} hint={`${words.hint} ${today}`.trim()}>
                   <NumberField

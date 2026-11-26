@@ -17,6 +17,8 @@ import { conversation_messages } from "../conversations/schema.ts";
 import { conversation_collector, conversation_item_id } from "../conversations/model.ts";
 import { drizzle_of } from "../feature.ts";
 import { graph_entities, graph_links } from "../graph/schema.ts";
+import { finding_collector } from "../interests/model.ts";
+import { item_sources } from "../privacy/screen.ts";
 import { parse_sources } from "../privacy/sources.ts";
 import { item_source_stamps } from "../sources/schema.ts";
 import type { HitKind } from "./model.ts";
@@ -79,7 +81,7 @@ export function read_documents(database: SqlDatabase): SourceDocument[] {
       title: item.title,
       body: [item.snippet, ...entry.notes].filter((part) => part.trim()).join("\n"),
       context_ids: entry.context_ids.sort(),
-      sources: [item.collector],
+      sources: item.collector === finding_collector ? item_sources({ collector: item.collector, detail: detail_of(item.detail) }) : [item.collector],
       source_hash: text_hash(JSON.stringify([item.collector, item.title, item.snippet, item.uri, item.status, item.detail, ...(stamps.has(item.id) ? [stamps.get(item.id)] : [])])),
     });
   }
@@ -147,6 +149,16 @@ function blueprint_documents(database: SqlDatabase, held: Map<string, { context_
         source_hash: "",
       };
     });
+}
+
+// An item's detail as stored, empty when it cannot be read.
+function detail_of(json: string): Record<string, string> {
+  try {
+    const value: unknown = JSON.parse(json);
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
 }
 
 function parse_names(json: string): string[] {

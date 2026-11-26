@@ -8,6 +8,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { context_items, contexts, items } from "../contexts/schema.ts";
 import { blueprint_collector } from "../blueprints/model.ts";
+import { finding_collector } from "../interests/model.ts";
 import { conversation_collector } from "../conversations/model.ts";
 import { item_sources } from "../privacy/screen.ts";
 import { conversation_messages } from "../conversations/schema.ts";
@@ -139,8 +140,8 @@ export function read_nodes(database: SqlDatabase, keys: Iterable<string>, joins:
     for (const row of db.select().from(items).where(inArray(items.id, wanted.item)).all()) {
       const is_own = row.collector === conversation_collector || row.collector === blueprint_collector;
       if (is_own && row.status === "missing") continue;
-      // A blueprint written during a run carries what that run read until the user makes it theirs.
-      const sources = row.collector === blueprint_collector ? item_sources({ collector: row.collector, detail: parsed_detail(row.detail) }).slice(1) : is_own ? [] : [row.collector];
+      // A blueprint written during a run carries what that run read until the user makes it theirs; a finding, the web.
+      const sources = row.collector === blueprint_collector || row.collector === finding_collector ? item_sources({ collector: row.collector, detail: parsed_detail(row.detail) }).slice(1) : is_own ? [] : [row.collector];
       found.set(node_key("item", row.id), { ...blank_node("item", row.id), type: row.kind, label: row.title, uri: row.uri, state: row.status, sources });
     }
   }

@@ -94,8 +94,8 @@ function used_up_reason(database: SqlDatabase, key: MaintenanceKey, now: number,
   return "";
 }
 
-// The jobs whose work is finding something new: links, likely duplicates and proposals.
-const finding_jobs: ReadonlySet<MaintenanceKey> = new Set(["rules", "similarity", "tidy", "suggest"]);
+// The jobs whose work is finding something new: links, likely duplicates, proposals and findings on the web.
+const finding_jobs: ReadonlySet<MaintenanceKey> = new Set(["rules", "similarity", "tidy", "suggest", "research"]);
 
 // A run that failed leaves the assistant mildly concerned; one that found something new, mildly curious.
 function note_finding_mood(database: SqlDatabase, key: MaintenanceKey, result: Done, now: number): void {

@@ -19,6 +19,7 @@ import type { DesktopSettings } from "../../shared/desktop.ts";
 import { attempt, calls, data_watch, page, set_setting, show_error, use_settings } from "../api.ts";
 import { read_picked, save_text } from "../files.ts";
 import { engine_section, policy_section } from "../assistant/AssistantSettings.tsx";
+import { interests_section } from "../interests/InterestSettings.tsx";
 import { mood_section } from "../mood/MoodSettings.tsx";
 import { assistant_jobs_section, background_section, maintenance_section } from "../jobs/BackgroundSettings.tsx";
 import { CollectorRows } from "../plugins.tsx";
@@ -214,7 +215,7 @@ export function SettingsView() {
           <SettingsPage
             categories={[
               { heading: "General", sections: [general_section(values, set_setting), history_section(values, set_setting), collectors_section, index_section(values), transfer_section] },
-              { heading: "Assistant", sections: [engine_section(values), policy_section, mood_section(values), background_section, maintenance_section, assistant_jobs_section, hosted_log_section(values, set_setting)] },
+              { heading: "Assistant", sections: [engine_section(values), policy_section, mood_section(values), interests_section(values), background_section, maintenance_section, assistant_jobs_section, hosted_log_section(values, set_setting)] },
               ...data_category(),
             ]}
           />

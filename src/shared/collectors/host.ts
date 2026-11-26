@@ -9,6 +9,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { blueprints_plugin } from "../blueprints/collector.ts";
 import { conversations_plugin } from "../conversations/collector.ts";
+import { findings_plugin } from "../interests/collector.ts";
 import type { Embedder } from "../embedders/embedder.ts";
 import type { Engine } from "../engines/engine.ts";
 import { settings_feature } from "../settings.ts";
@@ -51,7 +52,7 @@ export function use_plugins(plugins: ContextPlugin[]): void {
 }
 
 // Made afresh for each use, so a plugin turned on or off on any device, or given a new key, holds at once. The apps
-// read through the item calls, the MCP servers' tools and the conversations' and blueprints' own collectors come last, answering from this database.
+// read through the item calls, the MCP servers' tools and the conversations', blueprints' and findings' own collectors come last, answering from this database.
 export async function open_plugin_host(database: SqlDatabase): Promise<PluginHost<ContextPluginApi>> {
   const host = create_plugin_host<ContextPluginApi>({ app: app_info, storage: settings_storage(database), on_error: (plugin_id, error) => console.warn(`plugin ${plugin_id}:`, error) });
   for (const plugin of known_plugins) await host.add(plugin);
@@ -59,6 +60,7 @@ export async function open_plugin_host(database: SqlDatabase): Promise<PluginHos
   await host.add(mcp_plugin(database));
   await host.add(conversations_plugin(database));
   await host.add(blueprints_plugin(database));
+  await host.add(findings_plugin(database));
   await host.start();
   return host;
 }

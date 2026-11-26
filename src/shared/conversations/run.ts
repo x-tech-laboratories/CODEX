@@ -88,8 +88,23 @@ export interface ToolContext {
   signal?: AbortSignal;
   // The engine's label, which the hosted log names beside each use of a tool that sends outside.
   engine_label?: string;
+  // Tools of the run's own, handled by the task that started it rather than as CODEX's calls, such as a research run's
+  // saving of a finding; each changes nothing of the user's, so it runs at once.
+  own_tools?: RunTool[];
+  // Set for a run built to hold no private data, so its tools that send outside are never refused for what it read.
+  reads_nothing_private?: boolean;
+  // The most calls to the tool plugins' tools in this run; left out, no limit.
+  max_plugin_calls?: number;
   // Hears what the policy made of each call, in order, so it can be kept with the call; gives back the call's id.
   on_decided?: (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id" | "undo">) => string | void;
+}
+
+// A tool of a run's own: what the engine is shown, and what it does, answering in words.
+export interface RunTool {
+  name: string;
+  description: string;
+  parameters: JsonSchema;
+  call(given: Record<string, unknown>, run: { run_id: string; conversation_id: string }): { text: string; is_error: boolean };
 }
 
 // The sources whose content the run has read so far, by collector id, for what it keeps.
@@ -162,6 +177,7 @@ export function engine_tools(context: ToolContext): EngineTools {
       .filter(([name]) => !only || only.has(name))
       .map(([name, spec]) => ({ name, description: spec.description, parameters: input_schema(spec) })),
     ...(!only || only.has(set_mood_tool.name) ? [{ name: set_mood_tool.name, description: set_mood_tool.description, parameters: set_mood_tool.parameters as JsonSchema }] : []),
+    ...(context.own_tools ?? []).map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
     ...[...plugin_tools.values()].map((tool) => ({ name: tool.name, description: plugin_description(tool, longest_tool_description), parameters: tool.tool.parameters })),
   ];
   // A run offered few calls gets them fully described, which the core set would not shorten much.
@@ -232,8 +248,11 @@ export function engine_tools(context: ToolContext): EngineTools {
     const required = Array.isArray(tool.tool.parameters.required) ? (tool.tool.parameters.required as unknown[]).map(String) : [];
     const missing = required.filter((field) => given[field] === undefined);
     if (missing.length > 0) return decided(name, { outcome: "failed" }, { result: `Tool error: missing argument ${missing.join(", ")}.`, is_error: true });
+    if (context.max_plugin_calls !== undefined && plugin_uses >= context.max_plugin_calls) {
+      return decided(name, { outcome: "refused" }, { result: `Not run: this run may use plugin tools at most ${context.max_plugin_calls} times, and has. Finish with what you have.`, is_error: true });
+    }
     // What the run has read of a source the user keeps from hosted engines never leaves through a tool either.
-    if (tool.tool.sends_outside && !tool.marks.after_private && has_read_private(screen)) {
+    if (tool.tool.sends_outside && !tool.marks.after_private && !context.reads_nothing_private && has_read_private(screen)) {
       return decided(
         name,
         { outcome: "refused" },
@@ -279,6 +298,15 @@ export function engine_tools(context: ToolContext): EngineTools {
     call: async (name, given) => {
       const plugin_tool = plugin_tools.get(name);
       if (plugin_tool) return call_plugin_tool(plugin_tool, given);
+      const own_tool = context.own_tools?.find((tool) => tool.name === name);
+      if (own_tool) {
+        try {
+          const answer = own_tool.call(given && typeof given === "object" && !Array.isArray(given) ? given : {}, { run_id: context.run_id ?? "", conversation_id: context.conversation_id });
+          return decided(name, { outcome: answer.is_error ? "failed" : "ran" }, { result: answer.text, is_error: answer.is_error });
+        } catch (error) {
+          return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}.`, is_error: true });
+        }
+      }
       // The mood changes nothing of the user's, so it is kept at once, with the call recorded in the reply.
       if (name === set_mood_tool.name && (!only || only.has(name))) {
         const set = engine_set_mood(context.database(), given && typeof given === "object" ? given : {}, { conversation_id: context.conversation_id, run_id: context.run_id ?? "", sources: read_sources(screen) }, Date.now());
@@ -344,6 +372,13 @@ export interface RunOptions {
   closing_note?: (calls: ToolCallRecord[]) => string;
   // Hears how the run ended, once it has been kept.
   on_end?: (end: RunEnd) => void;
+  // A run built to hold no private data: its instructions are only `instructions`' own, it is given no earlier turn of
+  // its conversation, no blueprint, no context and no mood, and its outside-sending tools are never refused for what it read.
+  isolated?: boolean;
+  // Tools of the run's own, offered beside those `tools` names.
+  own_tools?: RunTool[];
+  // The most calls to the tool plugins' tools in the run.
+  max_plugin_calls?: number;
 }
 
 // How a run ended, for a background job's record.
@@ -486,19 +521,21 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   const plugin_tools = (await open_plugin_tools(database)).filter((tool) => tool.enabled && (!options.tools || options.tools.includes(tool.name)) && may_send(screen, tool_source_of(tool.key)));
   if (chosen !== undefined && (runs.has(chosen) || !has_conversation(database, chosen))) throw new Error(runs.has(chosen) ? "A reply is still being written here; stop it or wait for it first." : `There is no conversation ${chosen}.`);
   const conversation_id = chosen ?? add_conversation_record(database, context_id);
-  const instructions = screened_instructions(database, context_id, conversation_id, new Date().toISOString().slice(0, 10), screen);
+  const isolated = options.isolated === true;
+  // An isolated run is told only what its task gives it: no identity, date, context, blueprint or mood.
+  const instructions: Screened<string> = isolated ? { value: "", sources: new Set(), withheld: new Map() } : screened_instructions(database, context_id, conversation_id, new Date().toISOString().slice(0, 10), screen);
   const extra = options.instructions?.(screen);
   if (extra) {
-    instructions.value = `${instructions.value}\n\n${extra.value}`;
+    instructions.value = instructions.value ? `${instructions.value}\n\n${extra.value}` : extra.value;
     for (const source of extra.sources) instructions.sources.add(source);
   }
   // The user's own approved blueprints that match the message, put in by CODEX itself; not fenced, and tainting nothing.
-  const recalled = await recall_blueprints(database, context_id, text);
+  const recalled = isolated ? [] : await recall_blueprints(database, context_id, text);
   if (recalled.length > 0) instructions.value = `${instructions.value}\n\n${recalled_part(recalled)}`;
   const plugin_part = plugin_tools_part(plugin_tools);
   if (plugin_part) instructions.value = `${instructions.value}\n\n${plugin_part}`;
   // The mood colours tone only; its reason carries the sources of the reply that set it.
-  const mood = !options.tools || options.tools.includes(set_mood_tool.name) ? mood_part(database, screen, Date.now()) : null;
+  const mood = !isolated && (!options.tools || options.tools.includes(set_mood_tool.name)) ? mood_part(database, screen, Date.now()) : null;
   if (mood?.value) {
     instructions.value = `${instructions.value}\n\n${mood.value}`;
     for (const source of mood.sources) instructions.sources.add(source);
@@ -514,7 +551,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   runs.set(conversation_id, run);
   reply_started();
   // An earlier answer replayed counts as reading its sources again, so one that drew on an untrusted source taints the run.
-  const replayed = screened_turns(database, conversation_id, screen);
+  const replayed = isolated ? { turns: [{ role: "user" as const, text: text.trim() }], sources: new Set<string>() } : screened_turns(database, conversation_id, screen);
   const tools = engine_tools({
     database: host.database,
     call: host.call,
@@ -530,6 +567,9 @@ export async function start_run(database: SqlDatabase, context_id: string | null
     signal: run.abort.signal,
     asked_by: question.id,
     run_id: state.run_id,
+    ...(options.own_tools ? { own_tools: options.own_tools } : {}),
+    ...(options.max_plugin_calls !== undefined ? { max_plugin_calls: options.max_plugin_calls } : {}),
+    ...(isolated ? { reads_nothing_private: true } : {}),
     on_decided: (name, record) => note_decision(run, name, record),
   });
   const request = { instructions: instructions.value, conversation: replayed.turns, tools, ...(options.limits ? { limits: { max_rounds: options.limits.max_rounds } } : {}) };

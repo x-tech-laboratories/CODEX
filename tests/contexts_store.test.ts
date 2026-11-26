@@ -163,6 +163,8 @@ describe("collectors", () => {
       ["conversation", false, true, false, 0],
       // And for the blueprints.
       ["blueprint", false, true, false, 0],
+      // And for the findings of the assistant's research.
+      ["codex.findings", false, true, false, 0],
     ]);
   });
 

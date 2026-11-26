@@ -72,7 +72,7 @@ export function is_read_only(method: string): boolean {
 // Calls that keep the user in charge of the assistant, approving and undoing its changes, the graph's proposals and
 // proposed blueprints, bringing a blueprint back or widening where it applies, turning a job on, running one now and
 // choosing the device that runs them, a maintenance job's switch and budget, the tool plugins' marks, which of their tools are offered and at what level, the
-// MCP servers added, changed, refreshed, moved to this device or removed (a local one's command runs on this machine), the dates the mood remembers,
+// MCP servers added, changed, refreshed, moved to this device or removed (a local one's command runs on this machine), the dates the mood remembers, the assistant's interests added, accepted, paused, dropped or capped (an accepted topic is sent to a search engine),
 // setting how freely it may make them and what each source's items may reach, and which apps are read with which token,
 // answered only for the user at the page: a signed-in browser, or the desktop window. Their specs are marked page-only
 // with X-Libs `api_spec`, so a token, MCP and any engine are refused them and nothing a program does can approve a
@@ -104,6 +104,10 @@ export const page_only_methods: ReadonlySet<string> = new Set([
   "move_mcp_server_here",
   "remove_mcp_server",
   "set_mood_dates",
+  "add_interest",
+  "accept_interest",
+  "set_interest_state",
+  "set_max_interests",
 ]);
 
 // Settings that keep the user in charge, written only by the user at the page: the action policy, the source marks,
@@ -112,9 +116,9 @@ export const page_only_methods: ReadonlySet<string> = new Set([
 // item calls with their tokens, whether background work runs at all, is paused, on which device, how often it looks
 // for work, whether it may use a hosted engine and how much a day, each maintenance job's switch and budget, and the tool plugins' marks
 // and which of their tools are offered, and the MCP servers with their addresses, tokens and commands, and the assistant's mood: its switches, its dates and
-// the mood itself, which only CODEX's own code writes. They are read like any other,
+// the mood itself, which only CODEX's own code writes, and the interests' cap and the context their findings are kept in. They are read like any other,
 // and only the user's own devices may sync a change to them.
-export const user_only_settings: ReadonlySet<string> = new Set(["action_policy", "source_marks", "engine", "embedder", "hosted_log.keep_days", "plugins", "item_sources", "background.enabled", "background.daily_runs", "background.daily_tokens", "background.paused", "background.device", "background.tick_minutes", "background.hosted", "maintenance.jobs", "tool_plugins", "mcp_servers", "mood.enabled", "mood.tone", "mood.dates", "mood.current"]);
+export const user_only_settings: ReadonlySet<string> = new Set(["action_policy", "source_marks", "engine", "embedder", "hosted_log.keep_days", "plugins", "item_sources", "background.enabled", "background.daily_runs", "background.daily_tokens", "background.paused", "background.device", "background.tick_minutes", "background.hosted", "maintenance.jobs", "tool_plugins", "mcp_servers", "mood.enabled", "mood.tone", "mood.dates", "mood.current", "interests.max_accepted", "interests.context"]);
 
 // Whether this call with these arguments, in order, writes a setting only the user may change; X-Libs adds the marked calls.
 export function is_user_only_setting_write(method: string, args: readonly unknown[]): boolean {

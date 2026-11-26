@@ -7,6 +7,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { feed_key, item_id_of, type Feed, type FoundItem } from "../collectors/collector.ts";
 import type { Blueprint, BlueprintSummary } from "../blueprints/model.ts";
+import type { Interest } from "../interests/model.ts";
 import type { ContextDetail, KeptItem, RefreshReport } from "../contexts/model.ts";
 import { contexts_feature } from "../contexts/store.ts";
 import type { NodeLinks } from "../graph/model.ts";
@@ -111,6 +112,11 @@ function screen_blueprint(_database: SqlDatabase, screen: Screen, _args: unknown
   return { value: { ...blueprint, changes: changes.value }, sources: new Set([...own.sources, ...changes.sources]), ...merge_withheld([own, changes]) };
 }
 
+// The interests, each on the sources the run that proposed it had read; one the user added carries nothing.
+function screen_interests(_database: SqlDatabase, screen: Screen, _args: unknown[], value: unknown): Screened<unknown> {
+  return screen_sourced(screen, value as Interest[], (each) => each.sources, (each) => `interest:${each.id}`, () => "interest");
+}
+
 // Every offered call that can answer with other apps' text; a test holds this to the calls the policy says bring it.
 export const result_screeners: Record<string, Screener> = {
   get_context: screen_context,
@@ -125,6 +131,7 @@ export const result_screeners: Record<string, Screener> = {
   get_node_links: screen_node_links,
   list_blueprints: screen_blueprints,
   get_blueprint: screen_blueprint,
+  list_interests: screen_interests,
 };
 
 // The answer as the engine may read it. A call with no screener is held back whole from a hosted engine unless every

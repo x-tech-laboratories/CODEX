@@ -81,13 +81,14 @@ function set_maintenance_job(database: SqlDatabase, key: MaintenanceKey, changes
 const budget_schema = {
   type: "object",
   description:
-    "Only the parts that change: runs_per_day (0 to 288), items_per_run (1 to 10,000), seconds_per_run (5 to 3,600), and for suggest model_calls_per_day (1 to 500) and tokens_per_day (1,000 to 2,000,000).",
+    "Only the parts that change: runs_per_day (0 to 288), items_per_run (1 to 10,000), seconds_per_run (5 to 3,600), for suggest and research model_calls_per_day (1 to 500) and tokens_per_day (1,000 to 2,000,000), and for research web_requests_per_run (1 to 50).",
   properties: {
     runs_per_day: { type: "integer" },
     items_per_run: { type: "integer" },
     seconds_per_run: { type: "integer" },
     model_calls_per_day: { type: "integer" },
     tokens_per_day: { type: "integer" },
+    web_requests_per_run: { type: "integer" },
   },
 } as const;
 
@@ -99,13 +100,13 @@ export const maintenance_feature = define_feature({
   api: {
     list_maintenance_jobs: {
       description:
-        "Lists CODEX's built-in maintenance jobs, which keep the index, embeddings and graph up to date in the background, and write a daily digest: each with what it does, whether it is on, its budget (runs a day, things handled per run, seconds per run, and for the one that calls a model, model calls and tokens a day), today's use, its last run, and why it last did nothing. They run only on the device chosen for background work, but the index and embeddings, which every device keeps for itself.",
+        "Lists CODEX's built-in maintenance jobs, which keep the index, embeddings and graph up to date in the background, research the assistant's accepted interests on the web, and write a daily digest: each with what it does, whether it is on, its budget (runs a day, things handled per run, seconds per run, and for the one that calls a model, model calls and tokens a day), today's use, its last run, and why it last did nothing. They run only on the device chosen for background work, but the index and embeddings, which every device keeps for itself.",
       params: [],
     },
     set_maintenance_job: {
       description: "Turns one maintenance job on or off, or changes its budget. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
-        { name: "key", schema: { type: "string", enum: maintenance_keys, description: "The job: index, embed, rules, similarity, tidy, suggest or digest." } },
+        { name: "key", schema: { type: "string", enum: maintenance_keys, description: "The job: index, embed, rules, similarity, tidy, suggest, research or digest." } },
         {
           name: "changes",
           schema: { type: "object", properties: { on: { type: "boolean", description: "true to turn it on." }, budget: budget_schema }, description: "What changes; what is left out stays." },

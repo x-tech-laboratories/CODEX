@@ -1,4 +1,4 @@
-// The seven maintenance jobs, each a cheap check that says how much work there is without calling a model or any app,
+// The eight maintenance jobs, each a cheap check that says how much work there is without calling a model or any app,
 // and a run that does at most its budget's worth. Changes go through the action policy: a rule's links and the ending
 // of links CODEX itself made are its own derived data, rebuilt from the items; ending a link the user, a program or an
 // engine made is applied only at its `background` level and otherwise proposed; similar items, entities that look
@@ -14,8 +14,7 @@ import { assistant_host } from "../conversations/host.ts";
 import { conversation_collector, conversation_item_id } from "../conversations/model.ts";
 import { add_conversation_record, has_conversation, rename_conversation_record } from "../conversations/records.ts";
 import { maintenance_conversation_id } from "../jobs/model.ts";
-import { find_engine, start_run, stop_run_of, type RunEnd } from "../conversations/run.ts";
-import { is_hosted } from "../engines/engine.ts";
+import { start_run, stop_run_of, type RunEnd } from "../conversations/run.ts";
 import { drizzle_of } from "../feature.ts";
 import { node_key, parse_node_key, type NodeKind } from "../graph/model.ts";
 import { from_key, is_open, name_key, now as graph_now, parse_names, read_joins, to_key, type LinkRow } from "../graph/records.ts";
@@ -25,11 +24,12 @@ import { propose_similar } from "../graph/similarity.ts";
 import { graph_part, proposals_note, suggest_links_message, suggest_rounds, suggest_tools } from "../graph/store.ts";
 import { insert_link } from "../graph/writing.ts";
 import { inbox_feature } from "../inbox/store.ts";
-import { background_setting } from "../jobs/records.ts";
 import { context_mark } from "../jobs/runner.ts";
 import { decide, level_of } from "../policy/policy.ts";
 import { add_proposal, list_proposals_of } from "../policy/proposals.ts";
 import { count_changed, count_out_of_step, count_unembedded, drop_changed, embed_pending, find_embedder, peek_changed, sync_documents } from "../search/indexer.ts";
+import { background_engine } from "./engine.ts";
+import { research_job } from "./research.ts";
 import { maintenance_contexts } from "./schema.ts";
 import { maintenance_jobs, maintenance_keys, type MaintenanceBudget, type MaintenanceKey, type MaintenanceUse } from "./model.ts";
 import { checks_of, runs_since } from "./records.ts";
@@ -335,16 +335,6 @@ const tidy_job: MaintenanceJob = {
 
 // ── 6. Suggest links ─────────────────────────────────────────────────────────
 
-// The engine background work may use, or why there is none.
-export async function background_engine(database: SqlDatabase): Promise<{ problem: string }> {
-  const found = await find_engine(database);
-  if (!found.running) return { problem: `${found.problem} Suggest links needs one.` };
-  if (is_hosted(found.running) && !background_setting(database, "hosted")) {
-    return { problem: `The engine in use, ${found.engine?.label ?? "the one chosen"}, is hosted, and background work uses only an engine on this computer or your own network unless you allow a hosted one above.` };
-  }
-  return { problem: "" };
-}
-
 type SuggestRow = typeof maintenance_contexts.$inferSelect;
 
 // Contexts holding items whose items changed since Suggest links last ran on them in the background, longest waiting first.
@@ -392,8 +382,8 @@ function suggest_on(database: SqlDatabase, context_id: string, conversation_id: 
 
 const suggest_job: MaintenanceJob = {
   async check({ database }) {
-    const { problem } = await background_engine(database);
-    if (problem) return { count: 0, reason: problem };
+    const { problem, no_engine } = await background_engine(database);
+    if (problem) return { count: 0, reason: no_engine ? `${problem} Suggest links needs one.` : problem };
     return { count: contexts_to_suggest(database).length };
   },
   async run({ database, budget, used, signal, now }) {
@@ -474,5 +464,6 @@ export const job_work: Record<MaintenanceKey, MaintenanceJob> = {
   similarity: similarity_job,
   tidy: tidy_job,
   suggest: suggest_job,
+  research: research_job,
   digest: digest_job,
 };
