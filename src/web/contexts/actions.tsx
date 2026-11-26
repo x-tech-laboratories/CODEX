@@ -10,6 +10,7 @@ import type { MenuItem } from "@x-tech-laboratories/x-libs/web/menus";
 
 import type { ContextSummary } from "../../shared/contexts/model.ts";
 import { new_blueprint } from "../blueprints/BlueprintView.tsx";
+import { job_dialog } from "../jobs/JobDialog.tsx";
 import { attempt, calls, succeeds } from "../api.ts";
 
 // ── Routes ───────────────────────────────────────────────────────────────────
@@ -98,6 +99,7 @@ export function context_menu(context: ContextSummary, on_deleted?: () => void): 
   return [
     { label: "New context inside", run: () => new_context(context.id) },
     { label: "New blueprint…", run: () => new_blueprint(context) },
+    { label: "New job…", run: () => job_dialog({ context_id: context.id }) },
     { label: "Rename…", run: () => rename_context(context) },
     { label: context.is_archived ? "Bring back" : "Archive", run: () => void succeeds(() => calls().set_context_archived(context.id, !context.is_archived)) },
     { label: "Delete…", danger: true, separator_before: true, run: () => delete_context(context, on_deleted) },
