@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 
 import { network_plugins } from "../src/shared/collectors/bundled.ts";
-import { use_plugins, type ContextPluginApi } from "../src/shared/collectors/host.ts";
+import { use_plugins, type ContextPlugin, type ContextPluginApi } from "../src/shared/collectors/host.ts";
 import type { ConversationEvent } from "../src/shared/conversations/model.ts";
 import type { EngineEvent, EngineRequest } from "../src/shared/engines/engine.ts";
 import { bind_methods, open_store, start_assistant, type ContextMethods } from "../src/shared/store.ts";
@@ -24,7 +24,7 @@ export interface Fixture {
 
 // A scripted engine plugin, provided as "fake", answering with whatever the test's script yields.
 // The engine is local unless asked to be hosted, so only the privacy tests see items withheld.
-export function start_fixture(options: { choose_engine?: boolean; hosted?: boolean; on_event?: (event: ConversationEvent) => void; on_announce?: () => void } = {}): Fixture {
+export function start_fixture(options: { choose_engine?: boolean; hosted?: boolean; plugins?: ContextPlugin[]; on_event?: (event: ConversationEvent) => void; on_announce?: () => void } = {}): Fixture {
   const database = new DatabaseSync(":memory:");
   open_store(database);
   const events: ConversationEvent[] = [];
@@ -48,7 +48,7 @@ export function start_fixture(options: { choose_engine?: boolean; hosted?: boole
         },
       }),
   });
-  use_plugins([...network_plugins, fake]);
+  use_plugins([...network_plugins, fake, ...(options.plugins ?? [])]);
   const announce = () => {
     announcements += 1;
     options.on_announce?.();

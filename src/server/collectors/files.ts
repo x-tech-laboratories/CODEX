@@ -3,9 +3,9 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { define_plugin, type SettingValues } from "@x-tech-laboratories/x-libs/plugins";
@@ -94,6 +94,33 @@ export async function look_up_files(paths: string[]): Promise<Record<string, Fou
   return Object.fromEntries(answers.filter((item) => item !== null).map((item) => [item.source_id, item]));
 }
 
+// ── Content ──────────────────────────────────────────────────────────────────
+
+// Plain text and Markdown files are read for the search index; any other file is skipped rather than guessed at.
+const text_extensions = new Set([".txt", ".text", ".md", ".markdown"]);
+
+// The longest file read, so a huge log cannot fill the index.
+export const most_content_bytes = 256 * 1024;
+
+// The text of each plain text or Markdown file no larger than the cap; others, folders and files gone are left out.
+export async function read_text_files(paths: string[]): Promise<Record<string, string>> {
+  const answers = await Promise.all(
+    paths.map(async (path): Promise<[string, string] | null> => {
+      if (!text_extensions.has(extname(path).toLowerCase())) return null;
+      try {
+        const info = await stat(path);
+        if (!info.isFile() || info.size > most_content_bytes) return null;
+        const text = await readFile(path, "utf8");
+        // A NUL byte means a binary file with a text name.
+        return text.includes("\u0000") ? null : [path, text];
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return Object.fromEntries(answers.filter((answer) => answer !== null));
+}
+
 // ── Plugin ───────────────────────────────────────────────────────────────────
 
 export const files_plugin = define_plugin<ContextPluginApi>({
@@ -104,5 +131,6 @@ export const files_plugin = define_plugin<ContextPluginApi>({
       kinds: ["file", "folder"],
       search: (query) => find_files(folders_of(context.settings()), query, Number(context.settings().depth) || 6),
       resolve: look_up_files,
+      content: read_text_files,
     }),
 });

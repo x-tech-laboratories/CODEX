@@ -1,0 +1,101 @@
+// What the index holds, read from the store: every context (its name and notes), every item some context keeps (its
+// title, snippet and the user's notes on it), and every message of the user and the assistant. An item's text from its
+// app is read by the indexer, through its collector, and held only in the index.
+
+// ── Imports ──────────────────────────────────────────────────────────────────
+
+import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
+
+import { inArray, ne } from "@x-tech-laboratories/x-libs/drizzle";
+import { context_items, contexts, items } from "../contexts/schema.ts";
+import { conversation_messages } from "../conversations/schema.ts";
+import { general_conversation } from "../conversations/model.ts";
+import { drizzle_of } from "../feature.ts";
+import type { HitKind } from "./model.ts";
+import { text_hash } from "./text.ts";
+
+// ── Documents ────────────────────────────────────────────────────────────────
+
+export interface SourceDocument {
+  // "item:<id>", "context:<id>" or "message:<id>".
+  key: string;
+  kind: HitKind;
+  ref_id: string;
+  // The item's collector; empty for what the user or the assistant wrote in CODEX.
+  collector: string;
+  source_id: string;
+  title: string;
+  // What the store says of it: an item's snippet and notes, a context's notes, a message's text.
+  body: string;
+  context_ids: string[];
+  // Changes when what the item's app said of it changes, which is when its text is read again.
+  source_hash: string;
+}
+
+// Every document the store holds now.
+export function read_documents(database: SqlDatabase): SourceDocument[] {
+  const db = drizzle_of(database);
+  const documents: SourceDocument[] = [];
+  for (const context of db.select().from(contexts).all()) {
+    documents.push({ key: `context:${context.id}`, kind: "context", ref_id: context.id, collector: "", source_id: "", title: context.name, body: context.notes, context_ids: [context.id], source_hash: "" });
+  }
+  const memberships = db.select({ item_id: context_items.item_id, context_id: context_items.context_id, note: context_items.note }).from(context_items).all();
+  const held = new Map<string, { context_ids: string[]; notes: string[] }>();
+  for (const membership of memberships) {
+    const entry = held.get(membership.item_id) ?? { context_ids: [], notes: [] };
+    entry.context_ids.push(membership.context_id);
+    if (membership.note.trim()) entry.notes.push(membership.note.trim());
+    held.set(membership.item_id, entry);
+  }
+  const kept = held.size > 0 ? db.select().from(items).where(inArray(items.id, [...held.keys()])).all() : [];
+  for (const item of kept) {
+    const entry = held.get(item.id)!;
+    documents.push({
+      key: `item:${item.id}`,
+      kind: "item",
+      ref_id: item.id,
+      collector: item.collector,
+      source_id: item.source_id,
+      title: item.title,
+      body: [item.snippet, ...entry.notes].filter((part) => part.trim()).join("\n"),
+      context_ids: entry.context_ids.sort(),
+      source_hash: text_hash(JSON.stringify([item.collector, item.title, item.snippet, item.uri, item.status, item.detail])),
+    });
+  }
+  const messages = db.select().from(conversation_messages).where(ne(conversation_messages.role, "event")).all();
+  for (const message of messages) {
+    if (!message.text.trim()) continue;
+    const context_ids = message.conversation_id === general_conversation ? [] : [message.conversation_id];
+    documents.push({ key: `message:${message.id}`, kind: "message", ref_id: message.id, collector: "", source_id: "", title: message.role === "user" ? "You" : "Assistant", body: message.text, context_ids, source_hash: "" });
+  }
+  return documents;
+}
+
+// ── Places ───────────────────────────────────────────────────────────────────
+
+// Every context's name and parent, by id, to say where a hit is and to scope a search to a context and those inside it.
+export function context_tree(database: SqlDatabase): Map<string, { name: string; parent_id: string | null }> {
+  return new Map(
+    drizzle_of(database)
+      .select({ id: contexts.id, name: contexts.name, parent_id: contexts.parent_id })
+      .from(contexts)
+      .all()
+      .map((row) => [row.id, { name: row.name, parent_id: row.parent_id }]),
+  );
+}
+
+// The context and every context inside it.
+export function subtree(tree: Map<string, { parent_id: string | null }>, root: string): Set<string> {
+  const found = new Set([root]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const [id, context] of tree) {
+      if (context.parent_id && found.has(context.parent_id) && !found.has(id)) {
+        found.add(id);
+        grew = true;
+      }
+    }
+  }
+  return found;
+}

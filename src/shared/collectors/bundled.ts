@@ -167,6 +167,12 @@ export const x_tasks_plugin = define_plugin<ContextPluginApi>({
         const tasks = await list_x_tasks(context.settings());
         return Object.fromEntries(tasks.filter((task) => wanted.has(task.id)).map((task) => [task.id, task_item(task)]));
       },
+      // A task's notes.
+      content: async (source_ids) => {
+        const wanted = new Set(source_ids);
+        const tasks = await list_x_tasks(context.settings());
+        return Object.fromEntries(tasks.filter((task) => wanted.has(task.id) && (task.notes ?? "").trim()).map((task) => [task.id, task.notes]));
+      },
       feeds: {
         list: async () => {
           const settings = context.settings();
@@ -207,6 +213,24 @@ function trilium_headers(settings: SettingValues): Record<string, string> {
   return { authorization: String(settings.token ?? "") };
 }
 
+const html_entities: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+
+// A Trilium text note's HTML as plain words: blocks on lines of their own, tags dropped, the common entities read.
+export function html_text(html: string): string {
+  return html
+    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<\/?(p|div|br|li|h[1-6]|tr|blockquote|pre)\b[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole: string, name: string) => {
+      if (name.startsWith("#x") || name.startsWith("#X")) return String.fromCodePoint(parseInt(name.slice(2), 16));
+      if (name.startsWith("#")) return String.fromCodePoint(Number(name.slice(1)));
+      return html_entities[name.toLowerCase()] ?? whole;
+    })
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s*\n+/g, "\n\n")
+    .trim();
+}
+
 export const trilium_plugin = define_plugin<ContextPluginApi>({
   ...trilium_manifest,
   start: (context) =>
@@ -231,6 +255,24 @@ export const trilium_plugin = define_plugin<ContextPluginApi>({
           }),
         );
         return Object.fromEntries(answers.filter((item) => item !== null).map((item) => [item.source_id, item]));
+      },
+      // A text note's words and a code note's text, read through ETAPI; other kinds of note, such as images, have none.
+      content: async (source_ids) => {
+        const settings = context.settings();
+        const address = server_of(settings, "Trilium");
+        const answers = await Promise.all(
+          source_ids.map(async (id): Promise<[string, string] | null> => {
+            const response = await fetch(`${address}/etapi/notes/${encodeURIComponent(id)}`, { headers: trilium_headers(settings) });
+            if (response.status === 404) return null;
+            const note = (await read_json(response, "Trilium")) as TriliumNote;
+            if (note.type !== "text" && note.type !== "code") return null;
+            const body = await fetch(`${address}/etapi/notes/${encodeURIComponent(id)}/content`, { headers: trilium_headers(settings) });
+            if (!body.ok) return null;
+            const text = await body.text();
+            return [id, note.type === "text" ? html_text(text) : text];
+          }),
+        );
+        return Object.fromEntries(answers.filter((answer) => answer !== null));
       },
     }),
 });

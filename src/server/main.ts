@@ -3,7 +3,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { keep_backing_up } from "@x-tech-laboratories/x-libs/backups";
@@ -12,6 +12,7 @@ import { load_accounts } from "@x-tech-laboratories/x-libs/server/passwords";
 import { sqlite_backups, take_staged_restore } from "@x-tech-laboratories/x-libs/server/sqlite_backups";
 
 import { codex_backup_naming, read_schedule } from "../shared/backups.ts";
+import { keep_indexing, open_index } from "../shared/search/indexer.ts";
 import { needs_upgrade, open_store, sync_engine } from "../shared/store.ts";
 import { build_app } from "./app.ts";
 import { load_collectors } from "./collectors/index.ts";
@@ -80,6 +81,15 @@ const backing_up = keep_backing_up(kept, read_backup_schedule);
 await load_collectors(config.plugins_folder ? resolve(config.plugins_folder) : null);
 const refreshing = keep_refreshing(() => database);
 
+// ── Search index ─────────────────────────────────────────────────────────────
+
+// A file of its own beside the database, never synced or backed up, and rebuilt from the store if it is deleted.
+const index_path = join(dirname(database_path), `${basename(database_path, extname(database_path))}-index.db`);
+const index = new DatabaseSync(index_path);
+index.exec("PRAGMA journal_mode = WAL");
+open_index(index);
+const indexing = keep_indexing({ database: () => database, index: () => index });
+
 // ── Server ───────────────────────────────────────────────────────────────────
 
 const app = await build_app({
@@ -103,6 +113,7 @@ console.info(`CODEX is serving http://${server_config.host}:${server_config.port
 
 function stop(): void {
   refreshing.stop();
+  void indexing.stop().then(() => index.close());
   backing_up.stop();
   void app.close().then(() => database.close());
 }

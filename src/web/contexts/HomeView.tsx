@@ -1,15 +1,17 @@
-// The first page: a search across every item kept, and each top-level context with what is inside it.
+// The first page: a search across everything kept, by words and meaning, and each top-level context with what is inside it.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
+import { Layers, MessageSquare } from "lucide-react";
 import { Chip, Chips } from "@x-tech-laboratories/x-libs/web/react/badges";
 import { SearchBox } from "@x-tech-laboratories/x-libs/web/react/controls";
-import { AddIcon, Icon } from "@x-tech-laboratories/x-libs/web/react/icons";
+import { AddIcon, Icon, type IconGlyph } from "@x-tech-laboratories/x-libs/web/react/icons";
 import { Card, Cards, PageHeading, Section } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Empty, Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 
 import type { ContextSummary } from "../../shared/contexts/model.ts";
+import type { HitKind, SearchHit } from "../../shared/search/model.ts";
 import { use_data } from "../api.ts";
 import { context_href, new_context } from "./actions.tsx";
 import { seed_dialog } from "./FeedDialogs.tsx";
@@ -17,39 +19,56 @@ import { look_of } from "./kinds.tsx";
 
 // ── Search ───────────────────────────────────────────────────────────────────
 
+const hit_icons: Record<Exclude<HitKind, "item">, IconGlyph> = { context: Layers, message: MessageSquare };
+
+function go_to(context_id: string): void {
+  window.location.hash = context_href(context_id).slice(1);
+}
+
+// One thing found: its title, opening in its app or on its context's page, the words around the match and where it is.
+function Hit({ hit }: { hit: SearchHit }) {
+  const icon = hit.kind === "item" ? look_of(hit.item_kind).icon : hit_icons[hit.kind];
+  const where = hit.kind === "message" && hit.where.length === 0 ? [{ id: "", name: "General conversation" }] : hit.where;
+  const title =
+    hit.kind === "item" && hit.uri ? (
+      <a href={hit.uri} target="_blank" rel="noreferrer">
+        {hit.title}
+      </a>
+    ) : hit.kind === "context" ? (
+      <a href={context_href(hit.id)}>{hit.title}</a>
+    ) : (
+      <span>{hit.kind === "message" ? `${hit.title}, in a conversation` : hit.title}</span>
+    );
+  return (
+    <li className="item-row">
+      <Icon icon={icon} />
+      <div className="item-text">
+        <div className="item-title">{title}</div>
+        {hit.excerpt && <span className="muted item-snippet">{hit.excerpt}</span>}
+        <Chips inline>
+          {where.map((place) => (
+            <Chip key={place.id || place.name} on_click={place.id ? () => go_to(place.id) : undefined}>
+              {place.name}
+            </Chip>
+          ))}
+        </Chips>
+      </div>
+    </li>
+  );
+}
+
 function Found({ query }: { query: string }) {
-  const found = use_data((api) => api.search_kept_items(query), [query]);
+  const found = use_data((api) => api.search_index(query, null, 30), [query]);
   return (
     <Section title="Found">
       <Loaded resource={found}>
-        {(items) =>
-          items.length === 0 ? (
-            <Empty title="Nothing kept matches" hint="Only items already in a context are searched here; add new ones from a context's page." />
+        {(hits) =>
+          hits.length === 0 ? (
+            <Empty title="Nothing matches" hint="Items in your contexts, their text from their apps, your contexts' notes and the conversations are searched; add new items from a context's page." />
           ) : (
             <ul className="item-list">
-              {items.map((item) => (
-                <li key={item.id} className="item-row">
-                  <Icon icon={look_of(item.kind).icon} />
-                  <div className="item-text">
-                    <div className="item-title">
-                      {item.uri ? (
-                        <a href={item.uri} target="_blank" rel="noreferrer">
-                          {item.title}
-                        </a>
-                      ) : (
-                        <span>{item.title}</span>
-                      )}
-                    </div>
-                    {item.snippet && <span className="muted item-snippet">{item.snippet}</span>}
-                    <Chips inline>
-                      {item.contexts.map((context) => (
-                        <Chip key={context.id} on_click={() => (window.location.hash = context_href(context.id).slice(1))}>
-                          {context.name}
-                        </Chip>
-                      ))}
-                    </Chips>
-                  </div>
-                </li>
+              {hits.map((hit) => (
+                <Hit key={`${hit.kind}:${hit.id}`} hit={hit} />
               ))}
             </ul>
           )

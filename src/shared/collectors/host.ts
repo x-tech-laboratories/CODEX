@@ -7,15 +7,17 @@
 import { create_plugin_host, type Plugin, type PluginHost, type PluginRecords, type PluginStorage } from "@x-tech-laboratories/x-libs/plugins";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
+import type { Embedder } from "../embedders/embedder.ts";
 import type { Engine } from "../engines/engine.ts";
 import { settings_feature } from "../settings.ts";
 import { app_info, plugins_setting, type Collector } from "./collector.ts";
 
 // ── Api ──────────────────────────────────────────────────────────────────────
 
-// A plugin provides collectors, which bring items from other apps, or engines, which answer the conversations.
+// A plugin provides collectors, which bring items from other apps, engines, which answer the conversations, or
+// embedders, which turn text into vectors for the search index.
 export interface ContextPluginApi {
-  providers: { collector: Collector; engine: Engine };
+  providers: { collector: Collector; engine: Engine; embedder: Embedder };
 }
 
 export type ContextPlugin = Plugin<ContextPluginApi>;
