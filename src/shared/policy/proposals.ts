@@ -2,7 +2,7 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { and, asc, eq, ne } from "@x-tech-laboratories/x-libs/drizzle";
+import { and, asc, desc, eq, ne } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { drizzle_of, new_id } from "../feature.ts";
@@ -22,7 +22,11 @@ function as_proposal(row: typeof proposals.$inferSelect): Proposal {
 }
 
 export function add_proposal(database: SqlDatabase, values: { conversation_id: string; method: string; arguments: Record<string, unknown>; summary: string; reason: ProposalReason }): Proposal {
-  const row = { id: new_id(), ...values, arguments: JSON.stringify(values.arguments), status: "waiting", result: "", created_at: new Date().toISOString(), resolved_at: "" };
+  // After every proposal before it, even one made in the same millisecond, so they list in the order they were made.
+  const last = drizzle_of(database).select({ created_at: proposals.created_at }).from(proposals).orderBy(desc(proposals.created_at)).limit(1).get();
+  let created_at = new Date().toISOString();
+  if (last && created_at <= last.created_at) created_at = new Date(Date.parse(last.created_at) + 1).toISOString();
+  const row = { id: new_id(), ...values, arguments: JSON.stringify(values.arguments), status: "waiting", result: "", created_at, resolved_at: "" };
   drizzle_of(database).insert(proposals).values(row).run();
   return as_proposal(row);
 }
