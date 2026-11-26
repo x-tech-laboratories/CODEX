@@ -15,7 +15,9 @@ const text_of = (value: unknown) => (typeof value === "string" ? value : "");
 
 function kinds_of(value: unknown): SourceKind[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((each) => typeof each?.kind === "string").map((each) => ({ kind: String(each.kind), label: text_of(each.label) || String(each.kind) }));
+  return value
+    .filter((each) => typeof each?.kind === "string")
+    .map((each) => ({ kind: String(each.kind), label: text_of(each.label) || String(each.kind), ...(each.has_text === true ? { has_text: true } : {}) }));
 }
 
 // The list as stored, anything malformed left out.

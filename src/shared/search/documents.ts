@@ -2,7 +2,8 @@
 // title, snippet and the user's notes on it; a conversation's title and notes alone), every message of the user
 // and the assistant, placed in the contexts holding its conversation, every entity of the graph not rejected (its
 // name, kind and other names), placed in the contexts it is linked to, and every blueprint. An item's text from its
-// app is read by the indexer, through its collector, and held only in the index.
+// app is read by the indexer, through its collector, and held only in the index; for an app read through the item
+// calls, again once the item's changed_at in that app moved.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,7 @@ import { conversation_collector, conversation_item_id } from "../conversations/m
 import { drizzle_of } from "../feature.ts";
 import { graph_entities, graph_links } from "../graph/schema.ts";
 import { parse_sources } from "../privacy/sources.ts";
+import { item_source_stamps } from "../sources/schema.ts";
 import type { HitKind } from "./model.ts";
 import { text_hash } from "./text.ts";
 
@@ -57,6 +59,8 @@ export function read_documents(database: SqlDatabase): SourceDocument[] {
     held.set(membership.item_id, entry);
   }
   const kept = held.size > 0 ? db.select().from(items).where(inArray(items.id, [...held.keys()])).all() : [];
+  // When an app read through the item calls last changed each item, so a change past its snippet is read again too.
+  const stamps = new Map(db.select().from(item_source_stamps).all().map((row) => [row.item_id, row.changed_at]));
   for (const item of kept) {
     const entry = held.get(item.id)!;
     // A blueprint is a document of its own below, held or not.
@@ -76,7 +80,7 @@ export function read_documents(database: SqlDatabase): SourceDocument[] {
       body: [item.snippet, ...entry.notes].filter((part) => part.trim()).join("\n"),
       context_ids: entry.context_ids.sort(),
       sources: [item.collector],
-      source_hash: text_hash(JSON.stringify([item.collector, item.title, item.snippet, item.uri, item.status, item.detail])),
+      source_hash: text_hash(JSON.stringify([item.collector, item.title, item.snippet, item.uri, item.status, item.detail, ...(stamps.has(item.id) ? [stamps.get(item.id)] : [])])),
     });
   }
   const messages = db.select().from(conversation_messages).where(ne(conversation_messages.role, "event")).all();

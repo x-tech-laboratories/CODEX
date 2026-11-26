@@ -31,11 +31,32 @@ describe("the item calls", () => {
   it("names CODEX's own kinds", async () => {
     const { calls } = store();
     expect(await calls.list_item_kinds()).toEqual([
-      { kind: "context", label: "Context" },
-      { kind: "conversation", label: "Conversation" },
-      { kind: "entity", label: "Entity" },
-      { kind: "blueprint", label: "Blueprint" },
+      { kind: "context", label: "Context", has_text: true },
+      { kind: "conversation", label: "Conversation", has_text: false },
+      { kind: "entity", label: "Entity", has_text: false },
+      { kind: "blueprint", label: "Blueprint", has_text: true },
     ]);
+  });
+
+  it("gives a context's notes and a blueprint's body as Markdown text, and nothing of conversations or entities", async () => {
+    const { database, calls } = store();
+    const notes = `Tiles from the **garden** centre.\n\n${"More about the tiles. ".repeat(20)}`;
+    const kitchen = calls.add_context("Kitchen", null);
+    calls.set_context_notes(kitchen, notes);
+    const empty = calls.add_context("Empty");
+    const blueprint = calls.add_blueprint("Weekly review", "When the user asks for the weekly review.", "1. List open tasks.", null);
+    const talk = add_conversation_record(database, kitchen);
+    say(database, talk, "user", "A secret message.", "2026-11-20T10:00:00.000Z");
+    const entity = calls.add_entity("person", "Ada");
+
+    const ids = [`context:${kitchen}`, `context:${empty}`, `blueprint:${blueprint}`, `conversation:${talk}`, `entity:${entity}`, "context:gone", "nonsense"];
+    const texts = await calls.get_item_texts(ids);
+    const [kitchen_item, blueprint_item] = await calls.get_items([`context:${kitchen}`, `blueprint:${blueprint}`]);
+    expect(texts).toEqual([
+      { id: `context:${kitchen}`, text: notes, format: "markdown", changed_at: kitchen_item!.changed_at, is_truncated: false },
+      { id: `blueprint:${blueprint}`, text: "1. List open tasks.", format: "markdown", changed_at: blueprint_item!.changed_at, is_truncated: false },
+    ]);
+    expect(JSON.stringify(texts)).not.toContain("secret");
   });
 
   it("finds contexts by name and notes, conversations by title, entities by their names, titles first", async () => {
@@ -128,7 +149,7 @@ describe("the item calls", () => {
   });
 
   it("are read-only calls, never offered to engines", () => {
-    for (const name of ["list_item_kinds", "search_items", "get_items", "list_item_changes"]) {
+    for (const name of ["list_item_kinds", "search_items", "get_items", "list_item_changes", "get_item_texts"]) {
       expect(context_api).toHaveProperty(name);
       expect(offered_api).not.toHaveProperty(name);
     }
@@ -170,13 +191,17 @@ describe("the item calls on the server", () => {
     expect(kinds.json<unknown[]>()).toHaveLength(4);
     const changes = await app.inject({ method: "POST", url: "/api/call/list_item_changes", headers: reader, payload: { since: null, limit: 5 } });
     expect(changes.json<unknown[]>()).toHaveLength(1);
+    const [garden] = changes.json<{ id: string }[]>();
+    const texts = await app.inject({ method: "POST", url: "/api/call/get_item_texts", headers: reader, payload: { ids: [garden!.id] } });
+    expect(texts.statusCode).toBe(200);
+    expect(texts.json<unknown[]>()).toEqual([]);
     expect((await app.inject({ method: "POST", url: "/api/call/add_context", headers: reader, payload: ["Nope"] })).statusCode).toBe(403);
   });
 
   it("lists them in the OpenAPI document as reads and serves them over MCP as read-only tools", async () => {
     const reader = await start();
     const openapi = (await app.inject({ method: "GET", url: "/api/openapi.json", headers: reader })).json<{ paths: Record<string, { post: { operationId: string; tags: string[] } }> }>();
-    for (const name of ["list_item_kinds", "search_items", "get_items", "list_item_changes"]) expect(openapi.paths[`/api/call/${name}`]!.post).toMatchObject({ operationId: name, tags: ["read"] });
+    for (const name of ["list_item_kinds", "search_items", "get_items", "list_item_changes", "get_item_texts"]) expect(openapi.paths[`/api/call/${name}`]!.post).toMatchObject({ operationId: name, tags: ["read"] });
     const reply = await app.inject({
       method: "POST",
       url: "/api/mcp",
@@ -187,5 +212,6 @@ describe("the item calls on the server", () => {
     const tools = (JSON.parse(data) as { result: { tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] } }).result.tools;
     const search = tools.find((tool) => tool.name === "search_items");
     expect(search?.annotations?.readOnlyHint).toBe(true);
+    expect(tools.find((tool) => tool.name === "get_item_texts")?.annotations?.readOnlyHint).toBe(true);
   });
 });

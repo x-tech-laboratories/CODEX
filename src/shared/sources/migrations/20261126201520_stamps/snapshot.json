@@ -1,0 +1,97 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "77f799ec-191a-4ebf-8dac-a580404de23c",
+  "prevIds": [
+    "74281aed-10b3-448d-adc1-d214768606b1"
+  ],
+  "ddl": [
+    {
+      "name": "item_source_cursors",
+      "entityType": "tables"
+    },
+    {
+      "name": "item_source_stamps",
+      "entityType": "tables"
+    },
+    {
+      "table": "item_source_cursors",
+      "name": "source_id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "item_source_cursors",
+      "name": "cursor",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "item_source_cursors",
+      "name": "updated_at",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "item_source_stamps",
+      "name": "item_id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "item_source_stamps",
+      "name": "source_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "item_source_stamps",
+      "name": "changed_at",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "item_source_cursors",
+      "name": "item_source_cursors_pk",
+      "columns": [
+        "source_id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "item_source_stamps",
+      "name": "item_source_stamps_pk",
+      "columns": [
+        "item_id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    }
+  ],
+  "renames": []
+}

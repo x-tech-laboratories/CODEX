@@ -8,7 +8,7 @@ import { Dialogs } from "@x-tech-laboratories/x-libs/web/react/dialog";
 import { Toasts } from "@x-tech-laboratories/x-libs/web/react/toasts";
 
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
-import { forget_prefixes } from "../src/shared/sources/client.ts";
+import { forget_item_prefixes as forget_prefixes } from "@x-tech-laboratories/x-libs/item_client";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { set_page_api } from "../src/web/api.ts";
 import { forget_page_plugins } from "../src/web/plugins.tsx";

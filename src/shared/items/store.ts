@@ -1,11 +1,12 @@
-// The four calls every X-app answers about its items for other apps, through X-Libs `items`: CODEX's own contexts,
+// The calls every X-app answers about its items for other apps, through X-Libs `items`: CODEX's own contexts,
 // conversations, entities and blueprints, never the items it merely points to in other apps, which those apps answer
-// for. A conversation is told by its title, the contexts holding it and when it was used, never by its messages.
+// for. A conversation is told by its title, the contexts holding it and when it was used, never by its messages. A
+// context's notes and a blueprint's body are their full text, through get_item_texts; conversations and entities have none.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { and, eq, inArray, like, or, sql } from "@x-tech-laboratories/x-libs/drizzle";
-import { item_calls, history_item_changes, type DeletedItem, type ItemFields, type ItemMethods } from "@x-tech-laboratories/x-libs/items";
+import { item_calls, history_item_changes, type DeletedItem, type ItemFields, type ItemMethods, type ItemTextFields, type ItemTextMethods } from "@x-tech-laboratories/x-libs/items";
 import { in_transaction, type SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { blueprints } from "../blueprints/schema.ts";
@@ -24,10 +25,10 @@ import { item_marks } from "./schema.ts";
 // ── Kinds ────────────────────────────────────────────────────────────────────
 
 export const item_kinds = [
-  { kind: "context", label: "Context" },
-  { kind: conversation_kind, label: "Conversation" },
-  { kind: "entity", label: "Entity" },
-  { kind: "blueprint", label: "Blueprint" },
+  { kind: "context", label: "Context", has_text: true },
+  { kind: conversation_kind, label: "Conversation", has_text: false },
+  { kind: "entity", label: "Entity", has_text: false },
+  { kind: "blueprint", label: "Blueprint", has_text: true },
 ] as const;
 
 type OwnKind = (typeof item_kinds)[number]["kind"];
@@ -271,6 +272,24 @@ function get(database: SqlDatabase, item_ids: string[]): ItemFields[] {
   return item_ids.flatMap((id) => (by_id.has(id) ? [by_id.get(id)!] : []));
 }
 
+// ── Texts ────────────────────────────────────────────────────────────────────
+
+// A context's notes and a blueprint's body as Markdown, each dated as get_items dates it; empty ones left out.
+function texts(database: SqlDatabase, item_ids: string[]): ItemTextFields[] {
+  const wanted = { context: [] as string[], blueprint: [] as string[] };
+  for (const item_id of item_ids) {
+    const parsed = parse_own_id(item_id);
+    if (parsed?.kind === "context" || parsed?.kind === "blueprint") wanted[parsed.kind].push(parsed.id);
+  }
+  const db = drizzle_of(database);
+  const found_contexts = wanted.context.length ? db.select().from(contexts).where(inArray(contexts.id, wanted.context)).all() : [];
+  const found_blueprints = wanted.blueprint.length ? db.select().from(blueprints).where(inArray(blueprints.id, wanted.blueprint)).all() : [];
+  return [
+    ...found_contexts.map((row) => ({ id: own_item_id("context", row.id), text: row.notes, format: "markdown" as const, changed_at: latest_version_at(database, "context", row.id, row.created_at) })),
+    ...found_blueprints.map((row) => ({ id: own_item_id("blueprint", row.id), text: row.body, format: "markdown" as const, changed_at: latest_version_at(database, "blueprint", row.id, row.updated_at) })),
+  ].filter((each) => each.text.trim() !== "");
+}
+
 // ── Changes ──────────────────────────────────────────────────────────────────
 
 // Contexts, entities and blueprints from their versions in History; a context's version counts its memberships.
@@ -327,6 +346,7 @@ function calls_on(database: SqlDatabase) {
       search: (query, limit) => search(database, query, limit),
       get: (ids) => get(database, ids),
       changes: async (since, limit) => [...(await history_changes(database)(since, limit)), ...conversation_changes(database, since, limit)],
+      text: (ids) => texts(database, ids),
     },
     { scheme: link_scheme },
   );
@@ -345,11 +365,13 @@ export const items_feature = define_feature({
     get_items: (database: SqlDatabase, ids: string[]): ReturnType<ItemMethods["get_items"]> => calls_on(database).methods.get_items(ids),
     list_item_changes: (database: SqlDatabase, since?: string | null, limit?: number): ReturnType<ItemMethods["list_item_changes"]> =>
       calls_on(database).methods.list_item_changes(since, limit),
+    get_item_texts: (database: SqlDatabase, ids: string[]): ReturnType<ItemTextMethods["get_item_texts"]> => calls_on(database).methods.get_item_texts(ids),
   },
   api: {
     list_item_kinds: { ...spec.list_item_kinds, description: `${spec.list_item_kinds.description} CODEX's own are contexts, conversations, entities and blueprints; the items it points to in other apps are answered for by those apps.` },
     search_items: { ...spec.search_items, description: `${spec.search_items.description} Contexts are found by name and notes, conversations by title and the notes on them, entities by name, blueprints by their text.` },
     get_items: { ...spec.get_items, description: `${spec.get_items.description} Ids are the kind and CODEX's own id, such as context:<id>.` },
     list_item_changes: spec.list_item_changes,
+    get_item_texts: { ...spec.get_item_texts, description: `${spec.get_item_texts.description} A context's text is its notes and a blueprint's its body, both Markdown; conversations and entities have none.` },
   },
 });

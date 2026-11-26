@@ -3,14 +3,14 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
+import { checked_item_address } from "@x-tech-laboratories/x-libs/item_client";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
 import { define_feature } from "../feature.ts";
 import { marks_setting, stored_marks } from "../privacy/screen.ts";
 import { settings_feature } from "../settings.ts";
-import { checked_address, list_kinds } from "./client.ts";
-import { forget_cursor } from "./collector.ts";
+import { forget_source_reading, list_kinds } from "./collector.ts";
 import { migrations } from "./migrations/index.ts";
 import { collector_of_source, item_sources_plugin_id, item_sources_setting, type ItemSourceRecord, type ItemSourceStatus, type ItemSourceSummary } from "./model.ts";
 import { read_sources, write_sources } from "./records.ts";
@@ -70,7 +70,7 @@ async function checked(source: Omit<ItemSourceRecord, "kinds">): Promise<ItemSou
 async function add_item_source(database: SqlDatabase, name: string, address: string, token: string): Promise<string> {
   const sources = read_sources(database);
   const id = new_source_id(checked_name(name), new Set(sources.map((source) => source.id)));
-  const source = await checked({ id, name: checked_name(name), address: checked_address(address), token: String(token ?? "").trim() });
+  const source = await checked({ id, name: checked_name(name), address: checked_item_address(address), token: String(token ?? "").trim() });
   write_sources(database, [...read_sources(database), source]);
   return id;
 }
@@ -78,11 +78,11 @@ async function add_item_source(database: SqlDatabase, name: string, address: str
 // A null token keeps the one stored.
 async function change_item_source(database: SqlDatabase, id: string, name: string, address: string, token: string | null): Promise<void> {
   const stored = source_of(database, id);
-  const source = await checked({ id, name: checked_name(name), address: checked_address(address), token: token === null ? stored.token : String(token).trim() });
+  const source = await checked({ id, name: checked_name(name), address: checked_item_address(address), token: token === null ? stored.token : String(token).trim() });
   write_sources(database, read_sources(database).map((each) => (each.id === id ? source : each)));
 }
 
-// Takes the app away with its marks and cursor; the items it brought stay in their contexts as last seen.
+// Takes the app away with its marks, cursor and stamps; the items it brought stay in their contexts as last seen.
 function remove_item_source(database: SqlDatabase, id: string): void {
   source_of(database, id);
   write_sources(database, read_sources(database).filter((source) => source.id !== id));
@@ -92,7 +92,7 @@ function remove_item_source(database: SqlDatabase, id: string): void {
     delete marks[key];
     settings_feature.methods.set_setting(database, marks_setting, marks);
   }
-  forget_cursor(database, id);
+  forget_source_reading(database, id);
 }
 
 // ── Feature ──────────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ export const sources_feature = define_feature({
   api: {
     list_item_sources: {
       description:
-        "Lists the apps CODEX reads through the standard item calls (list_item_kinds, search_items, get_items, list_item_changes), each with its name, address, whether a token is set (never the token), the kinds of item it answered with when saved, its collector's id and the key its marks are kept under.",
+        "Lists the apps CODEX reads through the standard item calls (list_item_kinds, search_items, get_items, list_item_changes, and get_item_texts for kinds with text), each with its name, address, whether a token is set (never the token), the kinds of item it answered with when saved and whether each has text, its collector's id and the key its marks are kept under.",
       params: [],
     },
     get_item_source_status: {

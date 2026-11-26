@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { create_plugin_host, type Plugin, type SettingValues } from "@x-tech-laboratories/x-libs/plugins";
 
-import { bare_message_id, email_plugin, email_uri, html_text, shorten, trilium_plugin, web_address, x_tasks_feeds, x_tasks_in_feed, x_tasks_plugin } from "../src/shared/collectors/bundled.ts";
+import { bare_message_id, email_plugin, email_uri, forget_x_tasks_paths, html_text, shorten, trilium_plugin, web_address, x_tasks_feeds, x_tasks_in_feed, x_tasks_plugin } from "../src/shared/collectors/bundled.ts";
 import { app_info, type Collector } from "../src/shared/collectors/collector.ts";
 import type { ContextPluginApi } from "../src/shared/collectors/host.ts";
 import { files_plugin, find_files, folders_of, look_up_files, most_content_bytes, read_text_files } from "../src/server/collectors/files.ts";
@@ -26,7 +26,10 @@ function answer(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  forget_x_tasks_paths();
+});
 
 // ── X-Tasks ──────────────────────────────────────────────────────────────────
 
@@ -49,7 +52,16 @@ describe("the X-Tasks collector", () => {
       ["t2", "done"],
     ]);
     expect(found[0]).toMatchObject({ kind: "task", uri: "x-tasks://task/t1", snippet: "From the catalogue", detail: { due: "2026-12-01" } });
-    expect(fetch).toHaveBeenCalledWith("https://tasks.example.org/api/list_tasks", expect.objectContaining({ method: "POST", headers: expect.objectContaining({ authorization: "Bearer t0k" }) }));
+    expect(fetch).toHaveBeenCalledWith("https://tasks.example.org/api/call/list_tasks", expect.objectContaining({ method: "POST", headers: expect.objectContaining({ authorization: "Bearer t0k" }) }));
+  });
+
+  it("falls back to the older path for an X-Tasks server from before the standard one, and keeps to it", async () => {
+    const fetch = vi.fn(async (url: string) => (url.includes("/api/call/") ? answer({}, 404) : answer(tasks)));
+    vi.stubGlobal("fetch", fetch);
+    const collector = await collector_of(x_tasks_plugin, { address: "https://old.example.org", token: "t0k" });
+    expect(await collector.search!("seed")).toHaveLength(2);
+    expect(await collector.search!("fence")).toHaveLength(1);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(["https://old.example.org/api/call/list_tasks", "https://old.example.org/api/list_tasks", "https://old.example.org/api/list_tasks"]);
   });
 
   it("looks up only the tasks asked for, leaving out the ones gone", async () => {
