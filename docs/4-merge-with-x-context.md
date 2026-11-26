@@ -164,7 +164,13 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 As of 2026-11-26 (closed on 2026-11-26: CODEX answers the four standard item calls; a reply's tool calls show where each
 was made in it; a token can no longer restore or delete the server's backups; proposals carry their evidence and
 applied changes can be undone; a link or entity added through a token or MCP is a program's proposal; History brings a
-removed context back with its links; blueprints, jobs and the Inbox are built):
+removed context back with its links; blueprints, jobs and the Inbox are built; closed on 2026-11-27, after a second run
+on a local 4B model: the token estimate follows what the engine reports instead of keeping its most cautious ratio,
+over-long earlier messages are shortened before whole turns are left out, the Thinking row opens to ten lines and
+follows the stream, an absolute `CODEX_USER_DATA` and `CODEX_SOCKET` are honoured, the index's last problem is in plain
+words and clears when the embedder answers or its settings change, a proposal's "From" names only what its run had in
+front of it, Suggest links is shaped for a small model, similar items are judged against the rest rather than a fixed
+cosine, and a job's conversation is no longer the pane's default):
 
 - No real model has run a background job: a scripted fake engine has, in tests and in the desktop app. How a real model
   keeps to a job's instruction with nobody to ask, and how many rounds and tokens real jobs need, is unknown.
@@ -181,11 +187,14 @@ removed context back with its links; blueprints, jobs and the Inbox are built):
 - No background job proposes links yet: rules and similarity run after each index pass, and an engine proposes only
   when the user asks with Suggest links.
 - How well a real model extracts entities and proposes links is unverified; only a scripted fake engine has proposed.
+  Suggest links in its new shape (its graph in the instructions, four tools, six rounds) has not been run on a real
+  model.
 - The Claude-subscription engine and the SmartHarness engine are not built.
 - No hosted model has been tried. A local 4B reasoning model (llama.cpp's server, 8,192 tokens of context, on a CPU)
-  answered end to end on 2026-11-26: tool calls, proposals, trusted sources and stopping worked. What that run found
-  (requests outgrowing the context, a large fixed prompt, unseen reasoning and raw provider errors) is fixed, but not
-  yet tried on a real model again.
+  answered end to end on 2026-11-26, and again after the first fixes: tool calls, proposals, trusted sources and
+  stopping worked. What the second run found (requests settling far under the context, a huge message costing every
+  older turn, a cramped Thinking row, an unclear index problem, a "From" line naming sources never read, Suggest links
+  reading without proposing) is fixed, but not yet tried on a real model again.
 - The collector for apps answering the item calls gives the index only each item's 200-character snippet, as the four
   calls carry nothing more; an app's full text would need a fifth, optional call in the standard.
 - An app read through the item calls is reached over HTTP with a token, not over its MCP server as decision 6 says;
@@ -198,8 +207,6 @@ removed context back with its links; blueprints, jobs and the Inbox are built):
   option yet, so another app on it still lets an admin's token restore.
 - A device still on the shape before conversations were items deletes, after any write of its own, the messages of
   every conversation whose id is not a context's, and syncs those deletions; every device should be updated together.
-- The graph proposes two items as related above a fixed cosine of 0.8 (`graph/similarity.ts`); with Qwen3-Embedding,
-  where right matches score 0.65 to 0.75, that never fires. It wants a rule judged against the scores, as search's is.
 - Undo covers contexts only: a change's effect on the graph (its links closed or removed with a context) comes back
   with the context, but an item row a change made stays, as items always do.
 - A change applied while another write runs at the same moment (an index pass or sync on the desktop) could count that
@@ -207,7 +214,9 @@ removed context back with its links; blueprints, jobs and the Inbox are built):
 - No real model has written, amended or followed a blueprint; a scripted fake engine has. Recall by words is a rule of
   shared content words with an English stop list, so a blueprint written in another language matches by meaning only.
 - Search's meaning rule (`meaning_floor`) was set on one real run's scores, with the unrelated documents' scores filled
-  in from the range it gave; a run with a real model should check it on a larger set.
+  in from the range it gave; a run with a real model should check it on a larger set. Search's scores with real
+  embeddings, the embedder's query prefix, and similar-item proposals, which now use the same rule, are all still
+  untested on a real model.
 
 ## Later, as separate projects
 
