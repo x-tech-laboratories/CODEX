@@ -31,8 +31,8 @@ export function is_tool_source(source: string): boolean {
 
 // ── Marks ────────────────────────────────────────────────────────────────────
 
-// What the user allows of one tool plugin; each off until turned on, but send_to_hosted, which starts on for a plugin
-// whose tools all send what they are given outside this computer, since what they read is already outside.
+// What the user allows of one tool plugin; each off until turned on, but send_to_hosted, which starts on for the
+// bundled Web plugin alone, since what it reads is public already.
 export interface ToolMarks {
   // What its tools give back may be sent to a hosted engine; without this a hosted engine is not offered its tools,
   // and is not sent anything that carries what they gave back.

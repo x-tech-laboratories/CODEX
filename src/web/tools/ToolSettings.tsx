@@ -18,7 +18,7 @@ import { level_words } from "../assistant/AssistantSettings.tsx";
 export const tool_mark_words: Record<ToolMarkName, { label: string; hint: string }> = {
   send_to_hosted: {
     label: "May be sent to a hosted engine",
-    hint: "What its tools give back may go to an engine that is not on this computer or your own network. Off, such an engine is not offered its tools at all, since what they give back would be kept from it, and earlier answers that used them are kept from it too. On to begin with for a plugin whose tools all send what they are given outside this computer, such as Web, since what they read is outside already.",
+    hint: "What its tools give back may go to an engine that is not on this computer or your own network. Off, such an engine is not offered its tools at all, since what they give back would be kept from it, and earlier answers that used them are kept from it too. On to begin with only for Web, which reads public pages; off for every other plugin and MCP server until you turn it on, since a server behind a token may give back what is private to you.",
   },
   trusted: {
     label: "Trusted content",

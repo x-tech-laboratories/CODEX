@@ -88,7 +88,7 @@ export const tools_feature = define_feature({
   api: {
     list_plugin_tools: {
       description:
-        "Lists each tool plugin running, such as Web, with its three marks (send_to_hosted: what its tools give back may be sent to a hosted engine, which without it is not offered them, on until set for a plugin whose tools all send their arguments outside this machine; trusted: what its tools give back does not make the assistant's changes wait; after_private: its tools that send their arguments outside this machine may still be used after the conversation read a source not marked for hosted engines), and each of its tools: the name the assistant sees, what it does, whether it changes something or sends its arguments outside, whether it is offered, whether small models are offered it too, and the level of one that changes something.",
+        "Lists each tool plugin running, such as Web, with its three marks (send_to_hosted: what its tools give back may be sent to a hosted engine, which without it is not offered them, on until set for the bundled Web plugin alone and off until set for every other plugin and MCP server; trusted: what its tools give back does not make the assistant's changes wait; after_private: its tools that send their arguments outside this machine may still be used after the conversation read a source not marked for hosted engines), and each of its tools: the name the assistant sees, what it does, whether it changes something or sends its arguments outside, whether it is offered, whether small models are offered it too, and the level of one that changes something.",
       params: [],
     },
     set_tool_plugin_mark: {

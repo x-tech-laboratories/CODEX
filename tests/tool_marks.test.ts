@@ -1,5 +1,4 @@
-// A tool plugin's mark "May be sent to a hosted engine": on to begin with only for a plugin whose tools all send
-// outside, and while off, a hosted engine is not offered its tools, nor sent replayed answers, events, proposal
+// A tool plugin's mark "May be sent to a hosted engine": on to begin with only for the bundled Web plugin, and while off, a hosted engine is not offered its tools, nor sent replayed answers, events, proposal
 // summaries or search hits that carry what they gave back.
 
 import { DatabaseSync } from "node:sqlite";
@@ -15,7 +14,7 @@ import { add_message } from "../src/shared/conversations/messages.ts";
 import { engine_tools, turns_of, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
 import { is_local_endpoint } from "../src/shared/engines/hosting.ts";
 import { server_tools } from "../src/shared/mcp/plugin.ts";
-import type { McpServerRecord } from "../src/shared/mcp/model.ts";
+import { mcp_key_of, type McpServerRecord } from "../src/shared/mcp/model.ts";
 import { has_read_private, open_screen } from "../src/shared/privacy/screen.ts";
 import { index_now, open_index, settle_index, use_search_index } from "../src/shared/search/indexer.ts";
 import { is_plugin_tool_name, tool_source_of } from "../src/shared/tools/model.ts";
@@ -60,30 +59,32 @@ function outside_plugin(): ContextPlugin {
 const plugin_names = (tools: { name: string }[]) => tools.map((tool) => tool.name).filter(is_plugin_tool_name);
 
 describe("the mark's starting value", () => {
-  it("is on only for a plugin whose tools all send outside, until the user sets it", async () => {
-    expect(marks_of(undefined, [ask_out])).toEqual({ send_to_hosted: true, trusted: false, after_private: false });
-    expect(marks_of(undefined, [ask_out, read_file]).send_to_hosted).toBe(false);
-    expect(marks_of(undefined, []).send_to_hosted).toBe(false);
-    expect(marks_of({ send_to_hosted: false }, [ask_out]).send_to_hosted).toBe(false);
-    expect(marks_of({ send_to_hosted: true }, [read_file]).send_to_hosted).toBe(true);
+  it("is on only for the bundled Web plugin, until the user sets it", async () => {
+    expect(marks_of(undefined, "codex.web/web")).toEqual({ send_to_hosted: true, trusted: false, after_private: false });
+    expect(marks_of(undefined, "tests.outside/outside").send_to_hosted).toBe(false);
+    expect(marks_of(undefined, files_key).send_to_hosted).toBe(false);
+    expect(marks_of({ send_to_hosted: false }, "codex.web/web").send_to_hosted).toBe(false);
+    expect(marks_of({ send_to_hosted: true }, files_key).send_to_hosted).toBe(true);
 
     const fixture = start_fixture({ plugins: [files_plugin(), outside_plugin(), web_plugin()] });
     fixture.calls.set_setting("plugins", { "codex.web": { enabled: true } });
     const listed = Object.fromEntries((await fixture.calls.list_plugin_tools()).map((entry) => [entry.key, entry.send_to_hosted]));
-    expect(listed).toEqual({ [files_key]: false, "tests.outside/outside": true, "codex.web/web": true });
+    expect(listed).toEqual({ [files_key]: false, "tests.outside/outside": false, "codex.web/web": true });
 
     fixture.calls.set_tool_plugin_mark(files_key, "send_to_hosted", true);
     fixture.calls.set_tool_plugin_mark("codex.web/web", "send_to_hosted", false);
     const changed = Object.fromEntries((await fixture.calls.list_plugin_tools()).map((entry) => [entry.key, entry.send_to_hosted]));
-    expect(changed).toEqual({ [files_key]: true, "tests.outside/outside": true, "codex.web/web": false });
+    expect(changed).toEqual({ [files_key]: true, "tests.outside/outside": false, "codex.web/web": false });
   });
 
-  it("is off for a local MCP server and one on a loopback address, and on for a remote one", () => {
-    const server = (fields: Partial<McpServerRecord>): McpServerRecord => ({ id: "s", name: "S", transport: "stdio", address: "", token: "", command: "x", args: [], variables: [], enabled: true, tools: [{ name: "t", description: "", read_only: true, input_schema: {} }], listed_at: "", ...fields });
-    const mark = (fields: Partial<McpServerRecord>) => marks_of(undefined, server_tools(server(fields)).tools() as PluginTool[]).send_to_hosted;
-    expect(mark({})).toBe(false);
-    expect(mark({ transport: "http", address: "http://127.0.0.1:9000/mcp" })).toBe(false);
-    expect(mark({ transport: "http", address: "https://mcp.example.org/mcp" })).toBe(true);
+  it("is off for every MCP server, a remote one included, and keeps a mark the user set", async () => {
+    const fixture = start_fixture();
+    const record = (id: string, fields: Partial<McpServerRecord>): McpServerRecord => ({ id, name: id, transport: "http", address: "https://notes.example.org/mcp", token: "t", command: "", args: [], variables: [], enabled: true, tools: [{ name: "read", description: "", read_only: true, input_schema: {} }], listed_at: "", ...fields });
+    fixture.calls.set_setting("mcp_servers", [record("remote", {}), record("local", { transport: "http", address: "http://127.0.0.1:9000/mcp" }), record("set", {})]);
+    fixture.calls.set_tool_plugin_mark(mcp_key_of("set"), "send_to_hosted", true);
+    const listed = Object.fromEntries((await fixture.calls.list_plugin_tools()).map((entry) => [entry.key, entry.send_to_hosted]));
+    expect(listed).toEqual({ [mcp_key_of("remote")]: false, [mcp_key_of("local")]: false, [mcp_key_of("set")]: true });
+    expect(server_tools(record("remote", {})).tools()).toEqual([expect.objectContaining({ sends_outside: true })]);
   });
 });
 
@@ -98,14 +99,14 @@ describe("a hosted engine and an unmarked tool plugin", () => {
     await fixture.calls.send_message(null, "Hello again");
     await wait_for_runs();
     const hosted = fixture.requests.at(-1)!;
-    expect(plugin_names(hosted.tools.definitions)).toEqual(["outside__ask_out"]);
+    expect(plugin_names(hosted.tools.definitions)).toEqual([]);
     expect(hosted.instructions).not.toContain("files__");
     expect(await hosted.tools.call("files__read_file", { path: "plan.txt" })).toEqual({ result: "There is no tool named files__read_file.", is_error: true });
 
     fixture.calls.set_tool_plugin_mark(files_key, "send_to_hosted", true);
     await fixture.calls.send_message(null, "And now?");
     await wait_for_runs();
-    expect(plugin_names(fixture.requests.at(-1)!.tools.definitions)).toEqual(["files__read_file", "files__write_file", "outside__ask_out"]);
+    expect(plugin_names(fixture.requests.at(-1)!.tools.definitions)).toEqual(["files__read_file", "files__write_file"]);
   });
 
   it("counts a host on a Tailscale address as hosted, so its tools stay unoffered", () => {
@@ -203,6 +204,7 @@ describe("a hosted engine and an unmarked tool plugin", () => {
 describe("what an unmarked tool plugin gave back", () => {
   it("keeps a tool that sends outside from being used for the rest of the run, as a private source's items do", async () => {
     const fixture = start_fixture({ plugins: [files_plugin(), outside_plugin()] });
+    fixture.calls.set_tool_plugin_mark("tests.outside/outside", "send_to_hosted", true);
     const screen = await open_screen(fixture.database, false);
     const context: ToolContext = {
       database: () => fixture.database,
