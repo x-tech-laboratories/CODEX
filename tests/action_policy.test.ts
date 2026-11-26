@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
+
+import type { ContextPluginApi } from "../src/shared/collectors/host.ts";
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { add_message } from "../src/shared/conversations/messages.ts";
 import type { ToolCallRecord } from "../src/shared/conversations/model.ts";
@@ -7,6 +10,7 @@ import { add_conversation_record, has_conversation } from "../src/shared/convers
 import { engine_tools, max_result_chars, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
 import { brings_outside_content, changing_calls, decide } from "../src/shared/policy/policy.ts";
 import { summarize_call } from "../src/shared/policy/summaries.ts";
+import { open_plugin_tools } from "../src/shared/tools/offered.ts";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
 
 afterEach(async () => {
@@ -146,6 +150,29 @@ describe("a run's tools", () => {
     for (const never of ["set_setting", "get_settings", "set_action_level", "resolve_proposal", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals", "add_graph_link", "remove_entity", "suggest_links", "accept_blueprint_proposals", "reject_blueprint_proposals", "add_blueprint", "change_blueprint", "retire_blueprint", "restore_blueprint", "place_blueprint", "remove_blueprint", "save_as_blueprint", "list_blueprint_proposals", "set_job_on", "run_job_now", "set_background_device", "dismiss_job_runs", "list_inbox", "get_inbox_count", "get_background_state", "rebuild_index", "import_contexts", "send_message", "list_conversations", "get_conversation", "rename_conversation", "delete_conversation", "stop_reply"]) {
       expect(allowed_tools).not.toContain(never);
     }
+  });
+
+  it("gain a plugin's tools only while each is turned on, the core set only those offered to small models", async () => {
+    const plugin = define_plugin<ContextPluginApi>({
+      id: "tests.tools",
+      name: "Tools",
+      version: "1.0.0",
+      start: (context) =>
+        context.provide("tools", "extra", {
+          label: "Extra",
+          tools: () => [{ name: "look", description: "Looks.", parameters: { type: "object", properties: {} }, changes: false, sends_outside: false }],
+          call: async () => "Seen.",
+        }),
+    });
+    const fixture = start_fixture({ plugins: [plugin] });
+    const with_plugins = async () => engine_tools({ ...tools_of(fixture).context, plugin_tools: await open_plugin_tools(fixture.database) });
+    expect((await with_plugins()).definitions.map((tool) => tool.name).sort()).toEqual([...allowed_tools, "extra__look"].sort());
+    expect((await with_plugins()).core!.map((tool) => tool.name).sort()).toEqual(allowed_core_tools);
+    fixture.calls.set_plugin_tool_offer("tests.tools/extra", "look", "small", true);
+    expect((await with_plugins()).core!.map((tool) => tool.name).sort()).toEqual([...allowed_core_tools, "extra__look"].sort());
+    fixture.calls.set_plugin_tool_offer("tests.tools/extra", "look", "enabled", false);
+    expect((await with_plugins()).definitions.map((tool) => tool.name).sort()).toEqual(allowed_tools);
+    expect((await with_plugins()).core!.map((tool) => tool.name).sort()).toEqual(allowed_core_tools);
   });
 
   it("offer a core set briefly described, its fields without their descriptions, smaller than the whole", () => {

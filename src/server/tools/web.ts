@@ -38,10 +38,10 @@ function after(ms: number, signal: AbortSignal): AbortSignal {
   return AbortSignal.any([signal, AbortSignal.timeout(ms)]);
 }
 
-function plain_failure(error: unknown, what: string, timeout_ms: number): Error {
-  const name = error instanceof Error ? error.name : "";
-  if (name === "TimeoutError") return new Error(`${what} did not answer within ${timeout_ms / 1000} seconds.`);
-  if (name === "AbortError") return new Error("Stopped.");
+// A failure in plain words: stopped by the run, out of time, or what went wrong.
+function plain_failure(error: unknown, what: string, timeout_ms: number, signal: AbortSignal, within: AbortSignal): Error {
+  if (signal.aborted) return new Error("Stopped.");
+  if (within.aborted) return new Error(`${what} did not answer within ${timeout_ms / 1000} seconds.`);
   return error instanceof Error ? error : new Error(String(error));
 }
 
@@ -115,7 +115,7 @@ export async function fetch_page(url: string, settings: SettingValues, signal: A
     if (cut) lines.push("[Cut short: the page goes on.]");
     return lines.join("\n");
   } catch (error) {
-    throw plain_failure(error, "The page", timeout_ms);
+    throw plain_failure(error, "The page", timeout_ms, signal, within);
   }
 }
 
@@ -147,8 +147,9 @@ export function search_address(endpoint: string, query: string): URL {
 export async function search_web(endpoint: string, query: string, signal: AbortSignal, options: WebOptions = {}): Promise<string> {
   const timeout_ms = options.timeout_ms ?? web_defaults.timeout_ms;
   const address = search_address(endpoint, query);
+  const within = after(timeout_ms, signal);
   try {
-    const response = await fetch(address, { signal: after(timeout_ms, signal), redirect: "error", headers: { Accept: "application/json", "User-Agent": user_agent } });
+    const response = await fetch(address, { signal: within, redirect: "error", headers: { Accept: "application/json", "User-Agent": user_agent } });
     if (!response.ok) throw new Error(`The search endpoint answered HTTP ${response.status}${response.status === 403 ? "; turn on SearXNG's JSON format (search: formats: json in its settings.yml)" : ""}.`);
     const body = await read_at_most(response.body ?? (async function* () {})(), options.max_bytes ?? web_defaults.max_bytes);
     let answer: { results?: unknown };
@@ -165,7 +166,7 @@ export async function search_web(endpoint: string, query: string, signal: AbortS
     };
     return [`Results for “${query}”:`, ...results.map((each, index) => [`${index + 1}. ${flat(each.title, 200) || "(no title)"}`, `   ${String(each.url)}`, ...(each.content ? [`   ${flat(each.content, 400)}`] : [])].join("\n"))].join("\n");
   } catch (error) {
-    throw plain_failure(error, "The search endpoint", timeout_ms);
+    throw plain_failure(error, "The search endpoint", timeout_ms, signal, within);
   }
 }
 
