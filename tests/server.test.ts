@@ -196,10 +196,11 @@ describe("server", () => {
     ];
     for (const each of tokens) {
       for (const [method, args] of guarded) {
-        // The address spelled with an escaped letter reaches the same route, and is refused the same way.
-        for (const url of [`/api/backup/${method}`, `/api/backup/${method.replace("e", "%65")}`]) {
+        // The plain address is refused as page-only; one spelled with an escaped letter reads two ways, so the sign-in
+        // guard refuses it before any route runs.
+        for (const [url, status] of [[`/api/backup/${method}`, 403], [`/api/backup/${method.replace("e", "%65")}`, 400]] as const) {
           const refused = await app.inject({ method: "POST", url, headers: { authorization: `Bearer ${each}` }, payload: args });
-          expect([url, refused.statusCode]).toEqual([url, 403]);
+          expect([url, refused.statusCode]).toEqual([url, status]);
         }
       }
     }
