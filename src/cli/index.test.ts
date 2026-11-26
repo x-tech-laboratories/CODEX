@@ -86,6 +86,17 @@ describe('codex command', () => {
         }
     });
 
+    it('works a request on the direct engine when the settings choose it', async () => {
+        const runDirect = vi.fn(async () => 'direct answer');
+        const io = fakeEnvironment({ runDirect, loadSettings: () => ({ ...defaults(), engine: 'direct' }) });
+
+        expect(await main(['prompt'], io)).toBe(0);
+
+        expect(runDirect).toHaveBeenCalledOnce();
+        expect(io.executeTaskTree).not.toHaveBeenCalled();
+        expect(io.printed).toContain('direct answer');
+    });
+
     it('lets the mode option override the setting', async () => {
         const io = fakeEnvironment();
 

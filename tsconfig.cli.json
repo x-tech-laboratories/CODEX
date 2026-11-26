@@ -11,6 +11,6 @@
         "resolveJsonModule": true,
         "types": ["node"]
     },
-    "include": ["src/cli/**/*.ts", "src/daemon/**/*.ts", "src/assistant/**/*.ts", "src/shared/**/*.ts"],
+    "include": ["src/cli/**/*.ts", "src/daemon/**/*.ts", "src/assistant/**/*.ts", "src/engine/**/*.ts", "src/shared/**/*.ts"],
     "exclude": ["src/**/*.test.ts", "src/daemon/daemonHarness.ts"]
 }

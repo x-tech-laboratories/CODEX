@@ -82,7 +82,7 @@ function SwitchInput({ field, values, change }: { field: SwitchField; values: Fo
 
 // Whether this group picks a hosted provider; groups without a provider choice count as local.
 function is_hosted(group: { choices?: ChoiceField[] }, values: FormValues): boolean {
-    const choice = group.choices?.[0];
+    const choice = group.choices?.find((field) => field.name.endsWith('_provider'));
     return choice !== undefined && (values.text[choice.name] ?? 'local') !== 'local';
 }
 

@@ -52,6 +52,20 @@ const number = (label: string, name: string, lowest: number, highest: number, st
 
 export const FIELD_GROUPS: FieldGroup[] = [
     {
+        heading: 'Engine',
+        hint: 'The task tree breaks a request into narrow steps so a small local model can do it; the direct loop lets one able model, such as a hosted one, work the whole request with the tools.',
+        choices: [
+            {
+                label: 'Works requests with',
+                name: 'engine',
+                choices: [
+                    { value: 'task_tree', label: 'Task tree' },
+                    { value: 'direct', label: 'Direct loop' },
+                ],
+            },
+        ],
+    },
+    {
         heading: 'Model',
         hint: 'A hosted model sends each request, and what it reads, to that provider.',
         ...provider_fields('model'),

@@ -114,6 +114,12 @@ A short persona block, a few sentences naming the assistant and setting its pers
 
 Each request is a standalone run today; a follow-up such as "and the one before that?" has nothing to refer to except recalled memory. Proposed for debate: the final-answer stage (and `decide`, so a follow-up is planned as one) sees the last few turns of the current conversation, capped by the context budget, with older turns reached through recall and the conversation archive ("Conversation archive"). **Open:** how many turns, whether a turn is passed as text or a short summary, and when a new conversation starts in an always-on assistant. **How to test:** a set of two- and three-turn eval tasks whose later turns cannot be answered without the earlier ones.
 
+## How far apart from the harness?
+
+### Mail, events and the Inbox in a store of CODEX's own
+
+The engine is pluggable, but the event queue, the Inbox (`actions`) and the mail tables still live in SmartHarness's knowledge store, and resolving an Inbox item writes its mail outcome in the same transaction. Moving the mail tables alone would split that transaction across two databases, so they would move together with the queue and the Inbox, with a migration of existing databases. Open: whether that is worth it while every engine shares the knowledge store anyway, and whether a store without SmartHarness (a direct engine with no research) is wanted at all.
+
 ## Other proposals
 
 ### Mascot: more moods

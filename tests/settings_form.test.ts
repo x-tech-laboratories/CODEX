@@ -40,6 +40,7 @@ const settings = {
     background_max_pending_jobs: 100,
     background_prune_after_days: 90,
     background_max_store_megabytes: 1024,
+    engine: 'task_tree',
     model_provider: 'local',
     model_endpoint: '',
     model_name: '',
@@ -107,6 +108,17 @@ describe('settings form', () => {
         expect(names).toHaveLength(16);
         expect(names).toContain('background_context_size');
         expect(names).toContain('background_gpu_layers');
+    });
+});
+
+describe('engine', () => {
+    it('shows the engine as a choice and reads it back', () => {
+        const form = settings_to_form(settings);
+        expect(form.text.engine).toBe('task_tree');
+
+        form.text.engine = 'direct';
+
+        expect(collect_settings(settings, form).engine).toBe('direct');
     });
 });
 
