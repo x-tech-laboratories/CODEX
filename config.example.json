@@ -1,0 +1,4 @@
+{
+  "database": "dev-data/context.db",
+  "backups_folder": "dev-data/backups"
+}

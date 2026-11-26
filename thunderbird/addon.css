@@ -1,0 +1,33 @@
+/* Layout only; every colour, size and widget look comes from Halon's tokens and stylesheet. */
+
+.addon-page {
+  min-width: 20rem;
+  max-width: 28rem;
+  padding: var(--space-6);
+}
+
+.addon-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.addon-form > button {
+  align-self: flex-start;
+}
+
+.addon-subject {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.addon-contexts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 18rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}

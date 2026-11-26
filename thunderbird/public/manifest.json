@@ -1,0 +1,16 @@
+{
+  "manifest_version": 2,
+  "name": "X-Context",
+  "version": "0.1.0",
+  "description": "Adds the email you are reading to your X-Context contexts, keyed by its Message-ID so it is found wherever it is filed.",
+  "author": "X-Tech Laboratories",
+  "homepage_url": "https://github.com/x-tech-laboratories/X-Context",
+  "browser_specific_settings": {
+    "gecko": { "id": "x-context@x-tech-laboratories.github.io", "strict_min_version": "128.0" }
+  },
+  "icons": { "64": "icon-64.png" },
+  "permissions": ["messagesRead", "storage"],
+  "optional_permissions": ["<all_urls>"],
+  "message_display_action": { "default_popup": "popup.html", "default_title": "Add to context", "default_icon": "icon-64.png" },
+  "options_ui": { "page": "options.html" }
+}
