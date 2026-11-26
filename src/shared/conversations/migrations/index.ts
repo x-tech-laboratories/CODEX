@@ -21,5 +21,12 @@ export const migrations: DrizzleMigration[] = [
     "statements": [
       "CREATE TABLE `conversations` (\n\t`id` text PRIMARY KEY,\n\t`title` text DEFAULT '' NOT NULL,\n\t`created_at` text NOT NULL\n);"
     ]
+  },
+  {
+    "name": "20261126104542_notices",
+    "statements": [
+      "ALTER TABLE `conversation_messages` ADD `error_detail` text DEFAULT '' NOT NULL;",
+      "ALTER TABLE `conversation_messages` ADD `notices` text DEFAULT '[]' NOT NULL;"
+    ]
   }
 ];

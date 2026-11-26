@@ -30,6 +30,8 @@ export interface ToolOutcome {
 
 export interface EngineTools {
   definitions: ToolDefinition[];
+  // The smaller set for a model with a small context: the reads and the most-used changes, briefly described.
+  core?: ToolDefinition[];
   call(name: string, args: Record<string, unknown>): Promise<ToolOutcome>;
 }
 
@@ -45,11 +47,16 @@ export interface EngineRequest {
 
 export type EngineEvent =
   | { type: "text"; text: string }
+  // What a reasoning model thinks before it answers; shown while it streams, never kept or sent back.
+  | { type: "reasoning"; text: string }
+  // Something the user should know about this reply, such as their message being shortened to fit the model.
+  | { type: "notice"; text: string }
   | { type: "tool_call"; id: string; name: string; arguments: Record<string, unknown> }
   | { type: "tool_result"; id: string; result: string; is_error: boolean }
   | { type: "usage"; input_tokens: number; output_tokens: number }
   | { type: "done"; text: string }
-  | { type: "error"; message: string };
+  // A plain message saying what happened and what to do, and the raw detail behind it when there is one.
+  | { type: "error"; message: string; detail?: string };
 
 // ── Engine ───────────────────────────────────────────────────────────────────
 
@@ -68,6 +75,9 @@ export interface Engine {
 export function is_hosted(engine: Pick<Engine, "is_local">): boolean {
   return engine.is_local?.() !== true;
 }
+
+// Which tools an engine offers its model: the core set below a context size, every tool above it, or one set always.
+export type ToolSet = "auto" | "core" | "all";
 
 // The setting naming the engine that answers, by the id its plugin provides it under; empty for none.
 export const engine_setting = "engine";

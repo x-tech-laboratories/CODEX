@@ -3,7 +3,8 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import type { EngineEvent, EngineRequest, ToolDefinition } from "./engine.ts";
+import type { EngineEvent, EngineRequest, EngineTools, ToolDefinition, ToolSet } from "./engine.ts";
+import { calibrate, chars_per_token, fit_request, least_ratio, tighten, type Fit } from "./fitting.ts";
 
 // ── Chat models ──────────────────────────────────────────────────────────────
 
@@ -30,6 +31,8 @@ export interface ChatRequest {
   signal?: AbortSignal;
   // Each piece of text as it streams in.
   on_text?: (text: string) => void;
+  // Each piece of a reasoning model's thinking as it streams in, before its answer.
+  on_reasoning?: (text: string) => void;
 }
 
 export interface ChatCompletion {
@@ -44,45 +47,60 @@ export interface ChatModel {
   complete(request: ChatRequest): Promise<ChatCompletion>;
 }
 
+// The engine refused a request as larger than its context, with the size it counted when it said.
+export class ContextOverflow extends Error {
+  readonly prompt_tokens: number | null;
+
+  constructor(message: string, prompt_tokens: number | null = null) {
+    super(message);
+    this.name = "ContextOverflow";
+    this.prompt_tokens = prompt_tokens;
+  }
+}
+
+// A failure put in plain words, with the raw detail behind it.
+export interface PlainError {
+  message: string;
+  detail?: string;
+}
+
+export class PlainFailure extends Error {
+  readonly detail: string | undefined;
+
+  constructor(message: string, detail?: string) {
+    super(message);
+    this.name = "PlainFailure";
+    this.detail = detail;
+  }
+}
+
 export interface DirectOptions {
   // The model's context window in tokens.
   context_size: number;
-  // The longest reply asked for in one round.
+  // The longest reply asked for in one round; less when less is left.
   max_tokens: number;
   // Rounds of tool calls before the last, which has no tools.
   max_rounds: number;
+  // Which tools the model is offered; automatic offers the core set to a context under `core_below` tokens.
+  tool_set?: ToolSet;
+  // Names the engine and model whose measured characters per token the estimate uses.
+  calibration_key?: string;
+  // Puts a failure the loop does not know in plain words.
+  explain?: (error: unknown) => PlainError;
 }
 
 export const direct_defaults: DirectOptions = { context_size: 8192, max_tokens: 4096, max_rounds: 20 };
 
-// ── Context ──────────────────────────────────────────────────────────────────
+// Below this context size the automatic tool set is the core one.
+export const core_below = 16_384;
 
-export const dropped_result = "[An earlier tool result was dropped to fit the context.]";
-
-// A cautious characters-per-token estimate, since a hosted model does not count for us.
-const chars_per_token = 3;
-
-export function count_tokens(text: string): number {
-  return Math.ceil(text.length / chars_per_token);
+// The tools the model is offered for a tool set and context size.
+export function offered_tools(tools: EngineTools, tool_set: ToolSet = "auto", context_size: number = direct_defaults.context_size): ToolDefinition[] {
+  const core = tool_set === "core" || (tool_set === "auto" && context_size < core_below);
+  return core && tools.core ? tools.core : tools.definitions;
 }
 
-function tokens_of(message: ChatMessage): number {
-  const calls = message.role === "assistant" && message.tool_calls ? count_tokens(JSON.stringify(message.tool_calls)) : 0;
-  return count_tokens(message.content) + calls;
-}
-
-// Drops the oldest tool results until the conversation fits beside the reply.
-export function fit_messages(messages: ChatMessage[], budget: number): void {
-  let total = messages.reduce((sum, message) => sum + tokens_of(message), 0);
-  for (const message of messages) {
-    if (total <= budget) return;
-    if (message.role === "tool" && message.content !== dropped_result) {
-      total -= tokens_of(message);
-      message.content = dropped_result;
-      total += tokens_of(message);
-    }
-  }
-}
+// ── Arguments ────────────────────────────────────────────────────────────────
 
 function parse_arguments(text: string): Record<string, unknown> | null {
   try {
@@ -95,9 +113,11 @@ function parse_arguments(text: string): Record<string, unknown> | null {
 
 // ── Streaming ────────────────────────────────────────────────────────────────
 
-// The text of one completion as it streams, then the completion itself.
-async function* streamed(model: ChatModel, request: ChatRequest): AsyncGenerator<string, ChatCompletion> {
-  const pieces: string[] = [];
+type Piece = { kind: "text" | "reasoning"; text: string };
+
+// The text and thinking of one completion as they stream, then the completion itself.
+async function* streamed(model: ChatModel, request: ChatRequest): AsyncGenerator<Piece, ChatCompletion> {
+  const pieces: Piece[] = [];
   let wake: (() => void) | null = null;
   let finished = false;
   const nudge = () => {
@@ -108,7 +128,11 @@ async function* streamed(model: ChatModel, request: ChatRequest): AsyncGenerator
     .complete({
       ...request,
       on_text: (text) => {
-        pieces.push(text);
+        pieces.push({ kind: "text", text });
+        nudge();
+      },
+      on_reasoning: (text) => {
+        pieces.push({ kind: "reasoning", text });
         nudge();
       },
     })
@@ -126,37 +150,107 @@ async function* streamed(model: ChatModel, request: ChatRequest): AsyncGenerator
   return completion;
 }
 
-// ── Running ──────────────────────────────────────────────────────────────────
+// ── Messages ─────────────────────────────────────────────────────────────────
 
 export const stopped_message = "Stopped.";
+
+const count = (value: number) => value.toLocaleString("en");
+
+function too_small_message(context_size: number, fit: Extract<Fit, { fits: false }>, could_use_core: boolean): string {
+  const core = could_use_core ? " Choosing the core tool set in the engine's settings also makes room." : "";
+  return `This conversation does not fit the model's context of ${count(context_size)} tokens: CODEX's instructions and tools take about ${count(fit.fixed_tokens)} of them, and a reply needs at least ${count(fit.reply_floor)}. Raise the engine's context size under Settings → Assistant → Engine (and on the model's server), or start a new conversation.${core}`;
+}
+
+export const too_large_message = "The request was too large for the model's context, even after CODEX cut the conversation down. Raise the engine's context size under Settings → Assistant → Engine (and on the model's server), or start a new conversation.";
+
+function cut_off_message(max_tokens: number, said: boolean, thought: boolean): string {
+  if (!said && thought) return `The model spent its whole reply allowance of ${count(max_tokens)} tokens thinking, and wrote no answer. Ask again more simply, or raise the engine's context size to leave more room for replies.`;
+  return `The reply was cut off at its limit of ${count(max_tokens)} tokens. Ask for a shorter answer, or raise the engine's context size to leave more room for replies.`;
+}
+
+function fit_notices(fit: Extract<Fit, { fits: true }>): [key: string, text: string][] {
+  const notices: [string, string][] = [];
+  if (fit.left_out > 0) notices.push(["left_out", `${count(fit.left_out)} earlier message${fit.left_out === 1 ? " was" : "s were"} left out of what the model read, to fit its context.`]);
+  if (fit.shortened) {
+    notices.push(["shortened", `Your message was too long for this model's context, so ${count(fit.shortened.left_out)} of its ${count(fit.shortened.length)} characters, from the middle, were left out of what the model read. Your message is kept whole.`]);
+  }
+  return notices;
+}
+
+function plain_of(error: unknown, options: DirectOptions): PlainError {
+  if (error instanceof PlainFailure) return { message: error.message, ...(error.detail ? { detail: error.detail } : {}) };
+  if (error instanceof ContextOverflow) return { message: too_large_message, detail: error.message };
+  if (options.explain) return options.explain(error);
+  return { message: error instanceof Error ? error.message : String(error) };
+}
+
+// ── Running ──────────────────────────────────────────────────────────────────
 
 // Works the conversation with one model and CODEX's tools, round by round, until the model answers without a tool.
 export async function* run_direct(model: ChatModel, request: EngineRequest, signal: AbortSignal, options: DirectOptions = direct_defaults): AsyncGenerator<EngineEvent> {
   const messages: ChatMessage[] = [{ role: "system", content: request.instructions }, ...request.conversation.map((turn): ChatMessage => (turn.role === "user" ? { role: "user", content: turn.text } : { role: "assistant", content: turn.text }))];
+  const key = options.calibration_key ?? "";
+  const tools = offered_tools(request.tools, options.tool_set, options.context_size);
+  const could_use_core = request.tools.core !== undefined && tools !== request.tools.core;
+  const told = new Set<string>();
+  let ratio = chars_per_token(key);
   let said = "";
   try {
     for (let round = 0; round < options.max_rounds; round += 1) {
       if (signal.aborted) throw new Error(stopped_message);
-      fit_messages(messages, Math.max(200, options.context_size - options.max_tokens));
-      const last_round = round === options.max_rounds - 1;
-      const stream = streamed(model, { messages, tools: last_round ? undefined : request.tools.definitions, max_tokens: options.max_tokens, signal });
+      const offered = round === options.max_rounds - 1 ? undefined : tools;
+      let completion: ChatCompletion | undefined;
+      let fit: Extract<Fit, { fits: true }> | undefined;
+      let thought = false;
       let started = false;
-      let next = await stream.next();
-      while (!next.done) {
-        // Text from a later round starts a paragraph of its own.
-        const text = !started && said ? `\n\n${next.value}` : next.value;
-        started = true;
-        said += text;
-        yield { type: "text", text };
-        next = await stream.next();
+      // A request the engine finds too large is fitted again once, with the estimate corrected.
+      for (let attempt = 0; completion === undefined; attempt += 1) {
+        const fitted = fit_request(messages, offered, { context_size: options.context_size, max_tokens: options.max_tokens, chars_per_token: ratio });
+        if (!fitted.fits) throw new PlainFailure(too_small_message(options.context_size, fitted, could_use_core));
+        fit = fitted;
+        for (const [notice, text] of fit_notices(fitted)) {
+          if (told.has(notice)) continue;
+          told.add(notice);
+          yield { type: "notice", text };
+        }
+        const stream = streamed(model, { messages: fitted.messages, tools: offered, max_tokens: fitted.max_tokens, signal });
+        try {
+          let next = await stream.next();
+          while (!next.done) {
+            if (next.value.kind === "reasoning") {
+              thought = true;
+              yield { type: "reasoning", text: next.value.text };
+            } else {
+              // Text from a later round starts a paragraph of its own.
+              const text = !started && said ? `\n\n${next.value.text}` : next.value.text;
+              started = true;
+              said += text;
+              yield { type: "text", text };
+            }
+            next = await stream.next();
+          }
+          completion = next.value;
+        } catch (error) {
+          if (!(error instanceof ContextOverflow) || attempt > 0 || started || signal.aborted) throw error;
+          if (error.prompt_tokens) calibrate(key, fitted.prompt_chars, error.prompt_tokens);
+          else tighten(key);
+          const measured = error.prompt_tokens ? (fitted.prompt_chars / error.prompt_tokens) * 0.9 : ratio * 0.75;
+          ratio = Math.max(least_ratio, Math.min(key ? chars_per_token(key) : ratio, measured));
+        }
       }
-      const completion = next.value;
       // A client may end its stream quietly when stopped, which is no answer.
       if (signal.aborted) throw new Error(stopped_message);
-      if (completion.usage) yield { type: "usage", ...completion.usage };
-      if (completion.finish_reason === "repetition") throw new Error("The model kept repeating itself, so it was stopped.");
+      if (completion.usage) {
+        yield { type: "usage", ...completion.usage };
+        if (key) {
+          calibrate(key, fit!.prompt_chars, completion.usage.input_tokens);
+          ratio = chars_per_token(key);
+        }
+      }
+      if (completion.finish_reason === "repetition") throw new PlainFailure("The model kept repeating itself, so it was stopped.");
       if (completion.tool_calls.length === 0) {
-        if (!said.trim()) throw new Error("The model returned an empty answer.");
+        if (completion.finish_reason === "length") throw new PlainFailure(cut_off_message(fit!.max_tokens, started, thought));
+        if (!said.trim()) throw new PlainFailure("The model returned an empty answer.");
         yield { type: "done", text: said.trim() };
         return;
       }
@@ -170,8 +264,9 @@ export async function* run_direct(model: ChatModel, request: EngineRequest, sign
         messages.push({ role: "tool", tool_call_id: call.id, content: outcome.result });
       }
     }
-    throw new Error(`The model was still calling tools after ${options.max_rounds} rounds.`);
+    throw new PlainFailure(`The model was still calling tools after ${options.max_rounds} rounds.`);
   } catch (error) {
-    yield { type: "error", message: signal.aborted ? stopped_message : error instanceof Error ? error.message : String(error) };
+    if (signal.aborted) yield { type: "error", message: stopped_message };
+    else yield { type: "error", ...plain_of(error, options) };
   }
 }

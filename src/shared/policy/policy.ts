@@ -36,6 +36,21 @@ export const offered_api: Record<string, MethodSpec> = {
   propose_link: graph_feature.api.propose_link as MethodSpec,
 };
 
+// The core set offered to a model with a small context, each briefly described: the reads and the most-used changes.
+export const core_tools: Record<string, string> = {
+  list_contexts: "Lists the contexts as a tree, with their ids.",
+  get_context: "Gets one context: its notes and the items it holds.",
+  get_item: "Gets one item and the contexts holding it.",
+  search_index: "Searches items, contexts and messages by their words and meaning.",
+  add_context: "Adds a context; parent_id is null for the top level.",
+  rename_context: "Renames a context.",
+  set_context_notes: "Sets a context's notes, in Markdown.",
+  set_item_note: "Sets the note on why an item is in a context.",
+  move_item: "Moves an item from one context to another.",
+  add_item_to_contexts: "Puts an item already kept in more contexts.",
+  remove_item: "Takes an item out of a context; it stays in its own app.",
+};
+
 export function is_offered(method: string): boolean {
   return Object.hasOwn(offered_api, method);
 }

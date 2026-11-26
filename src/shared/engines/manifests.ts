@@ -21,8 +21,30 @@ function key_command(example: string): SettingField {
 }
 
 function context_size(default_size: number): SettingField {
-  return { key: "context_size", label: "Context size", hint: "How many tokens the model reads at once; older tool results are dropped to fit.", type: "number", default: default_size, min: 2048, max: 2_000_000, step: 1024 };
+  return {
+    key: "context_size",
+    label: "Context size",
+    hint: "How many tokens the model reads at once, as its server is set to; CODEX leaves out older messages to fit, and a small model reads faster with less.",
+    type: "number",
+    default: default_size,
+    min: 2048,
+    max: 2_000_000,
+    step: 1024,
+  };
 }
+
+const tool_set: SettingField = {
+  key: "tool_set",
+  label: "Tools offered",
+  hint: "Which of CODEX's tools the model is offered. Automatic offers the core set, the reads and the most-used changes briefly described, when the context size is under 16,384 tokens, and every tool above it.",
+  type: "choice",
+  default: "auto",
+  choices: [
+    { value: "auto", label: "Automatic" },
+    { value: "core", label: "Core set" },
+    { value: "all", label: "All tools" },
+  ],
+};
 
 // ── Engines ──────────────────────────────────────────────────────────────────
 
@@ -35,6 +57,7 @@ export const anthropic_manifest: PluginManifest = {
   settings: [
     { key: "model", label: "Model", hint: "The model's id at Anthropic.", type: "text", default: "claude-opus-5-5", placeholder: "claude-opus-5-5" },
     context_size(200_000),
+    tool_set,
     key_command("pass show anthropic/api-key"),
   ],
 };
@@ -56,6 +79,7 @@ export const openai_manifest: PluginManifest = {
     },
     { key: "model", label: "Model", hint: "The model's name on that endpoint.", type: "text", default: "", placeholder: "llama3.1" },
     context_size(8192),
+    tool_set,
     key_command("pass show openai/api-key"),
   ],
 };

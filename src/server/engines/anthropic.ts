@@ -5,6 +5,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 import type { ChatCompletion, ChatMessage, ChatModel, ChatRequest, ToolCall } from "../../shared/engines/direct.ts";
+import { overflow_of } from "./errors.ts";
 import { repetition_watch } from "./repetition.ts";
 
 // ── Conversions ──────────────────────────────────────────────────────────────
@@ -95,7 +96,7 @@ export class AnthropicModel implements ChatModel {
       }
     } catch (error) {
       stream.abort();
-      throw error;
+      throw overflow_of(error) ?? error;
     }
     const message = await stream.finalMessage();
     if (message.stop_reason === "refusal") throw new ModelRefused(message.stop_details?.category ?? null);

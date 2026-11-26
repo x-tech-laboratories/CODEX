@@ -232,6 +232,22 @@
   max-width: 85%;
 }
 
+.reply-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.chat-message > .banner {
+  margin: 0;
+}
+
+.reply-thinking-text {
+  max-height: 16rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
 .chat-message .output {
   max-height: 16rem;
   white-space: pre-wrap;
