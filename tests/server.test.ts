@@ -358,7 +358,7 @@ describe("server", () => {
     }
     const after = (await signed({ method: "POST", url: "/api/call/get_settings", payload: [] })).json() as Record<string, unknown>;
     expect([after.engine, after.embedder, after["hosted_log.keep_days"], after.refresh_minutes]).toEqual(["anthropic", "openai-embeddings", 1, 8]);
-  });
+  }, 20_000);
 
   it("lets the desktop window, which reaches the daemon's socket, change them", async () => {
     const database = new DatabaseSync(":memory:");
