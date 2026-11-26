@@ -22,7 +22,8 @@ import { context_bridge } from "../shared/bridge.ts";
 import { mcp_instructions as instructions } from "../shared/mcp.ts";
 import { stop_all_runs } from "../shared/conversations/run.ts";
 import { conversation_event } from "../shared/page_api.ts";
-import { bind_methods, context_api, is_read_only, start_assistant, sync_engine } from "../shared/store.ts";
+import { page_only_refusal } from "../shared/page_api.ts";
+import { bind_methods, context_api, is_page_only, is_read_only, program_api, start_assistant, sync_engine } from "../shared/store.ts";
 import { register_context_calls } from "./calls.ts";
 
 // ── Options ──────────────────────────────────────────────────────────────────
@@ -60,7 +61,8 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
     async (api) => {
       changes.register(api, "/events");
 
-      register_context_calls(api, database, changes);
+      // A browser signed in with a password, itself or through a trusted proxy, is the user at the page; a token is a program.
+      register_context_calls(api, database, changes, (request) => request.viewer !== null && request.viewer.via !== "token");
 
       api.get("/openapi.json", async () =>
         openapi_document(context_api, { title: "CODEX", version, description: instructions, path_of: (method) => `/api/call/${method}`, is_read_only }),
@@ -71,9 +73,10 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
         name: "codex",
         version,
         instructions,
-        api: context_api,
+        api: program_api,
         is_read_only,
         call: async (method, args) => {
+          if (is_page_only(method)) throw new Error(page_only_refusal);
           const methods = bind_methods(database, () => changes.announce_change());
           return context_bridge.dispatch(methods, method, args);
         },

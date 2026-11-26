@@ -19,7 +19,7 @@ export default defineConfig({
         autoUpdate: (new_threshold, previous_threshold) => Math.max(previous_threshold, Math.floor(new_threshold) - 1),
         lines: 79,
         statements: 78,
-        functions: 73,
+        functions: 74,
         branches: 74,
       },
     },

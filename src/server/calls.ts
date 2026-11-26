@@ -3,23 +3,26 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { positional_args } from "@x-tech-laboratories/x-libs/api_spec";
 import type { EventStream } from "@x-tech-laboratories/x-libs/server/events";
 import { send_text } from "@x-tech-laboratories/x-libs/server/replies";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { context_bridge } from "../shared/bridge.ts";
-import { bind_methods, context_api, is_read_only, type ContextMethods } from "../shared/store.ts";
+import { page_only_refusal } from "../shared/page_api.ts";
+import { bind_methods, context_api, is_page_only, is_read_only, type ContextMethods } from "../shared/store.ts";
 
 // ── Data calls ───────────────────────────────────────────────────────────────
 
 // An import, such as a Liftosaur file, arrives as one call's argument.
 const import_body_limit = 32 * 1024 * 1024;
 
-// Calls arrive as POST <prefix>/call/<method> with the arguments as a JSON list, or by name as a JSON object.
-export function register_context_calls(api: FastifyInstance, database: () => SqlDatabase, changes: EventStream): void {
+// Calls arrive as POST <prefix>/call/<method> with the arguments as a JSON list, or by name as a JSON object. A call
+// only the user at the page may make is refused unless is_page says the request came from it.
+export function register_context_calls(api: FastifyInstance, database: () => SqlDatabase, changes: EventStream, is_page: (request: FastifyRequest) => boolean): void {
   api.post<{ Params: { method: string } }>("/call/:method", { bodyLimit: import_body_limit }, async (request, reply) => {
+    if (is_page_only(request.params.method) && !is_page(request)) return send_text(reply, 403, page_only_refusal);
     const body: unknown = request.body ?? [];
     const spec = context_api[request.params.method as keyof ContextMethods];
     let args: unknown[];

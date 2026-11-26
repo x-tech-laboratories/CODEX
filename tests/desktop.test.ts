@@ -73,12 +73,32 @@ describe("the data calls over HTTP", () => {
     const app = fastify();
     const database = new DatabaseSync(":memory:");
     open_store(database);
-    register_context_calls(app, () => database, new EventStream());
+    register_context_calls(app, () => database, new EventStream(), () => true);
 
     const started = await app.inject({ method: "POST", url: "/call/add_context", payload: ["Garden", null] });
 
     expect(started.headers["content-type"]).toContain("application/json");
     expect(typeof JSON.parse(started.body)).toBe("string");
     await app.close();
+  });
+
+  it("let the desktop window set a level, and refuse it to anything not the page", async () => {
+    const database = new DatabaseSync(":memory:");
+    open_store(database);
+    const window = fastify();
+    register_context_calls(window, () => database, new EventStream(), () => true);
+    const program = fastify();
+    register_context_calls(program, () => database, new EventStream(), () => false);
+
+    const set = await window.inject({ method: "POST", url: "/call/set_action_level", payload: ["rename_context", "auto"] });
+    const refused = await program.inject({ method: "POST", url: "/call/set_action_level", payload: ["rename_context", "background"] });
+
+    expect(set.statusCode).toBe(204);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.body).toContain("Only you can do this");
+    const policy = await program.inject({ method: "POST", url: "/call/get_action_policy", payload: [] });
+    expect((policy.json() as { method: string; level: string }[]).find((entry) => entry.method === "rename_context")!.level).toBe("auto");
+    await window.close();
+    await program.close();
   });
 });

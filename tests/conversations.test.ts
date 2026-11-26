@@ -163,6 +163,55 @@ describe("a conversation", () => {
   });
 });
 
+describe("removing a context", () => {
+  it("removes its conversation and proposals, and those of the contexts inside it, leaving the rest; History brings back the context alone", async () => {
+    const fixture = start_fixture();
+    const home = fixture.calls.add_context("Home");
+    const kitchen = fixture.calls.add_context("Kitchen", home);
+    const garden = fixture.calls.add_context("Garden");
+    fixture.set_script(async function* (request) {
+      await request.tools.call("rename_context", { id: kitchen, name: "Cooking" });
+      yield { type: "done", text: "Proposed." };
+    });
+    for (const id of [kitchen, garden, null]) {
+      await fixture.calls.send_message(id, "Rename the kitchen");
+      await wait_for_runs();
+    }
+    expect(fixture.calls.list_proposals(kitchen)).toHaveLength(1);
+
+    fixture.calls.remove_context(home);
+
+    expect(fixture.calls.get_conversation(kitchen)).toMatchObject({ messages: [], proposals: [] });
+    expect(fixture.calls.get_conversation(garden).messages).toHaveLength(2);
+    expect(fixture.calls.get_conversation(null).messages).toHaveLength(2);
+    expect(fixture.calls.list_proposals().map((proposal) => proposal.conversation_id).sort()).toEqual([garden, "general"].sort());
+
+    const removed = fixture.calls.list_recent_changes(10).find((change) => change.item_id === kitchen)!;
+    fixture.calls.restore_item_version("context", removed.id);
+    expect(fixture.calls.get_context(kitchen).name).toBe("Kitchen");
+    expect(fixture.calls.get_conversation(kitchen).messages).toEqual([]);
+  });
+
+  it("stops a reply being written there and keeps nothing of it", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    let started!: () => void;
+    const is_started = new Promise<void>((resolve) => (started = resolve));
+    fixture.set_script(async function* (_request, signal) {
+      yield { type: "text", text: "Part" };
+      started();
+      await new Promise((resolve) => signal.addEventListener("abort", resolve));
+    });
+    await fixture.calls.send_message(kitchen, "Talk");
+    await is_started;
+
+    fixture.calls.remove_context(kitchen);
+    await wait_for_runs();
+
+    expect(fixture.calls.get_conversation(kitchen)).toMatchObject({ messages: [], run: null });
+  });
+});
+
 describe("what the engine is told", () => {
   it("names the context, its place, notes and children, and fences what other apps wrote", () => {
     const fixture = start_fixture();

@@ -10,7 +10,10 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { open_plugin_host } from "../collectors/host.ts";
 import { engine_setting, type Engine, type EngineEvent, type EngineTools, type EngineTurn, type ToolOutcome } from "../engines/engine.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
-import { new_id } from "../feature.ts";
+import { eq } from "@x-tech-laboratories/x-libs/drizzle";
+
+import { contexts } from "../contexts/schema.ts";
+import { drizzle_of, new_id } from "../feature.ts";
 import { is_read_only } from "../page_api.ts";
 import { brings_outside_content, decide, is_offered, level_of, offered_api, type Presence } from "../policy/policy.ts";
 import { add_proposal } from "../policy/proposals.ts";
@@ -19,7 +22,7 @@ import { settings_feature } from "../settings.ts";
 import { assistant_host, type AssistantHost } from "./host.ts";
 import { build_instructions } from "./instructions.ts";
 import { add_message, list_messages } from "./messages.ts";
-import { conversation_id_of, type AssistantStatus, type EngineSummary, type RunState, type ToolCallRecord } from "./model.ts";
+import { conversation_id_of, general_conversation, type AssistantStatus, type EngineSummary, type RunState, type ToolCallRecord } from "./model.ts";
 
 // ── Engines ──────────────────────────────────────────────────────────────────
 
@@ -225,6 +228,8 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
   // Gone before the pages hear of the end, so a page loading the conversation then finds the message and no run.
   runs.delete(conversation_id);
   try {
+    // A context removed while its reply was written keeps no conversation.
+    if (conversation_id !== general_conversation && !drizzle_of(host.database()).select({ id: contexts.id }).from(contexts).where(eq(contexts.id, conversation_id)).get()) return;
     add_message(host.database(), {
       conversation_id,
       role: "assistant",

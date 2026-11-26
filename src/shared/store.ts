@@ -15,7 +15,7 @@ import { contexts_feature } from "./contexts/store.ts";
 import { use_assistant_host, type AssistantHost } from "./conversations/host.ts";
 import { conversations_feature } from "./conversations/store.ts";
 import { forget_synced_changes, history_feature, install_history, record_history } from "./history/store.ts";
-import { is_read_only } from "./page_api.ts";
+import { is_page_only, is_read_only } from "./page_api.ts";
 import { policy_feature } from "./policy/store.ts";
 import { settings_feature } from "./settings.ts";
 
@@ -78,10 +78,13 @@ export type ContextMethods = Bound<typeof all_methods>;
 
 export const method_names = Object.keys(all_methods) as (keyof ContextMethods & string)[];
 
-export { is_read_only };
+export { is_page_only, is_read_only };
 
 // What every call does and takes, for programs other than the page.
 export const context_api = Object.assign({}, ...features.map((feature) => feature.api)) as ApiSpec<ContextMethods>;
+
+// What other programs reach through MCP: every call but those only the user at the page may make.
+export const program_api = Object.fromEntries(Object.entries(context_api).filter(([method]) => !is_page_only(method))) as ApiSpec<ContextMethods>;
 
 // The calls run on the database given; after each write the features catch up, the history records what it touched and
 // on_change tells the other pages and devices.

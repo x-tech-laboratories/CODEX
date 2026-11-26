@@ -27,8 +27,8 @@ import { context_bridge } from "../shared/bridge.ts";
 import { read_desktop_settings, type DaemonMethods, type DesktopSettings } from "../shared/desktop.ts";
 import { mcp_instructions } from "../shared/mcp.ts";
 import { stop_all_runs } from "../shared/conversations/run.ts";
-import { conversation_event, type DeviceMethods } from "../shared/page_api.ts";
-import { bind_methods, context_api, is_read_only, needs_upgrade, open_store, start_assistant, sync_engine } from "../shared/store.ts";
+import { conversation_event, page_only_refusal, type DeviceMethods } from "../shared/page_api.ts";
+import { bind_methods, is_page_only, is_read_only, needs_upgrade, open_store, program_api, start_assistant, sync_engine } from "../shared/store.ts";
 import { register_context_calls } from "../server/calls.ts";
 import { load_collectors } from "../server/collectors/index.ts";
 import { keep_refreshing } from "../server/refreshing.ts";
@@ -137,11 +137,14 @@ const local_mcp = create_local_mcp({
   name: "codex",
   version,
   instructions: mcp_instructions,
-  api: context_api,
+  api: program_api,
   is_read_only,
   settings_file: join(profile, "mcp.json"),
   default_port: 3922,
-  call: (method, args) => context_bridge.dispatch(bind_methods(() => database, announce_change), method, args),
+  call: (method, args) => {
+    if (is_page_only(method)) throw new Error(page_only_refusal);
+    return context_bridge.dispatch(bind_methods(() => database, announce_change), method, args);
+  },
 });
 
 // ── Desktop settings ─────────────────────────────────────────────────────────
@@ -191,7 +194,8 @@ async function build_daemon(shut_down: () => void): Promise<FastifyInstance> {
   await daemon.register(
     async (api) => {
       changes.register(api, "/events");
-      register_context_calls(api, () => database, changes);
+      // The socket is readable by the user alone and is how the desktop window reaches the daemon, so it is the page.
+      register_context_calls(api, () => database, changes, () => true);
       register_call_table(api, "/device", device_methods(), { is_read_only, on_change: tell_others });
       register_call_table(api, "/certificates", certificates.methods, { is_read_only });
       register_call_table(api, "/local_mcp", local_mcp.methods, { is_read_only });

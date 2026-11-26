@@ -4,14 +4,15 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
+import { inArray, synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { text } from "../api_schemas.ts";
 import { engine_setting } from "../engines/engine.ts";
-import { define_feature } from "../feature.ts";
-import { list_proposals_of, remove_proposals } from "../policy/proposals.ts";
-import { list_messages, remove_messages } from "./messages.ts";
+import { contexts } from "../contexts/schema.ts";
+import { define_feature, drizzle_of } from "../feature.ts";
+import { list_proposals_of, proposal_conversations, remove_proposals } from "../policy/proposals.ts";
+import { context_conversations, list_messages, remove_messages } from "./messages.ts";
 import { migrations } from "./migrations/index.ts";
 import { conversation_id_of, type AssistantStatus, type Conversation } from "./model.ts";
 import { find_engine, is_running, run_state, start_run, stop_run_of } from "./run.ts";
@@ -43,6 +44,19 @@ function clear_conversation(database: SqlDatabase, context_id: string | null = n
   if (is_running(id)) throw new Error("A reply is still being written here; stop it first.");
   remove_messages(database, id);
   remove_proposals(database, id);
+}
+
+// A removed context takes its conversation with it: the messages, the proposals and a reply still being written.
+// History can bring the context back, but not its conversation.
+export function forget_removed_contexts(database: SqlDatabase): void {
+  const held = [...new Set([...context_conversations(database), ...proposal_conversations(database)])];
+  if (held.length === 0) return;
+  const kept = new Set(drizzle_of(database).select({ id: contexts.id }).from(contexts).where(inArray(contexts.id, held)).all().map((row) => row.id));
+  for (const id of held.filter((each) => !kept.has(each))) {
+    stop_run_of(id);
+    remove_messages(database, id);
+    remove_proposals(database, id);
+  }
 }
 
 // ── Feature ──────────────────────────────────────────────────────────────────
@@ -80,4 +94,5 @@ export const conversations_feature = define_feature({
     },
   },
   setting_defaults: { [engine_setting]: "" },
+  after_write: forget_removed_contexts,
 });
