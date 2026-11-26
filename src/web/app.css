@@ -183,7 +183,13 @@
 }
 
 .mascot {
+  position: relative;
   width: 96px;
+}
+
+.mascot svg {
+  display: block;
+  width: 100%;
 }
 
 .mascot-body {
@@ -195,10 +201,7 @@
 }
 
 .mascot-face {
-  display: block;
-  width: 100%;
-  height: 100%;
-  image-rendering: pixelated;
+  position: absolute;
 }
 
 .assistant-empty {
