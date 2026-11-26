@@ -19,6 +19,7 @@ import { attempt, calls, data_watch, page, set_setting, show_error, use_settings
 import { read_picked, save_text } from "../files.ts";
 import { engine_section, policy_section } from "../assistant/AssistantSettings.tsx";
 import { CollectorRows } from "../plugins.tsx";
+import { hosted_log_section } from "../privacy/PrivacySettings.tsx";
 
 // ── General ──────────────────────────────────────────────────────────────────
 
@@ -55,14 +56,14 @@ function history_section(settings: Record<string, unknown>, set_setting: (key: s
 const collectors_section: SettingsSection = {
   id: "plugins",
   heading: "Plugins",
-  hint: "Collectors bring items from other apps. Each keeps only a pointer and what it last saw; the item stays in its own app.",
+  hint: "Collectors bring items from other apps. Each keeps only a pointer and what it last saw; the item stays in its own app. Each also says whether its items may be sent to a hosted engine, and whether they are trusted.",
   content: <CollectorRows />,
 };
 
 // ── Import and export ────────────────────────────────────────────────────────
 
 // The settings an imported file may set; anything else in it is ignored.
-const importable_settings = new Set(["refresh_minutes", "history.keep_days", "plugins", "engine", "action_policy"]);
+const importable_settings = new Set(["refresh_minutes", "history.keep_days", "plugins", "engine", "action_policy", "source_marks", "hosted_log.keep_days"]);
 
 function TransferRows() {
   const contexts_picker = useRef<HTMLInputElement>(null);
@@ -186,7 +187,7 @@ export function SettingsView() {
           <SettingsPage
             categories={[
               { heading: "General", sections: [general_section(values, set_setting), history_section(values, set_setting), collectors_section, transfer_section] },
-              { heading: "Assistant", sections: [engine_section(values), policy_section] },
+              { heading: "Assistant", sections: [engine_section(values), policy_section, hosted_log_section(values, set_setting)] },
               ...data_category(),
             ]}
           />

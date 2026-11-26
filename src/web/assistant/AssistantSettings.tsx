@@ -18,10 +18,12 @@ function EngineChoice({ chosen }: { chosen: string }) {
     <Loaded resource={status} lines={1}>
       {({ engines }) => {
         const options: [string, string][] = [["", "None"], ...engines.map((engine): [string, string] => [engine.id, engine.label])];
+        const answering = engines.find((engine) => engine.id === chosen);
+        const where = answering ? (answering.is_local ? " It is local: it is sent every source's items." : " It is hosted: it is sent only the items of sources marked “May be sent to a hosted engine” under Plugins.") : "";
         // A chosen engine that is not running stays listed, so the choice is not lost while its plugin is off.
         if (chosen && !engines.some((engine) => engine.id === chosen)) options.push([chosen, `${chosen} (not running)`]);
         return (
-          <SettingRow label="Answering" hint="The engine that writes the assistant's replies. Each engine's model, address and key command are set in its own row below.">
+          <SettingRow label="Answering" hint={`The engine that writes the assistant's replies. Each engine's model, address and key command are set in its own row below.${where}`}>
             <Select label="Answering" bare options={options} value={chosen} on_change={(engine) => void set_setting("engine", engine)} />
           </SettingRow>
         );

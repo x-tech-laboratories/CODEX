@@ -69,10 +69,10 @@ export function is_read_only(method: string): boolean {
   return /^(list|get|search|lookup|export)_/.test(method);
 }
 
-// Calls that keep the user in charge of the assistant, approving its changes and setting how freely it may make
-// them, answered only for the user at the page: a signed-in browser, or the desktop window. A token, MCP and any
+// Calls that keep the user in charge of the assistant, approving its changes, setting how freely it may make them
+// and what each source's items may reach, answered only for the user at the page: a signed-in browser, or the desktop window. A token, MCP and any
 // engine are refused, so nothing a program does can approve a change or raise a level.
-const page_only_calls: ReadonlySet<string> = new Set(["resolve_proposal", "set_action_level"]);
+const page_only_calls: ReadonlySet<string> = new Set(["resolve_proposal", "set_action_level", "set_source_mark"]);
 
 export function is_page_only(method: string): boolean {
   return page_only_calls.has(method);

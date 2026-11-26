@@ -57,8 +57,16 @@ export interface Engine {
   label: string;
   // The model it answers with now, from its plugin's settings, such as "claude-opus-5-5".
   model(): string;
+  // True when its model answers on this machine or the user's own network, from its settings now; an engine that
+  // leaves this out is hosted, and is never sent items from a source not marked for hosted engines.
+  is_local?(): boolean;
   // Ends with one done or error event; stops soon after the signal aborts.
   run(request: EngineRequest, signal: AbortSignal): AsyncIterable<EngineEvent>;
+}
+
+// Whether an engine is hosted: every engine is, unless it says it is local.
+export function is_hosted(engine: Pick<Engine, "is_local">): boolean {
+  return engine.is_local?.() !== true;
 }
 
 // The setting naming the engine that answers, by the id its plugin provides it under; empty for none.

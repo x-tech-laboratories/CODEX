@@ -8,7 +8,7 @@ import { input_schema, positional_args } from "@x-tech-laboratories/x-libs/api_s
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { open_plugin_host } from "../collectors/host.ts";
-import { engine_setting, type Engine, type EngineEvent, type EngineTools, type EngineTurn, type ToolOutcome } from "../engines/engine.ts";
+import { engine_setting, is_hosted, type Engine, type EngineEvent, type EngineTools, type EngineTurn, type ToolOutcome } from "../engines/engine.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
 import { eq } from "@x-tech-laboratories/x-libs/drizzle";
 
@@ -18,9 +18,12 @@ import { is_read_only } from "../page_api.ts";
 import { brings_outside_content, decide, is_offered, level_of, offered_api, type Presence } from "../policy/policy.ts";
 import { add_proposal } from "../policy/proposals.ts";
 import { summarize_call } from "../policy/summaries.ts";
+import { screen_result } from "../privacy/results.ts";
+import { counts_of, local_screen, open_screen, taints, withheld_line, type Screen } from "../privacy/screen.ts";
+import { record_hosted_send } from "../privacy/store.ts";
 import { settings_feature } from "../settings.ts";
 import { assistant_host, type AssistantHost } from "./host.ts";
-import { build_instructions } from "./instructions.ts";
+import { screened_instructions } from "./instructions.ts";
 import { add_message, list_messages } from "./messages.ts";
 import { conversation_id_of, general_conversation, type AssistantStatus, type EngineSummary, type RunState, type ToolCallRecord } from "./model.ts";
 
@@ -30,7 +33,7 @@ import { conversation_id_of, general_conversation, type AssistantStatus, type En
 export async function find_engine(database: SqlDatabase): Promise<AssistantStatus & { running: Engine | null }> {
   const chosen = String(settings_feature.methods.get_settings(database)[engine_setting] ?? "");
   const provided = (await open_plugin_host(database)).providers("engine");
-  const engines: EngineSummary[] = provided.map(({ id, plugin_id, value }) => ({ id, plugin_id, label: value.label, model: value.model() }));
+  const engines: EngineSummary[] = provided.map(({ id, plugin_id, value }) => ({ id, plugin_id, label: value.label, model: value.model(), is_local: !is_hosted(value) }));
   const found = provided.find((each) => each.id === chosen);
   if (found) return { engine: engines.find((each) => each.id === chosen)!, problem: "", engines, running: found.value };
   const problem = chosen ? `The ${chosen} engine is not running; turn its plugin on under Settings → Plugins.` : "No engine is set up; choose one under Settings → Engine.";
@@ -55,8 +58,10 @@ export interface ToolContext {
   call: AssistantHost["call"];
   conversation_id: string;
   presence: Presence;
-  // Set once a tool gave back text from another app; from then on every change asks first.
+  // Set once the run read text from a source not marked trusted; from then on every change asks first.
   has_outside_content: boolean;
+  // What the engine may be sent of each source, and what it was; left out, a local engine with no source marked.
+  screen?: Screen;
   // Hears what the policy made of each call, in order, so it can be kept with the call.
   on_decided?: (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id">) => void;
 }
@@ -68,11 +73,18 @@ export function engine_tools(context: ToolContext): EngineTools {
     context.on_decided?.(name, record);
     return outcome;
   };
+  const screen = (context.screen ??= local_screen());
+  // Other apps' text is screened by source: a hosted engine is not sent what it may not see, and only a source not
+  // marked trusted makes the run's later changes wait; what is left is fenced either way.
   const run = async (name: string, args: unknown[]): Promise<string> => {
-    const text = as_text(await context.call(name, args));
-    if (!brings_outside_content(name)) return text;
-    context.has_outside_content = true;
-    return untrusted_block(text);
+    const value = await context.call(name, args);
+    if (!brings_outside_content(name)) return as_text(value);
+    const screened = screen_result(context.database(), screen, name, args, value);
+    if (taints(screen, screened.sources)) context.has_outside_content = true;
+    const text = as_text(screened.value);
+    const shown = screened.sources.size > 0 ? untrusted_block(text) : text;
+    const withheld = withheld_line(screen, screened.withheld);
+    return withheld ? `${shown}\n${withheld}` : shown;
   };
   return {
     definitions,
@@ -110,6 +122,8 @@ export function engine_tools(context: ToolContext): EngineTools {
 
 interface Run {
   conversation_id: string;
+  // What the engine may be sent of each source, and what it was so far.
+  screen: Screen;
   abort: AbortController;
   state: RunState;
   done: Promise<void>;
@@ -164,15 +178,26 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   if (!text.trim()) throw new Error("Write a message first.");
   if (runs.has(conversation_id)) throw new Error("A reply is still being written here; stop it or wait for it first.");
   // Fails on a context that does not exist, before anything is kept.
-  const instructions = build_instructions(database, context_id || null, new Date().toISOString().slice(0, 10));
+  screened_instructions(database, context_id || null, "", local_screen());
   const found = await find_engine(database);
   if (!found.running || !found.engine) throw new Error(found.problem);
+  const screen = await open_screen(database, is_hosted(found.running));
+  const instructions = screened_instructions(database, context_id || null, new Date().toISOString().slice(0, 10), screen);
   if (runs.has(conversation_id)) throw new Error("A reply is still being written here; stop it or wait for it first.");
   add_message(database, { conversation_id, role: "user", text: text.trim() });
   const state: RunState = { run_id: new_id(), engine: found.engine.label, model: found.engine.model, started_at: new Date().toISOString(), text: "", tool_calls: [] };
-  const run: Run = { conversation_id, abort: new AbortController(), state, done: Promise.resolve() };
+  const run: Run = { conversation_id, screen, abort: new AbortController(), state, done: Promise.resolve() };
   runs.set(conversation_id, run);
-  const request = { instructions, conversation: turns_of(database, conversation_id), tools: engine_tools({ database: host.database, call: host.call, conversation_id, presence: "conversation", has_outside_content: false, on_decided: (name, record) => note_decision(run, name, record) }) };
+  const tools = engine_tools({
+    database: host.database,
+    call: host.call,
+    conversation_id,
+    presence: "conversation",
+    has_outside_content: taints(screen, instructions.sources),
+    screen,
+    on_decided: (name, record) => note_decision(run, name, record),
+  });
+  const request = { instructions: instructions.value, conversation: turns_of(database, conversation_id), tools };
   run.done = drive(run, found.running.run(request, run.abort.signal), host);
   host.emit({ conversation_id, run_id: state.run_id, type: "started", engine: state.engine, model: state.model });
   return { run_id: state.run_id };
@@ -227,6 +252,14 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
   for (const call of state.tool_calls) if (call.outcome === "pending") call.outcome = "failed";
   // Gone before the pages hear of the end, so a page loading the conversation then finds the message and no run.
   runs.delete(conversation_id);
+  if (run.screen.is_hosted) {
+    try {
+      const { screen } = run;
+      record_hosted_send(host.database(), { run_id: state.run_id, conversation_id, engine: state.engine, model: state.model, included: counts_of(screen, screen.included), withheld: counts_of(screen, screen.withheld) });
+    } catch (thrown) {
+      console.warn("hosted log:", thrown);
+    }
+  }
   try {
     // A context removed while its reply was written keeps no conversation.
     if (conversation_id !== general_conversation && !drizzle_of(host.database()).select({ id: contexts.id }).from(contexts).where(eq(contexts.id, conversation_id)).get()) return;

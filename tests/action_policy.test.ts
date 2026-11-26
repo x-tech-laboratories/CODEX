@@ -74,6 +74,7 @@ describe("a run's tools", () => {
   it("run reads, fencing what other apps wrote, and refuse calls that are not offered or arguments that do not fit", async () => {
     const fixture = start_fixture();
     const kitchen = fixture.calls.add_context("Kitchen");
+    fixture.calls.add_item([kitchen], "links", { source_id: "https://example.org/tiles", kind: "link", title: "Tiles" });
     const { context, tools, decided } = tools_of(fixture);
 
     const listed = await tools.call("list_contexts", {});
@@ -124,6 +125,7 @@ describe("a run's tools", () => {
     const fixture = start_fixture();
     const kitchen = fixture.calls.add_context("Kitchen");
     fixture.calls.set_action_level("rename_context", "background");
+    fixture.calls.add_item([kitchen], "links", { source_id: "https://example.org/tiles", kind: "link", title: "Tiles" });
     const { tools } = tools_of(fixture);
 
     await tools.call("search_kept_items", { query: "tile" });

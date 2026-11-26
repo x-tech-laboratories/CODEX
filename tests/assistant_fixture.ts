@@ -23,7 +23,8 @@ export interface Fixture {
 }
 
 // A scripted engine plugin, provided as "fake", answering with whatever the test's script yields.
-export function start_fixture(options: { choose_engine?: boolean; on_event?: (event: ConversationEvent) => void; on_announce?: () => void } = {}): Fixture {
+// The engine is local unless asked to be hosted, so only the privacy tests see items withheld.
+export function start_fixture(options: { choose_engine?: boolean; hosted?: boolean; on_event?: (event: ConversationEvent) => void; on_announce?: () => void } = {}): Fixture {
   const database = new DatabaseSync(":memory:");
   open_store(database);
   const events: ConversationEvent[] = [];
@@ -40,6 +41,7 @@ export function start_fixture(options: { choose_engine?: boolean; on_event?: (ev
       context.provide("engine", "fake", {
         label: "Fake",
         model: () => "fake-model",
+        is_local: () => options.hosted !== true,
         run: (request, signal) => {
           requests.push(request);
           return script(request, signal);

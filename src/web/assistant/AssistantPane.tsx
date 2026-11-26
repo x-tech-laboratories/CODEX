@@ -232,7 +232,11 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
     <div className="assistant">
       <header className="assistant-head">
         <Mascot mood={mood} moment={moment} />
-        <p className="muted small">{engine ? [run?.engine || engine.label, run?.model || engine.model].filter(Boolean).join(" · ") : status.status === "failed" ? "CODEX cannot be reached." : "Asleep"}</p>
+        <p className="muted small">
+          {engine ? [run?.engine || engine.label, run?.model || engine.model].filter(Boolean).join(" · ") : status.status === "failed" ? "CODEX cannot be reached." : "Asleep"}
+          {engine && " "}
+          {engine && <span className={`badge tone-${engine.is_local ? "none" : "warn"}`} title={engine.is_local ? "Answers on this computer or your own network." : "Answers from a company's servers; it is sent only the items of sources you marked for it."}>{engine.is_local ? "local" : "hosted"}</span>}
+        </p>
       </header>
       {status.data && !engine && <NoEngine status={status.data} />}
       <div className="assistant-messages">

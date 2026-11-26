@@ -141,7 +141,7 @@ describe("a conversation", () => {
   it("says which engine answers, and why none does", async () => {
     const fixture = start_fixture({ choose_engine: false });
     const none = await fixture.calls.get_assistant_status();
-    expect(none).toEqual({ engine: null, problem: "No engine is set up; choose one under Settings → Engine.", engines: [{ id: "fake", plugin_id: "tests.fake-engine", label: "Fake", model: "fake-model" }] });
+    expect(none).toEqual({ engine: null, problem: "No engine is set up; choose one under Settings → Engine.", engines: [{ id: "fake", plugin_id: "tests.fake-engine", label: "Fake", model: "fake-model", is_local: true }] });
     fixture.calls.set_setting("engine", "fake");
     expect(await fixture.calls.get_assistant_status()).toMatchObject({ engine: { id: "fake", label: "Fake", model: "fake-model" }, problem: "" });
   });

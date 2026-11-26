@@ -25,6 +25,14 @@ The plan to make CODEX one application: a personal knowledge base, a knowledge m
    - **Tool plugins:** prebuilt tools installed like any other plugin, beside collector and engine plugins.
    - **Tools the engine writes:** a script saved by proposal, read by the user before its first use, and run in a sandbox where it can call only CODEX's tools.
 6. **Sources are other apps' MCP servers,** chosen during setup, each marked for whether its content may be sent to a hosted engine. The X-apps follow one shared convention for this (proposed for the Application Standard), so one collector reads them all.
+   *Built 2026-11-26 for the collector plugins (`src/shared/privacy/`, described in doc 1): each has two marks in its
+   row under Settings → Plugins, both off until turned on. "May be sent to a hosted engine": an engine is hosted unless
+   it says it is local (Anthropic never is; an OpenAI-compatible endpoint is when its host is loopback or a
+   private-network address), and a hosted engine is never given an unmarked source's items, titles included, in its
+   instructions or any tool result, only a line saying how many were withheld and why. "Trusted content": reading
+   that source's items no longer counts as outside content (see "Action policy"). A log under Settings → Assistant
+   lists each reply a hosted engine wrote, with its engine, model and the items sent and withheld per source as counts,
+   kept 90 days unless changed.*
 7. **It runs on the desktop,** on the machine with the GPU. Embeddings stay local whichever engine answers, so changing engine never forces a re-embed.
 8. **Recurring work is split.** The user's recurring tasks live in X-Tasks. The assistant's recurring jobs are CODEX's own, and the engine may create and delete them during a conversation.
 9. **Mail leaves.** Mail belongs in an application of its own with an MCP server; CODEX reads it like any other source. The mail code here (`legacy/src/assistant/mail*.ts`, `imap.ts`, `triage.ts`, `draftReply.ts`) is frozen and seeds that application; it is not ported.
@@ -44,6 +52,11 @@ Built 2026-11-26 for conversations (`src/shared/policy/`, described in doc 1): t
 proposal kept on the conversation it was asked for in (the Inbox comes later), and a run that read outside content
 proposing every change. An applied change records whether the user approved it or the engine made it at auto; the
 evidence and the undo wait for the Inbox, and History already keeps every context change.
+
+Built 2026-11-26 as well: outside content is judged by source. Items from a source marked "Trusted content" do not
+lower a run (they are still fenced as data); items from an unmarked source do, whether a tool read them or they came
+in the open context's instructions; context names and notes the user wrote in CODEX never do. `set_source_mark`,
+like `set_action_level`, answers only the user at the page.
 
 - **Only the user approves or raises a level.** `resolve_proposal` and `set_action_level` answer only the user at the page (a signed-in browser, or the desktop window); a token over the API is refused, and MCP and engines are never offered them.
 - **New functions start at proposal only.**
@@ -100,6 +113,6 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 
 - **Injected instructions** in mail, pages and files: the trust rule under "Action policy".
 - **Wrong links trusted:** every model-made link is a proposal with its evidence until accepted.
-- **Hosted engines see personal data:** the per-source mark in decision 6, and a log of what was sent.
+- **Hosted engines see personal data:** the per-source mark in decision 6, and a log of what was sent (both built).
 - **Background cost:** budgets per job, and no model call when nothing changed.
 - **Mood that flatters:** the limits under "Mood and curiosity".
