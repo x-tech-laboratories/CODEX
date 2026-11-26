@@ -228,22 +228,24 @@ bookmarks runs in the desktop app alone: it reads a copy of the profile's `place
 locked, and what it brings syncs to the server and other devices like anything else.
 
 **Apps answering the item calls.** Every X-app answers the same four read-only calls about its items
-(`list_item_kinds`, `search_items`, `get_items`, `list_item_changes`), so any of them, and any other app that answers
+(`list_item_kinds`, `search_items`, `get_items`, `list_item_changes`), and an app whose items hold longer text a fifth
+(`get_item_texts`), so any of them, and any other app that answers
 them, becomes a source with no plugin of its own: under **Settings → Plugins**, **Add an app…** takes a name, the app's
 address (such as `https://tasks.example.org`) and a read-only token made on that app's account page, and saves it only
 once the app answers. Each app is then a collector of its own, named as you named it, with the kinds the app gave,
 its own row to change its address or token, see whether it answers now, or remove it, and its own **May be sent to a
-hosted engine** and **Trusted content** switches. CODEX only ever reads it, calling those four calls and nothing else:
+hosted engine** and **Trusted content** switches. CODEX only ever reads it, calling those calls and nothing else:
 it searches with `search_items`, and a refresh asks `list_item_changes` for what changed since the last refresh, so
 only changed items are read again; an item the app deleted is marked missing. The token is kept like a plugin's key:
-never shown to the page, the API, MCP or a settings export, and never in a message. The index gets each item's snippet,
-as the item calls give nothing more. Removing an app leaves the items it brought in their contexts as last seen.
+never shown to the page, the API, MCP or a settings export, and never in a message. The index gets each item's full
+text where the app answers the optional fifth call, `get_item_texts`, for a kind that says `has_text`, read again only
+once the item's `changed_at` moved, and otherwise its snippet; the text stays in this device's index and never reaches
+the synced store. Removing an app leaves the items it brought in their contexts as last seen.
 
 **X-Tasks, both ways.** X-Tasks answers the item calls too, so it can be read either way. The **X-Tasks** collector
 above knows X-Tasks: it offers tags and tasks with subtasks to follow, gives the graph a subtask's parent, and indexes a
 task's whole notes. Use it for X-Tasks. Use **Add an app…** for any X-app with no collector of its own; an X-Tasks
-added that way searches and refreshes tasks, but follows nothing and indexes only the first 200 characters of the
-notes. The two keep their items apart (`x-tasks:<id>` and `app.<name>:<id>`), so nothing moves from one to the other.
+added that way searches and refreshes tasks and indexes their whole notes, but follows nothing. The two keep their items apart (`x-tasks:<id>` and `app.<name>:<id>`), so nothing moves from one to the other.
 
 A collector of your own is a plugin in a subfolder of the plugins folder (`plugins_folder` in the server's config, or
 `plugins/` in the desktop app's profile) whose `package.json` names its built server entry under
@@ -359,9 +361,11 @@ The desktop app serves the same tools on its own data once **Settings → MCP se
 `http://127.0.0.1:3922/mcp`. `get_context` gives an AI client everything a context holds in one call. Plugin keys,
 such as a Trilium token, are left out of what the API and MCP read.
 
-**Items for other apps.** Like every X-app, CODEX answers the four read-only item calls of the Application Standard,
+**Items for other apps.** Like every X-app, CODEX answers the read-only item calls of the Application Standard,
 so another app or an assistant reads it with the same code it reads any X-app with, a read-only token being enough:
-`list_item_kinds`, `search_items(query, limit)`, `get_items(ids)` and `list_item_changes(since, limit)`. CODEX's own
+`list_item_kinds`, `search_items(query, limit)`, `get_items(ids)`, `list_item_changes(since, limit)` and
+`get_item_texts(ids)`, which gives a context's notes and a blueprint's body as Markdown; conversations and entities
+have no text. CODEX's own
 items are its contexts (name, notes as the snippet, `archived` as the status), its conversations (the title, the
 contexts holding it and when it was last used, never a message) and the entities of its graph (name, kind and other
 names, with `proposed`, `accepted` or `rejected` as the status). Ids carry their kind, such as `context:<id>`, and

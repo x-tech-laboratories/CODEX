@@ -56,10 +56,10 @@ its own plugin host over the same records only to show each plugin's settings (`
 
 ### Apps answering the item calls
 
-`src/shared/sources/` reads any app answering the Application Standard's four item calls, read-only, with no plugin of
+`src/shared/sources/` reads any app answering the Application Standard's item calls, read-only, with no plugin of
 its own. The apps are the synced `item_sources` setting, a list of `{ id, name, address, token, kinds }`: the id is
 made once from the first name (`x-tasks`, `x-tasks-2`) and never changes, since kept items carry it; `kinds` is what
-`list_item_kinds` answered when the app was last saved. `add_item_source`, `change_item_source` and
+`list_item_kinds` answered when the app was last saved, each with `has_text` when the app says so. `add_item_source`, `change_item_source` and
 `remove_item_source` check the app answers before saving, and are page-only like `set_source_mark`, the setting being
 one of `user_only_settings` (it holds tokens and says what CODEX reads); `list_item_sources` and
 `get_item_source_status` read. `get_settings` puts the hidden mark in place of every token and `set_setting` keeps the
@@ -70,14 +70,20 @@ conversations' own, provides one collector per app, `app.<id>`, so its items are
 apps cannot collide; its label is the app's name and its kinds the app's. It is `marked_alone`: its marks are kept
 under `codex.items/app.<id>` rather than its plugin's id (`mark_key_of` in `privacy/screen.ts`, which every screen
 uses), and `list_source_marks` lists each app as an entry of its own; every other collector keeps its plugin's marks
-as before. `search` is `search_items`, `content` the snippet. `resolve` reads `list_item_changes` from the cursor kept
+as before. `search` is `search_items`. `content` asks `list_item_kinds` which kinds have text, then `get_item_texts`
+for the items of those kinds, and gives the snippet for the rest and for an app that does not answer that call (it
+answers 404 on both paths). `resolve` reads `list_item_changes` from the cursor kept
 in `item_source_cursors` (this device's alone, never synced), a page of 100 at a time up to 20 pages: an item changed
 is taken as the app now gives it, one deleted is left out so the refresh marks it missing, one unchanged is answered
 from what is kept (still missing if it was), and one not kept yet is read with `get_items`. With no cursor, or after
 20 full pages, every item asked about is read with `get_items`. The cursor moves on only when the refresh asked about
-every item kept from that app, so refreshing one context never skips a change to another's item.
+every item kept from that app, so refreshing one context never skips a change to another's item. Each item `resolve`
+reads from the app, by `get_items` or `list_item_changes`, leaves its `changed_at` in `item_source_stamps` (this
+device's alone, never synced, keyed by the kept item's id, holding no text); `documents.ts` puts the stamp into the
+item's `source_hash`, so the index asks `content` again only for an item whose `changed_at` moved, even when its
+snippet did not. Removing the app forgets its cursor and stamps.
 
-`client.ts` makes the calls with the arguments as a JSON list, which every X-app's API takes (an X-Libs call table
+X-Libs `item_client` (moved there from `client.ts`) makes the calls with the arguments as a JSON list, which every X-app's API takes (an X-Libs call table
 takes nothing else), at `POST /api/call/<method>`, the Application Standard's path for every app, falling back to
 `POST /api/<method>` only for an older X-Tasks server that answers nowhere else, remembering per address the one that
 answered. Its failures are plain: an address nothing answers at, or
@@ -115,8 +121,9 @@ Drizzle, which FTS5 and vector blobs need. The server and the daemon open it and
   user's notes on it; a conversation's title and notes alone, carrying no source) and every user and assistant
   message, placed in the contexts holding its conversation. An item's text from its app comes from the collector's
   optional `content(source_ids)`, read only when what its app said of the item (title, snippet, address, state,
-  facts) changed, and kept only in the index. Files gives plain text and Markdown files up to 256 KB, X-Tasks a task's
-  notes, Trilium a text note's words or a code note's text through ETAPI.
+  facts) changed, or for an app read through the item calls its `changed_at`, and kept only in the index. Files gives plain text and Markdown files up to 256 KB, X-Tasks a task's
+  notes, Trilium a text note's words or a code note's text through ETAPI, an app read through the item calls its
+  `get_item_texts` (256 KB at most, cut by the app) or its snippet.
 - **Change detection** (`indexer.ts`): each document's text is hashed; a pass writes only documents whose hash changed
   (FTS5 row, overlapping pieces of 1200 characters with 200 of overlap, and no vectors), updates where an unchanged
   one sits, and removes documents gone. A pass runs at start, a moment after any write (the search feature's
@@ -257,7 +264,7 @@ contexts they are linked to, directly or through an item, so `search_index` find
 
 ## Items for other apps
 
-`src/shared/items/` answers the Application Standard's four item calls through X-Libs `item_calls`, scheme `codex`, for
+`src/shared/items/` answers the Application Standard's item calls through X-Libs `item_calls`, scheme `codex`, for
 CODEX's own things alone: `context`, `conversation` and `entity`, each id the kind and CODEX's id (`context:<id>`),
 since a conversation kept from before conversations were items has its context's id. Search matches every word of the
 query in a context's name and notes, a conversation's title (its first message clipped, until named) and the notes on
@@ -268,7 +275,9 @@ table of this device's alone, never synced, holding what other apps were last to
 snippet, detail) and when that changed, brought up to date whenever these calls read conversations; a new mark is
 dated by the conversation's own record, a changed or deleted one by when it was first noticed, always later than any
 time given before, so a caller's moment misses nothing. A conversation's item never carries a message: its snippet
-names the contexts holding it, its detail when it was last used and how many messages it has. The calls are in
+names the contexts holding it, its detail when it was last used and how many messages it has. `get_item_texts` gives
+a context's notes and a blueprint's body as Markdown, dated as `get_items` dates them, and `list_item_kinds` says
+`has_text` for those two kinds alone; a conversation or an entity has no text. The calls are in
 `context_api`, so REST, OpenAPI, the server's MCP and the desktop's local MCP serve them as reads; the server's
 sign-in is given `is_read_only`, so a read-only token makes them (and the other reads) over REST as over MCP. They are
 not in the policy's `offered_api`, so no engine is offered them. `route_of_link` opens `codex://entity/<id>` on the
