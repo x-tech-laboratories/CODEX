@@ -119,12 +119,31 @@ The instructions (`instructions.ts`) say who the engine is, today's date and the
 the tree, its notes, the contexts inside it and its items, whose titles, snippets and notes go inside an
 `<untrusted-data>` fence (`src/shared/engines/untrusted.ts`, which also blanks sentences that give orders).
 
+### Sources: privacy and trust
+
+`src/shared/privacy/` gives each collector plugin two marks, kept by plugin id in the synced `source_marks` setting and
+set with `set_source_mark`, which answers only the page: `send_to_hosted` and `trusted`, both off until turned on.
+An `Engine` says whether it is local with `is_local()`; one that does not say is hosted. `codex.anthropic` is always
+hosted, and `codex.openai` is local while its endpoint's host is loopback or a private-network address
+(`src/shared/engines/hosting.ts`).
+
+Each run opens a screen (`privacy/screen.ts`) with the marks as they stand and whether its engine is hosted. The
+instructions and every offered read that can carry other apps' text pass through it (`privacy/results.ts` holds one
+screener per such call, and a test holds that list to the policy's): for a hosted engine, entries from a source
+without `send_to_hosted` are taken out (items, followed feeds, a context's source group, a collector's search or
+feeds, a refresh's problem line) and one line after the result says how many were withheld from which source and
+why. The screen notes what each read let through, and only a source without `trusted` marks the run as having read
+outside content; a result with none of it left is not fenced and lowers nothing. At the end of a hosted run,
+`hosted_sends` keeps its time, engine, model and the counts per source sent and withheld (never the items),
+pruned to `hosted_log.keep_days`, 90 by default, and `list_hosted_sends` reads it for Settings.
+
 ### Tools and the action policy
 
 The tools are the contexts feature's calls (contexts, items, collectors and feeds), built from their api specs, less
 export, import and the card layout calls (`src/shared/policy/policy.ts`). A read runs at once; what it gives back is
-fenced unless it is only the user's own words (`list_contexts`, `list_collectors`), and a fenced result marks the run
-as having read outside content. Every call that changes something has a level in the synced `action_policy` setting,
+fenced unless it is only the user's own words (`list_contexts`, `list_collectors`) or holds no other app's text once
+screened, and holding text from a source not marked trusted marks the run as having read outside content, as does
+such an item in the open context's instructions. Every call that changes something has a level in the synced `action_policy` setting,
 `proposal` until the user sets another:
 
 | Level | In a conversation |
@@ -137,7 +156,7 @@ as having read outside content. Every call that changes something has a level in
 Once a run has read outside content, every change it asks for becomes a proposal whatever its level. Approving
 (`resolve_proposal`) runs the call through the store as the page would, so History records it, and adds an event to the
 conversation saying the user approved it and what came back; rejecting adds one saying so. `resolve_proposal` and
-`set_action_level` answer only the page (`is_page_only` in `page_api.ts`): the server refuses them to a bearer token, the
+`set_action_level` (and the privacy feature's `set_source_mark`) answer only the page (`is_page_only` in `page_api.ts`): the server refuses them to a bearer token, the
 daemon takes them over its socket from the window, and neither MCP endpoint lists them (`program_api`). The engine reads those
 events at the start of the user's next message. The policy's own calls and the conversations' are never offered.
 
@@ -148,8 +167,10 @@ is RoboBuddy's face (`Mascot.tsx`, moods in `mascot.ts`: asleep with no engine o
 written, happy or sad for three seconds when one ends) and the engine and model answering. `use_conversation` loads
 the open context's conversation and lays the streamed events over it until the kept answer arrives. Tool calls are
 folded rows; waiting proposals are cards with Approve and Reject; the message box sends on Enter. Settings gains an
-Assistant category: Engine (which engine answers, and each engine plugin's own settings in its row) and Action
-policy (each change's level, the two riskier levels badged).
+Assistant category: Engine (which engine answers, whether it is local or hosted, and each engine plugin's own settings
+in its row), Action policy (each change's level, the two riskier levels badged) and Sent to hosted engines (the log).
+Each collector's row under Plugins holds its two marks, explained in plain words (`src/web/privacy/`), and the pane's
+head badges the engine local or hosted.
 
 ### Still to come
 

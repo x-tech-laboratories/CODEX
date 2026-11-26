@@ -1,0 +1,115 @@
+// Privacy and trust by source: each collector plugin's two marks, kept in the synced settings, and the log of what
+// each run answered by a hosted engine was sent, as counts of items per source, kept for a set number of days.
+
+// ── Imports ──────────────────────────────────────────────────────────────────
+
+import { desc, lt, synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
+import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
+
+import { text } from "../api_schemas.ts";
+import { open_plugin_host } from "../collectors/host.ts";
+import { define_feature, drizzle_of, new_id } from "../feature.ts";
+import { settings_feature } from "../settings.ts";
+import { migrations } from "./migrations/index.ts";
+import { mark_names, unmarked, type HostedSend, type MarkName, type SourceCount, type SourceMarkEntry } from "./model.ts";
+import { hosted_sends, privacy_tables } from "./schema.ts";
+import { marks_setting, stored_marks } from "./screen.ts";
+
+// ── Marks ────────────────────────────────────────────────────────────────────
+
+// Every collector plugin running, with its marks.
+async function list_source_marks(database: SqlDatabase): Promise<SourceMarkEntry[]> {
+  const host = await open_plugin_host(database);
+  const stored = stored_marks(database);
+  const names = new Map(host.list().map((status) => [status.manifest.id, status.manifest.name]));
+  const by_plugin = new Map<string, string[]>();
+  for (const { id, plugin_id } of host.providers("collector")) by_plugin.set(plugin_id, [...(by_plugin.get(plugin_id) ?? []), id]);
+  return [...by_plugin].map(([plugin_id, collectors]) => ({ plugin_id, name: names.get(plugin_id) ?? plugin_id, collectors, ...unmarked, ...stored[plugin_id] }));
+}
+
+function set_source_mark(database: SqlDatabase, plugin_id: string, mark: MarkName, on: boolean): void {
+  if (!mark_names.includes(mark)) throw new Error(`A mark is one of ${mark_names.join(", ")}.`);
+  if (typeof on !== "boolean") throw new Error("Turn a mark on with true or off with false.");
+  if (!plugin_id.trim()) throw new Error("Name the collector plugin, such as codex.x-tasks.");
+  const stored = stored_marks(database);
+  settings_feature.methods.set_setting(database, marks_setting, { ...stored, [plugin_id]: { ...unmarked, ...stored[plugin_id], [mark]: on } });
+}
+
+// ── Log ──────────────────────────────────────────────────────────────────────
+
+export const keep_days_setting = "hosted_log.keep_days";
+
+const default_keep_days = 90;
+const day_ms = 86_400_000;
+
+function parsed_counts(json: string): SourceCount[] {
+  try {
+    const value: unknown = JSON.parse(json);
+    return Array.isArray(value) ? (value as SourceCount[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function list_hosted_sends(database: SqlDatabase, limit = 100): HostedSend[] {
+  return drizzle_of(database)
+    .select()
+    .from(hosted_sends)
+    .orderBy(desc(hosted_sends.sent_at))
+    .limit(Math.max(1, Math.min(1000, Math.floor(Number(limit) || 100))))
+    .all()
+    .map((row) => ({ ...row, included: parsed_counts(row.included), withheld: parsed_counts(row.withheld) }));
+}
+
+function keep_days(database: SqlDatabase): number {
+  const days = Number(settings_feature.methods.get_settings(database)[keep_days_setting]);
+  return days >= 1 ? days : default_keep_days;
+}
+
+// Keeps what a run answered by a hosted engine was sent, and lets go of entries older than the days kept.
+export function record_hosted_send(database: SqlDatabase, send: Omit<HostedSend, "id" | "item_count" | "sent_at">, now = new Date()): void {
+  const db = drizzle_of(database);
+  db.delete(hosted_sends)
+    .where(lt(hosted_sends.sent_at, new Date(now.getTime() - keep_days(database) * day_ms).toISOString()))
+    .run();
+  db.insert(hosted_sends)
+    .values({
+      ...send,
+      id: new_id(),
+      included: JSON.stringify(send.included),
+      withheld: JSON.stringify(send.withheld),
+      item_count: send.included.reduce((sum, each) => sum + each.count, 0),
+      sent_at: now.toISOString(),
+    })
+    .run();
+}
+
+// ── Feature ──────────────────────────────────────────────────────────────────
+
+export const privacy_feature = define_feature({
+  id: "privacy",
+  migrations: migrations.map((migration) => migration.statements),
+  tables: synced_tables(privacy_tables),
+  methods: { list_source_marks, set_source_mark, list_hosted_sends },
+  api: {
+    list_source_marks: {
+      description:
+        "Lists each collector plugin running with its two marks: send_to_hosted, whether its items may be sent to a hosted engine (without it they are withheld from one), and trusted, whether reading its items leaves the assistant's changes at their own levels instead of making them all wait for approval.",
+      params: [],
+    },
+    set_source_mark: {
+      description: "Turns one of a collector plugin's marks on or off. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
+      params: [
+        { name: "plugin_id", schema: text("The collector plugin's id, such as codex.x-tasks, from list_source_marks.") },
+        { name: "mark", schema: { type: "string", enum: mark_names, description: "send_to_hosted or trusted." } },
+        { name: "on", schema: { type: "boolean", description: "True to turn it on, false to turn it off." } },
+      ],
+    },
+    list_hosted_sends: {
+      description:
+        "Lists the replies written by a hosted engine, newest first: when, which engine and model, and how many items from each source it was sent or had withheld; never the items themselves. Entries older than hosted_log.keep_days are let go.",
+      params: [{ name: "limit", schema: { type: "integer", minimum: 1, maximum: 1000, description: "How many to list; 100 unless given." }, optional: true }],
+    },
+  },
+  setting_defaults: { [marks_setting]: {}, [keep_days_setting]: default_keep_days },
+});

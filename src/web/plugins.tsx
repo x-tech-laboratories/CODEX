@@ -14,6 +14,7 @@ import { app_info, plugins_setting } from "../shared/collectors/collector.ts";
 import { bundled_manifests } from "../shared/collectors/manifests.ts";
 import { engine_manifests } from "../shared/engines/manifests.ts";
 import { calls } from "./api.ts";
+import { SourceMarks } from "./privacy/PrivacySettings.tsx";
 
 // ── Host ─────────────────────────────────────────────────────────────────────
 
@@ -62,13 +63,15 @@ export function status_of(manifest: PluginManifest, state: string, values: Recor
   return (manifest.settings ?? []).some((field) => field.type === "text" && needed(field.key, field.secret) && values[field.key] === "") ? "Not set up" : "On";
 }
 
-function Rows({ host, ids }: { host: PluginHost; ids: Set<string> }) {
+// A collector's row also holds its privacy and trust marks.
+function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<string>; with_marks?: boolean }) {
   const statuses = use_plugins(host).filter(({ manifest }) => ids.has(manifest.id));
   return (
     <>
       {statuses.map(({ manifest, state }) => (
         <SettingsDialogRow key={manifest.id} name={manifest.name} status={status_of(manifest, state, host.settings(manifest.id))} about={manifest.description}>
           <PluginSettings host={host} plugin_id={manifest.id} heading={null} />
+          {with_marks && <SourceMarks plugin_id={manifest.id} />}
         </SettingsDialogRow>
       ))}
     </>
@@ -81,7 +84,7 @@ const engine_ids = new Set(engine_manifests.map((manifest) => manifest.id));
 export function CollectorRows() {
   const host = use_page_plugins();
   const ids = host ? new Set(host.list().map((status) => status.manifest.id).filter((id) => !engine_ids.has(id))) : null;
-  return host && ids ? <Rows host={host} ids={ids} /> : <Skeleton lines={2} />;
+  return host && ids ? <Rows host={host} ids={ids} with_marks /> : <Skeleton lines={2} />;
 }
 
 // A row for each engine, each opening its own dialog with the engine's model, endpoint and key command.

@@ -58,6 +58,14 @@ exist yet). A change that has to ask shows as a card in the conversation with **
 has read text that came from another app, such as an item's title or a search, every change it asks for waits for you,
 whatever its level, since that text could carry someone else's instructions.
 
+**Privacy and trust by source:** each collector's row under **Settings → Plugins** has two switches, both off at first.
+**May be sent to a hosted engine** lets its items, titles included, reach an engine a company runs, such as Anthropic, or
+an OpenAI-compatible endpoint that is not on this computer or a private network; without it such an engine is told
+only how many items were left out, so it can say so. A local engine sees everything. **Trusted content** says the app
+holds only your own words, so reading its items no longer makes changes wait for you; context names and notes you write
+in CODEX never do. **Settings → Assistant → Sent to hosted engines** lists every reply a hosted engine wrote, with how
+many items of each source it was sent, for 90 days unless changed.
+
 ## Collectors
 
 | Collector | Brings | Set up under Settings → Plugins |

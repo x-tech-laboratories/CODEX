@@ -81,6 +81,8 @@ export interface EngineSummary {
   plugin_id: string;
   label: string;
   model: string;
+  // Its model answers on this machine or the user's own network; a hosted engine is sent only items of marked sources.
+  is_local: boolean;
 }
 
 export interface AssistantStatus {

@@ -118,7 +118,7 @@ describe("server", () => {
     const listed = await mcp("tools/list");
     const tools = listed.tools as { name: string; annotations: { readOnlyHint: boolean } }[];
     // Approving a change and setting a level are the user's alone, so no MCP client is offered them.
-    expect(tools.map((tool) => tool.name).sort()).toEqual(method_names.filter((name) => name !== "resolve_proposal" && name !== "set_action_level").sort());
+    expect(tools.map((tool) => tool.name).sort()).toEqual(method_names.filter((name) => !["resolve_proposal", "set_action_level", "set_source_mark"].includes(name)).sort());
     expect(tools.some((tool) => tool.name === "get_action_policy" || tool.name === "list_proposals")).toBe(true);
     expect(tools.find((tool) => tool.name === "list_contexts")!.annotations.readOnlyHint).toBe(true);
     expect(tools.find((tool) => tool.name === "add_context")!.annotations.readOnlyHint).toBe(false);
@@ -209,7 +209,8 @@ describe("server", () => {
     await start();
     const refused_level = await signed({ method: "POST", url: "/api/call/set_action_level", payload: ["rename_context", "auto"] });
     const refused_approval = await signed({ method: "POST", url: "/api/call/resolve_proposal", payload: { id: "anything", decision: "approve" } });
-    expect([refused_level.statusCode, refused_approval.statusCode]).toEqual([403, 403]);
+    const refused_mark = await signed({ method: "POST", url: "/api/call/set_source_mark", payload: ["codex.x-tasks", "send_to_hosted", true] });
+    expect([refused_level.statusCode, refused_approval.statusCode, refused_mark.statusCode]).toEqual([403, 403, 403]);
     expect(refused_level.body).toContain("Only you can do this");
     const through_mcp = await mcp("tools/call", { name: "set_action_level", arguments: { method: "rename_context", level: "auto" } });
     // An unknown tool answers with a protocol error rather than a result.

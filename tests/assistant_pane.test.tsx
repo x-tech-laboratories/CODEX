@@ -93,6 +93,7 @@ describe("the assistant's pane", () => {
     });
     render(<AssistantPane context_id={kitchen} />);
     expect(await screen.findByText("Fake · fake-model")).toBeTruthy();
+    expect(screen.getByText("local").getAttribute("title")).toBe("Answers on this computer or your own network.");
 
     const box = await screen.findByRole("textbox", { name: "Message" });
     fireEvent.change(box, { target: { value: "first line" } });
