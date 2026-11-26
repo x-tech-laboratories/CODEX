@@ -14,15 +14,17 @@ import { app_info, plugins_setting } from "../shared/collectors/collector.ts";
 import { bundled_manifests } from "../shared/collectors/manifests.ts";
 import { embedder_manifests } from "../shared/embedders/manifests.ts";
 import { engine_manifests } from "../shared/engines/manifests.ts";
+import { tool_manifests } from "../shared/tools/manifests.ts";
 import { calls } from "./api.ts";
 import { SourceMarks } from "./privacy/PrivacySettings.tsx";
 import { ItemSourceRows } from "./sources/ItemSources.tsx";
+import { OtherToolPluginRows, ToolPluginSettings } from "./tools/ToolSettings.tsx";
 import { item_sources_plugin_id } from "../shared/sources/model.ts";
 
 // ── Host ─────────────────────────────────────────────────────────────────────
 
-// The page side of a collector or engine has only its settings; its work runs where the store does.
-const bundled_pages = [...bundled_manifests, ...engine_manifests, ...embedder_manifests].map((manifest) => define_plugin({ ...manifest, start: () => undefined }));
+// The page side of a collector, engine or tool plugin has only its settings; its work runs where the store does.
+const bundled_pages = [...bundled_manifests, ...engine_manifests, ...embedder_manifests, ...tool_manifests].map((manifest) => define_plugin({ ...manifest, start: () => undefined }));
 
 let started: Promise<PluginHost> | null = null;
 
@@ -66,7 +68,8 @@ export function status_of(manifest: PluginManifest, state: string, values: Recor
   return (manifest.settings ?? []).some((field) => field.type === "text" && needed(field.key, field.secret) && values[field.key] === "") ? "Not set up" : "On";
 }
 
-// A collector's row also holds its privacy and trust marks, but for the apps' plugin, whose apps each have their own.
+// A collector's row also holds its privacy and trust marks, but for the apps' plugin, whose apps each have their own; a
+// tool plugin's holds its marks and its tools.
 function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<string>; with_marks?: boolean }) {
   const statuses = use_plugins(host).filter(({ manifest }) => ids.has(manifest.id));
   return (
@@ -74,7 +77,8 @@ function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<st
       {statuses.map(({ manifest, state }) => (
         <SettingsDialogRow key={manifest.id} name={manifest.name} status={status_of(manifest, state, host.settings(manifest.id))} about={manifest.description}>
           <PluginSettings host={host} plugin_id={manifest.id} heading={null} />
-          {with_marks && manifest.id !== item_sources_plugin_id && <SourceMarks plugin_id={manifest.id} />}
+          {with_marks && tool_ids.has(manifest.id) && state === "running" && <ToolPluginSettings plugin_id={manifest.id} />}
+          {with_marks && manifest.id !== item_sources_plugin_id && !tool_ids.has(manifest.id) && <SourceMarks plugin_id={manifest.id} />}
         </SettingsDialogRow>
       ))}
     </>
@@ -83,9 +87,10 @@ function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<st
 
 const engine_ids = new Set(engine_manifests.map((manifest) => manifest.id));
 const embedder_ids = new Set(embedder_manifests.map((manifest) => manifest.id));
+const tool_ids = new Set(tool_manifests.map((manifest) => manifest.id));
 
-// A row for each plugin but the engines and embedders, each opening its own dialog, then the apps read through the
-// item calls, each marked on its own in its dialog.
+// A row for each plugin but the engines and embedders, each opening its own dialog, then each tool plugin the page has
+// no manifest of, then the apps read through the item calls, each marked on its own in its dialog.
 export function CollectorRows() {
   const host = use_page_plugins();
   const ids = host ? new Set(host.list().map((status) => status.manifest.id).filter((id) => !engine_ids.has(id) && !embedder_ids.has(id))) : null;
@@ -93,6 +98,7 @@ export function CollectorRows() {
   return (
     <>
       <Rows host={host} ids={ids} with_marks />
+      <OtherToolPluginRows known={new Set(host.list().map((status) => status.manifest.id))} />
       <ItemSourceRows />
     </>
   );

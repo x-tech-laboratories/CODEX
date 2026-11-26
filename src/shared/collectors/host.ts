@@ -1,4 +1,4 @@
-// The store's side of the plugins: an X-Libs plugin host whose plugins provide collectors and engines, with every plugin's on or off
+// The store's side of the plugins: an X-Libs plugin host whose plugins provide collectors, engines, embedders and tools, with every plugin's on or off
 // and settings kept in the synced settings. The server and the desktop daemon hand over their plugins once at start,
 // since a collector such as Files needs Node and so cannot live in this folder.
 
@@ -13,14 +13,15 @@ import type { Embedder } from "../embedders/embedder.ts";
 import type { Engine } from "../engines/engine.ts";
 import { settings_feature } from "../settings.ts";
 import { item_sources_plugin } from "../sources/collector.ts";
+import type { ToolPlugin } from "../tools/tool.ts";
 import { app_info, plugins_setting, type Collector } from "./collector.ts";
 
 // ── Api ──────────────────────────────────────────────────────────────────────
 
-// A plugin provides collectors, which bring items from other apps, engines, which answer the conversations, or
-// embedders, which turn text into vectors for the search index.
+// A plugin provides collectors, which bring items from other apps, engines, which answer the conversations,
+// embedders, which turn text into vectors for the search index, or tools, which an engine may use beside CODEX's calls.
 export interface ContextPluginApi {
-  providers: { collector: Collector; engine: Engine; embedder: Embedder };
+  providers: { collector: Collector; engine: Engine; embedder: Embedder; tools: ToolPlugin };
 }
 
 export type ContextPlugin = Plugin<ContextPluginApi>;

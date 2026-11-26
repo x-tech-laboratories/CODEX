@@ -47,8 +47,14 @@ function counts_words(counts: SourceCount[]): string {
   return counts.map((each) => `${each.count} from ${each.label}`).join(", ");
 }
 
-// One run in words, such as "Anthropic, claude-opus-5-5: 3 items (2 from X-Tasks, 1 from Files); 4 withheld (4 from Trilium)".
+// One run in words, such as "Anthropic, claude-opus-5-5: 3 items (2 from X-Tasks, 1 from Files); 4 withheld (4 from Trilium)",
+// or one use of a tool that sends outside, such as "Web: web_search, asked by Fake: sent 1 argument of 12 characters".
 export function send_words(send: HostedSend): string {
+  if (send.kind === "tool") {
+    const asked = send.engine ? `, asked by ${send.engine}${send.model ? `, ${send.model}` : ""}` : "";
+    const chars = `${send.argument_chars.toLocaleString("en")} ${send.argument_chars === 1 ? "character" : "characters"}`;
+    return `${send.tool}${asked}: sent ${send.argument_count} ${send.argument_count === 1 ? "argument" : "arguments"} of ${chars}`;
+  }
   const sent = send.item_count === 0 ? "no items" : `${send.item_count} ${send.item_count === 1 ? "item" : "items"} (${counts_words(send.included)})`;
   const withheld_total = send.withheld.reduce((sum, each) => sum + each.count, 0);
   const withheld = withheld_total > 0 ? `; ${withheld_total} withheld (${counts_words(send.withheld)})` : "";
@@ -63,7 +69,7 @@ function SendLog() {
         <EventsList
           events={entries.map((send) => ({ epoch: Date.parse(send.sent_at) / 1000, level: "info", message: send_words(send), id: send.id }))}
           row_key={(event) => event.id}
-          empty="No reply has been written by a hosted engine yet."
+          empty="Nothing has been sent outside yet."
         />
       )}
     </Loaded>
@@ -74,7 +80,7 @@ export function hosted_log_section(settings: Record<string, unknown>, set_settin
   return {
     id: "hosted-log",
     heading: "Sent to hosted engines",
-    hint: "Each reply written by a hosted engine, with how many items of each source it was sent and how many were withheld; never the items themselves. Engines on this computer or your own network are not listed.",
+    hint: "Each reply written by a hosted engine, with how many items of each source it was sent and how many were withheld; never the items themselves. Engines on this computer or your own network are not listed. Each use of a plugin tool that sends what it is given outside this computer, such as a web search, is listed too, whichever engine asked, with how much it sent; never what.",
     content: (
       <>
         <SettingRow label="Keep the log for" hint="Older entries are let go as new ones are written.">

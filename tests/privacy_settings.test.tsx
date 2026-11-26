@@ -65,6 +65,8 @@ describe("privacy and trust in Settings", () => {
   });
 
   it("says a run sent nothing in plain words", () => {
-    expect(send_words({ id: "1", run_id: "r", conversation_id: "general", engine: "Anthropic", model: "", included: [], withheld: [], item_count: 0, sent_at: "" })).toBe("Anthropic: no items");
+    expect(send_words({ id: "1", run_id: "r", conversation_id: "general", engine: "Anthropic", model: "", included: [], withheld: [], item_count: 0, sent_at: "", kind: "reply", tool: "", argument_count: 0, argument_chars: 0 })).toBe("Anthropic: no items");
+    const use = { id: "2", run_id: "r", conversation_id: "c", engine: "Fake", model: "fake-model", included: [], withheld: [], item_count: 0, sent_at: "", kind: "tool" as const, tool: "Web: web_search", argument_count: 1, argument_chars: 12 };
+    expect(send_words(use)).toBe("Web: web_search, asked by Fake, fake-model: sent 1 argument of 12 characters");
   });
 });

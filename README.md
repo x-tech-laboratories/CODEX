@@ -208,8 +208,50 @@ on a source not marked **Trusted content** makes the changes of every later repl
 reading that source again would. Your conversations' titles are your own words, and a reply is never shown another
 conversation's latest exchange.
 
-The assistant's settings, the marks, the engine and embedder in use, every plugin's settings and the apps read through
-the item calls can be changed only on CODEX's own page; a token or an MCP client can read them, with keys hidden, but not change them.
+**Tool plugins** give the assistant prebuilt tools beside CODEX's own calls, installed like any other plugin. Each
+appears under **Settings → Plugins** with its tools, each with what it does, whether it changes anything and whether it
+sends what it is given outside this computer. Every tool is on once its plugin is, and can be turned off on its own;
+small models (the core set) are offered a tool only when you tick **Also offer to small models** for it. CODEX stays
+in charge of them as of its own calls: every call is kept in the conversation with its arguments and result, and what
+comes back is fenced as outside data and makes the reply's changes wait for you, like another app's text, unless the
+plugin is marked **Trusted content**. A tool that only reads runs at once; one that changes something has a level
+under **Settings → Assistant → Action policy**, after CODEX's own, **Ask me first** until you choose another, and
+approving its card runs it. Background jobs use the same tools under the same rules. Their names carry their plugin's
+name, such as `web__web_fetch`, so they never clash with CODEX's own calls or each other.
+
+A tool that sends what it is given outside this computer, such as a web search, is an outside destination like a hosted
+engine. Each tool plugin has a second mark, **May be used after reading private sources**, off at first: without it,
+once a reply has had anything in front of it from a source not marked **May be sent to a hosted engine** (an item
+listed in the open context's instructions counts), that plugin's outside-sending tools are refused for the rest of the
+reply, and the assistant is told why so it can tell you. Each use of such a tool is listed under **Settings →
+Assistant → Sent to hosted engines** with the tool, the engine that asked, and how many arguments of how many
+characters it sent, never what. The assistant is told never to put personal details from your items into a search
+query or a web address.
+
+**The Web plugin** (bundled, off until you turn it on under **Settings → Plugins → Web**) offers two tools, both
+reading only and sending outside:
+
+- `web_fetch(url)` reads a public web page and gives back its address, its title, then its readable text, links kept as
+  plain text with their addresses, at most about 10,000 characters of 2 MB read, within 15 seconds. It refuses anything
+  but a public `http` or `https` address: loopback, private, link-local, shared, documentation, multicast and other
+  non-public ranges, for IPv4 and IPv6 (an IPv4 address inside IPv6 judged as itself), a name with a password in it,
+  and a port other than 80 or 443 unless you list it under **Other ports allowed**. The host's addresses are checked
+  when the name is resolved, again as the connection is made, so a name cannot change its answer in between, and again
+  after every redirect, at most five.
+- `web_search(query)` answers from a SearXNG instance you name. To set it up, run or choose a SearXNG instance with its
+  JSON format turned on (in its `settings.yml`, `search: formats: [html, json]`), and put its address, such as
+  `https://searx.example.org`, in **Search endpoint**. CODEX then sends
+  `GET <address>/search?q=<query>&format=json`, with no cookies or key, and gives the assistant the first eight
+  results' titles, addresses and snippets. With no endpoint set the tool is not offered.
+
+A tool plugin of your own is a folder plugin, like a collector, providing `tools`: a label and a list of tools, each a
+name, a plain-words description, a JSON Schema for its arguments, `changes` and `sends_outside`, answered by
+`call(name, args, signal)` with text. A tool that leaves either fact out is taken to change something and to send
+outside; descriptions are shown to the engine fenced as outside data unless the plugin sets `own_words`.
+
+The assistant's settings, the marks, the engine and embedder in use, every plugin's settings, the tool plugins' marks,
+which of their tools are offered and at what level, and the apps read through the item calls can be changed only on
+CODEX's own page; a token or an MCP client can read them, with keys hidden, but not change them.
 
 ## Collectors
 

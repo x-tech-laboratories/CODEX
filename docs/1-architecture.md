@@ -128,7 +128,7 @@ Drizzle, which FTS5 and vector blobs need. The server and the daemon open it and
   (FTS5 row, overlapping pieces of 1200 characters with 200 of overlap, and no vectors), updates where an unchanged
   one sits, and removes documents gone. A pass runs at start, a moment after any write (the search feature's
   `after_write`) and every minute, catching what came by sync.
-- **Embedders** are a third plugin provider beside `collector` and `engine` (`src/shared/embedders/embedder.ts`):
+- **Embedders** are a third plugin provider beside `collector` and `engine` (tool plugins are a fourth; see "Tool plugins") (`src/shared/embedders/embedder.ts`):
   label, `model()`, `dimensions()`, optional `is_local()`, and `embed(texts)`. The bundled one
   (`src/server/embedders/openai.ts`) posts to an OpenAI-compatible `/embeddings` endpoint, Ollama's on this computer
   by default, with an optional key command. The `embedder` setting names the one in use, none by default. Vectors are
@@ -485,6 +485,66 @@ touched has changed since (its own rows; a link to it does not count), nor once 
 nor when it touched nothing History keeps, such as a refresh, which the row says instead of offering Undo.
 `undo_change(message_id, call_id)` restores each version before, parent contexts first, or removes a context the change
 made, marks the call undone and adds an event saying so. It is page-only like `resolve_proposal` and never offered.
+
+### Tool plugins
+
+Built 2026-11-27 on doc 4's decision 5. `tools` is a fourth plugin provider beside `collector`, `engine` and `embedder`
+(`src/shared/tools/tool.ts`): a label, an optional `own_words`, `tools()` giving the tools offered now (each a name, a
+plain-words description, a JSON Schema for its arguments, `changes` and `sends_outside`; a tool that leaves either out
+is taken to change something and to send outside), and `call(name, args, signal)` answering with text. Like engines,
+tool plugins need Node and are bundled where the store runs, by `load_collectors`; the page has their manifests only.
+
+`open_tool_plugins` (`tools/offered.ts`) reads every tool provider through the plugin host, each under its key
+`<plugin id>/<provider id>`, and names each tool `<namespace>__<tool>`: the provider's id made safe as the namespace,
+the tool's own name made safe, cut with a hash at 64 characters. CODEX's own calls never hold `__`, so a tool cannot
+shadow one, and of two tools named alike the first is kept. A plugin whose `tools()` throws or takes over 15 seconds is
+listed with its problem and no tools. The synced setting `tool_plugins`, one of `user_only_settings`, holds per key the
+marks `trusted` and `after_private` and, per tool, `off` and `small`; levels go in `action_policy` under the tool's
+name. The feature's calls (`tools/store.ts`) are `list_plugin_tools` and the page-only `set_tool_plugin_mark`,
+`set_plugin_tool_offer` and `set_plugin_tool_level`.
+
+A run (`start_run`) opens the tools turned on, leaving out those a task's `RunOptions.tools` does not name, and
+`engine_tools` adds them after CODEX's calls: every one in `definitions`, and in `core` only those marked `small`. A
+description is shown as its plugin's own words only when the plugin sets `own_words`; otherwise it is clipped to 1,000
+characters (120 in the core set) and fenced, and either way followed by what the tool does ("It changes something…",
+"It sends its arguments outside this computer."). The instructions gain a line naming the outside-sending tools and
+telling the engine never to put personal details from the user's items into their arguments. Every call goes through
+the same `call` as CODEX's own, so it is recorded with its arguments and result:
+
+- Arguments must be an object holding every `required` field.
+- A tool with `sends_outside` is refused, for the rest of the run, once the run's screen has included anything from a
+  source whose mark lacks `send_to_hosted` (`has_read_private` in `privacy/screen.ts`: the open context's items, a
+  read, an earlier answer replayed, or `*`), unless the plugin is marked `after_private`. The refusal says why and
+  names the mark.
+- A read runs at once (`run_tool`, stopped by the run's signal or after 120 seconds whatever the plugin does). A change
+  is decided by `decide` with its level (`proposal` until set), so it is refused, proposed with a summary naming the
+  plugin, the tool and its arguments clipped, or run at `auto` (and in the background only at `background`); a run that
+  read outside content proposes it. `resolve_proposal` runs an approved plugin tool through `find_plugin_tool`, and
+  its event carries the plugin's source. Undo says it cannot be undone, as History keeps nothing of it.
+- What comes back is always fenced and noted on the screen as the source `tool:<key>`, which marks the answer's
+  `sources`, so replaying it later counts again; it lowers the run unless the plugin is marked trusted. A tool source
+  may be sent to a hosted engine (its answer already went to the engine that asked) and is trusted only by its mark.
+  A plugin's error is fenced too.
+- Each use of an outside-sending tool, whatever engine asked, and each approved one, adds a `hosted_sends` row of
+  `kind` `tool` (`record_tool_send` in `privacy/store.ts`): the tool by its plugin's label and name, the engine, the
+  run, and how many arguments of how many characters, never their content.
+
+The bundled `codex.web` plugin (`src/server/tools/web.ts`, manifest in `tools/manifests.ts`, off by default) provides
+`web` with `web_fetch` and, once its `search_endpoint` is set, `web_search`, both reads that send outside, in its own
+words. `web_fetch` takes a public `http` or `https` address (`address_guard.ts`): no user name or password, port 80 or
+443 unless listed in `allowed_ports`, and a host whose every address is public, judged by `is_public_address` against
+IPv4's and IPv6's non-public ranges with an IPv4 address mapped into IPv6 or under 64:ff9b::/96 judged as itself. It
+checks the host before each request and again in the connection's own `lookup`, so the connection reaches only
+addresses just checked, and again after each of at most five redirects; it reads at most 2 MB in 15 seconds, only
+HTML, XHTML, plain text and Markdown, and gives the address, the title and the text (`tools/html_text.ts`: a block to a
+line, scripts and styles out, a link's address after its text) cut at 10,000 characters. The guard takes an injected
+resolver and a test-only `allow_address`, which only code can pass, so tests reach a fake server on loopback without
+weakening it. `web_search` sends `GET <endpoint>/search?q=<query>&format=json` to the user's SearXNG instance and gives
+the first eight results' titles, addresses and snippets.
+
+Settings: each tool plugin's row under Plugins shows its marks and each tool with its facts, an on switch and "Also
+offer to small models" (`src/web/tools/ToolSettings.tsx`); Action policy lists the plugin tools that change something
+after CODEX's own; the hosted log shows tool uses in words.
 
 ### The pane
 

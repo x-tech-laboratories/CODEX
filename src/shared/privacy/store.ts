@@ -66,7 +66,7 @@ function list_hosted_sends(database: SqlDatabase, limit = 100): HostedSend[] {
     .orderBy(desc(hosted_sends.sent_at))
     .limit(Math.max(1, Math.min(1000, Math.floor(Number(limit) || 100))))
     .all()
-    .map((row) => ({ ...row, included: parsed_counts(row.included), withheld: parsed_counts(row.withheld) }));
+    .map((row) => ({ ...row, kind: row.kind === "tool" ? "tool" : "reply", included: parsed_counts(row.included), withheld: parsed_counts(row.withheld) }));
 }
 
 function keep_days(database: SqlDatabase): number {
@@ -75,7 +75,7 @@ function keep_days(database: SqlDatabase): number {
 }
 
 // Keeps what a run answered by a hosted engine was sent, and lets go of entries older than the days kept.
-export function record_hosted_send(database: SqlDatabase, send: Omit<HostedSend, "id" | "item_count" | "sent_at">, now = new Date()): void {
+export function record_hosted_send(database: SqlDatabase, send: Omit<HostedSend, "id" | "item_count" | "sent_at" | "kind" | "tool" | "argument_count" | "argument_chars"> & Partial<Pick<HostedSend, "kind" | "tool" | "argument_count" | "argument_chars">>, now = new Date()): void {
   const db = drizzle_of(database);
   db.delete(hosted_sends)
     .where(lt(hosted_sends.sent_at, new Date(now.getTime() - keep_days(database) * day_ms).toISOString()))
@@ -90,6 +90,22 @@ export function record_hosted_send(database: SqlDatabase, send: Omit<HostedSend,
       sent_at: now.toISOString(),
     })
     .run();
+}
+
+// Keeps one use of a plugin tool that sends its arguments outside this machine: which tool, when, for which run, and
+// how many arguments of how many characters; never the arguments themselves. The tool is named by its plugin's label
+// and its own name, such as "Web: web_search".
+export function record_tool_send(
+  database: SqlDatabase,
+  use: { run_id: string; conversation_id: string; engine: string; model: string; tool: string; args: Record<string, unknown> },
+  now = new Date(),
+): void {
+  const argument_chars = Object.values(use.args).reduce<number>((sum, value) => sum + (typeof value === "string" ? value.length : JSON.stringify(value ?? null).length), 0);
+  record_hosted_send(
+    database,
+    { run_id: use.run_id, conversation_id: use.conversation_id, engine: use.engine, model: use.model, included: [], withheld: [], kind: "tool", tool: use.tool, argument_count: Object.keys(use.args).length, argument_chars },
+    now,
+  );
 }
 
 // ── Feature ──────────────────────────────────────────────────────────────────
@@ -115,7 +131,7 @@ export const privacy_feature = define_feature({
     },
     list_hosted_sends: {
       description:
-        "Lists the replies written by a hosted engine, newest first: when, which engine and model, and how many items from each source it was sent or had withheld; never the items themselves. Entries older than hosted_log.keep_days are let go.",
+        "Lists the replies written by a hosted engine, newest first: when, which engine and model, and how many items from each source it was sent or had withheld; never the items themselves. Each use of a plugin tool that sends its arguments outside this machine is listed too (kind tool), with the tool and how many arguments of how many characters it sent, never the arguments. Entries older than hosted_log.keep_days are let go.",
       params: [{ name: "limit", schema: { type: "integer", minimum: 1, maximum: 1000, description: "How many to list; 100 unless given." }, optional: true }],
     },
   },
