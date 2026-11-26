@@ -46,7 +46,7 @@ export function StateRows({ state }: { state: IndexState }) {
         <span className="small">{embedding_words(state)}</span>
       </SettingRow>
       {state.last_error && (
-        <SettingRow label="Last problem" hint="Indexing carries on; this is what went wrong last time.">
+        <SettingRow class_name="index-problem" label="Last problem" hint="Indexing carries on; this is what went wrong last time.">
           <ReplyError error={state.last_error} detail={state.last_error_detail} />
         </SettingRow>
       )}
