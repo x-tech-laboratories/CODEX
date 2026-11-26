@@ -8,7 +8,7 @@ import { Dialog, open_dialog } from "@x-tech-laboratories/x-libs/web/react/dialo
 import { FormGroup, FormRow } from "@x-tech-laboratories/x-libs/web/react/layout";
 
 import { default_limits, type IntervalUnit, type Job, type JobFields } from "../../shared/jobs/model.ts";
-import { attempt, calls, use_data } from "../api.ts";
+import { attempt, calls, succeeds, use_data } from "../api.ts";
 
 // ── Dialog ───────────────────────────────────────────────────────────────────
 
@@ -34,8 +34,8 @@ function JobDialog({ job, context_id, on_close }: { job: Job | null; context_id:
   const change = (more: Partial<JobFields>) => set_fields((before) => ({ ...before, ...more }));
   const { schedule } = fields;
   const save = async () => {
-    const done = job ? await attempt(() => calls().change_job(job.id, fields), "Saved.") : await attempt(() => calls().add_job(fields), "The job is made.");
-    if (done !== undefined) on_close();
+    const done = job ? await succeeds(() => calls().change_job(job.id, fields), "Saved.") : (await attempt(() => calls().add_job(fields), "The job is made.")) !== undefined;
+    if (done) on_close();
   };
   return (
     <Dialog

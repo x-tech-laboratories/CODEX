@@ -73,6 +73,16 @@ describe("the Jobs page", () => {
     fireEvent.click(within(dialog).getByLabelText("Mon"));
     fireEvent.submit(dialog.querySelector("form")!);
     await waitFor(() => expect(fixture.calls.list_jobs().find((job) => job.title === "Morning")).toMatchObject({ when: "at 08:00 on Tuesday, Wednesday, Thursday and Friday" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // Changing one saves it and closes the dialog too.
+    fireEvent.click(screen.getByRole("button", { name: "More for Morning" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Change…" }));
+    const change = await screen.findByRole("dialog");
+    fireEvent.change(within(change).getByLabelText("Title"), { target: { value: "Mornings" } });
+    fireEvent.submit(change.querySelector("form")!);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(fixture.calls.list_jobs().some((job) => job.title === "Mornings")).toBe(true);
   });
 
   it("shows one job's runs, with the device that ran each", async () => {

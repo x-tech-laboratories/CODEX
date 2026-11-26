@@ -11,6 +11,7 @@ import { AddIcon, HistoryIcon, Icon, MoreIcon } from "@x-tech-laboratories/x-lib
 import { PageHeading, Section } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { open_context_menu } from "@x-tech-laboratories/x-libs/web/react/menus";
 import { Empty, Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
+import { stamp, until } from "@x-tech-laboratories/x-libs/web/format";
 import { Age } from "@x-tech-laboratories/x-libs/web/react/time";
 
 import { conversation_route } from "../../shared/conversations/model.ts";
@@ -111,12 +112,7 @@ function JobRow({ job, show_context = true }: { job: Job; show_context?: boolean
         <span className="muted small">
           {job.when[0]!.toUpperCase() + job.when.slice(1)}
           {job.only_when_changed ? ", only when something changed" : ""}
-          {job.is_on && (
-            <>
-              {" · next "}
-              <Age epoch={seconds(job.next_due_at)} />
-            </>
-          )}
+          {job.is_on && <span title={stamp(seconds(job.next_due_at))}>{` · next ${until(seconds(job.next_due_at))}`}</span>}
         </span>
         {run ? (
           <span className="small">
