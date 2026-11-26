@@ -15,7 +15,7 @@ import { register_device } from "../src/shared/jobs/records.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { set_page_api } from "../src/web/api.ts";
 import { InboxPage } from "../src/web/inbox/InboxPage.tsx";
-import { background_section, run_words } from "../src/web/jobs/BackgroundSettings.tsx";
+import { assistant_jobs_section, background_section, maintenance_section, run_words } from "../src/web/jobs/BackgroundSettings.tsx";
 import { JobsPage } from "../src/web/jobs/JobsPage.tsx";
 import { sidebar_views } from "../src/web/Sidebar.tsx";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
@@ -106,7 +106,12 @@ describe("Settings → Background work", () => {
     fixture.database.prepare("INSERT INTO background_devices (id, name, kind, started_at) VALUES (?, ?, ?, ?)").run(server, "server on home", "server", new Date().toISOString());
     fixture.calls.set_background_device(server);
     const own = register_device(fixture.database, "Test laptop", "desktop", Date.now());
-    render(<>{background_section.content}</>);
+    render(
+      <>
+        {background_section.content}
+        {assistant_jobs_section.content}
+      </>,
+    );
     fireEvent.click(await screen.findByRole("switch", { name: "The assistant's jobs" }));
     await waitFor(() => expect(fixture.calls.get_background_state().enabled).toBe(true));
     const device = screen.getByLabelText("Device that does it") as HTMLSelectElement;
@@ -236,6 +241,7 @@ describe("Settings → Background work's maintenance jobs", () => {
     render(
       <>
         {background_section.content}
+        {maintenance_section.content}
         <Dialogs />
       </>,
     );

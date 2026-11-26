@@ -165,7 +165,7 @@ export function ContextJobs({ context_id }: { context_id: string }) {
 
 // What background work is set to, in a line, with where to change it.
 function StateLine({ state }: { state: BackgroundState }) {
-  const where = <a href="#/settings">Settings → Assistant → Background work</a>;
+  const where = <a href="#/settings">Settings → Assistant</a>;
   if (!state.enabled) return <p className="muted small">The assistant's jobs are off, so none of them runs. Turn them on under {where}.</p>;
   if (state.paused) return <p className="muted small">Background work is paused, so no job runs until you carry on under {where}.</p>;
   const chosen = state.devices.find((device) => device.id === state.chosen_device);

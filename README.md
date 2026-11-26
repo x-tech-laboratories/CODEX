@@ -60,8 +60,8 @@ on, or same as for two entities that are one). Each link says who made it, where
 link that stops being true is closed rather than deleted.
 
 - **Without a model:** an item whose text holds another kept item's address, or a `codex://` or other app's link to
-  something CODEX holds, is linked to it, and an X-Tasks subtask to its parent task. These links are made as the index
-  reads what changed, and accepted at once.
+  something CODEX holds, is linked to it, and an X-Tasks subtask to its parent task. These links are made in the
+  background for what changed, and accepted at once.
 - **By meaning:** with an embedder set up, items that stand clearly closer to an item than everything else does are
   proposed as related, a few per item, whatever scale the embedder scores on.
 - **By the assistant:** **Suggest links** on a context starts a conversation asking the assistant to propose entities
@@ -180,16 +180,40 @@ in the background** are made, everything else waits for you as a proposal, and t
 wait as in a conversation. A run that reaches its round or token limit stops with a note saying so. The Jobs page shows
 each job's schedule, next turn, latest run and the device that ran it, with **Run now**, an on switch and its runs.
 
-Nothing runs until you turn on **Background work** under **Settings → Assistant → Background work**, which also holds
-the caps on runs and tokens a day for every job together, with today's use. Since your data syncs to several devices
-and a server, only the one where you turn on **This device runs background work** (on the server's page, **The server
-runs background work**) runs jobs. A job never runs twice at once and runs once however many turns it missed; a
-conversation you are in always goes first, and a job's run that is writing stops to make way and runs again at its
-next turn; a job set to run only on change makes no call to the engine while nothing changed.
+None of the assistant's jobs runs until you turn on **The assistant's jobs** under **Settings → Assistant → The
+assistant's jobs**, which also holds the caps on runs and tokens a day for every job together, with today's use. A job
+never runs twice at once and runs once however many turns it missed; a conversation you are in always goes first, and
+a job's run that is writing stops to make way and runs again at its next turn; a job set to run only on change makes
+no call to the engine while nothing changed.
+
+**Background work** keeps CODEX up by itself, under **Settings → Assistant**:
+
+- **One device does it.** Since your data syncs to several devices and a server, only the one named under **Device
+  that does it** asks your apps what changed, keeps the graph tidy, suggests links, writes the digest and runs the
+  assistant's jobs; the others do none of it. The first desktop app or server to start is that device until you choose
+  another. Every device still keeps its own search index up to date, since the index never syncs.
+- **Pause background work** stops all of it, on every device, at its next safe point, until you turn it off.
+- **Chosen by what changed.** Every 30 minutes (**Look for work every**) each job is asked whether anything changed,
+  which calls no model and no app; a job with nothing to do does not run, and Settings shows why it last did nothing
+  and how many times today it looked.
+- **Maintenance** lists the built-in jobs, which can be turned off but not removed: **Refresh the index**, **Embed
+  documents**, **Links from rules**, **Similar items**, **Tidy the graph** (ending links to items gone from their apps,
+  keeping them as what was once so, and proposing to join entities that share a name), **Suggest links** (off until
+  you turn it on, since it is the only one that calls a model) and a **Daily digest**: one Inbox entry a day saying what
+  background work did and what waits for you, written without a model, and none when there is nothing to say.
+- **Budgets.** Each job has its runs a day, the most it handles in one run and its longest run; Suggest links also its
+  model calls and tokens a day. A job that uses up a day's budget waits until the next day, and the digest says so.
+  Each job's **Open** shows its budget with today's use, its last run and what it did.
+- **Your rules still hold.** Background work changes something only where its level under the Action policy is
+  **Allowed, even in the background**; everything else waits in the Inbox, such as ending a link you made, which waits
+  in the conversation **Background maintenance**. It never writes to another app.
+- **A local engine** does background model work unless you turn on **Background work may use a hosted engine**; with
+  it off and no local engine, Suggest links waits and says why. When it is on, the marks on your sources and tool
+  plugins, and the log of what hosted engines were sent, still apply.
 
 **The Inbox** in the sidebar, with its count, lists everything that waits for you, newest first: changes proposed in
 conversations and jobs, with why and from what; proposed links and entities; proposed blueprints and changes to them;
-and job runs that failed or stopped at a limit. Each opens its conversation or page, and each can be approved or
+job runs that failed or stopped at a limit; and the day's digest of background work. Each opens its conversation or page, and each can be approved or
 accepted, rejected, or for a run set aside, in place; tick several to decide them at once after a confirmation. On the
 desktop the tray shows the count too, and while the window is not in front a notification says when a job left
 something waiting (**Settings → This device → Notifications**).

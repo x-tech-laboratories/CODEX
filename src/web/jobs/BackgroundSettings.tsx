@@ -1,6 +1,6 @@
-// Settings → Assistant → Background work: the pause, the one device that does the work, how often it looks for work,
-// whether it may use a hosted engine, the assistant's own jobs' switch and caps, and each built-in maintenance job with
-// its switch, budget, last run, what it did and why it last did nothing.
+// Settings → Assistant: Background work (the pause, the one device that does the work, how often it looks for work and
+// whether it may use a hosted engine), Maintenance (each built-in job with its switch, budget, last run, what it did and
+// why it last did nothing) and The assistant's jobs (their switch and caps).
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -134,14 +134,13 @@ function device_label(state: BackgroundState, id: string, name: string, kind: st
 
 function BackgroundRows() {
   const state = use_data((api) => api.get_background_state());
-  const jobs = use_data((api) => api.list_maintenance_jobs());
   const now = state.data;
   if (!now) return null;
   const here = page().host === "web" ? "the server" : "this device";
   const chosen = now.devices.find((device) => device.id === now.chosen_device);
   return (
     <>
-      <SettingRow label="Pause background work" hint="Stops every job below and the assistant's jobs at their next safe point, on every device, until you turn it off." as_label>
+      <SettingRow label="Pause background work" hint="Stops the maintenance jobs and the assistant's jobs at their next safe point, on every device, until you turn it off." as_label>
         <Switch label="Pause background work" checked={now.paused} on_change={(on) => void succeeds(() => set_setting(background_settings.paused, on))} />
       </SettingRow>
       <SettingRow
@@ -170,18 +169,34 @@ function BackgroundRows() {
       >
         <Switch label="Background work may use a hosted engine" checked={now.hosted_allowed} on_change={(on) => void succeeds(() => set_setting(background_settings.hosted, on))} />
       </SettingRow>
-      <h3>Maintenance</h3>
-      <p className="muted small">Built in, so they cannot be removed. Each looks for work at every look above and runs only when something changed, within its budget. Changes go through the Action policy; the rest waits in the Inbox.</p>
-      <Loaded resource={jobs} lines={3}>
-        {(entries) =>
-          entries.map((job) => (
-            <SettingsDialogRow key={job.key} name={job.title} status={<JobStatus job={job} state={now} />} about={job.about}>
-              <JobSettings job_key={job.key} />
-            </SettingsDialogRow>
-          ))
-        }
-      </Loaded>
-      <h3>The assistant's jobs</h3>
+    </>
+  );
+}
+
+function MaintenanceRows() {
+  const state = use_data((api) => api.get_background_state());
+  const jobs = use_data((api) => api.list_maintenance_jobs());
+  const now = state.data;
+  if (!now) return null;
+  return (
+    <Loaded resource={jobs} lines={3}>
+      {(entries) =>
+        entries.map((job) => (
+          <SettingsDialogRow key={job.key} name={job.title} status={<JobStatus job={job} state={now} />} about={job.about}>
+            <JobSettings job_key={job.key} />
+          </SettingsDialogRow>
+        ))
+      }
+    </Loaded>
+  );
+}
+
+function AssistantJobRows() {
+  const state = use_data((api) => api.get_background_state());
+  const now = state.data;
+  if (!now) return null;
+  return (
+    <>
       <SettingRow label="The assistant's jobs" hint="Lets the jobs the assistant made with you run on their schedules with nobody present. Off, none of them runs." as_label>
         <Switch label="The assistant's jobs" checked={now.enabled} on_change={(on) => void succeeds(() => set_setting(background_settings.enabled, on))} />
       </SettingRow>
@@ -200,4 +215,18 @@ export const background_section: SettingsSection = {
   heading: "Background work",
   hint: "Work done with nobody present: CODEX's own upkeep, and the jobs the assistant made with you. Only changes set to “Allowed, even in the background” are made; the rest wait in the Inbox.",
   content: <BackgroundRows />,
+};
+
+export const maintenance_section: SettingsSection = {
+  id: "maintenance",
+  heading: "Maintenance",
+  hint: "CODEX's own upkeep, built in, so it can be turned off but not removed. Each job looks for work at every look and runs only when something changed, within its budget.",
+  content: <MaintenanceRows />,
+};
+
+export const assistant_jobs_section: SettingsSection = {
+  id: "assistant-jobs",
+  heading: "The assistant's jobs",
+  hint: "The jobs the assistant made with you, under Jobs, each with limits of its own; these caps hold for all of them together.",
+  content: <AssistantJobRows />,
 };

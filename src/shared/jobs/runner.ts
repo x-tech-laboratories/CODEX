@@ -152,7 +152,7 @@ function run_job(host: JobHost, row: JobRow, mark: string): Promise<JobRun> {
 
 // Why a job cannot run now, or empty when it can: background work off, a run going, or a cap reached.
 export function why_not(database: SqlDatabase, row: JobRow, now: number): string {
-  if (!background_setting(database, "enabled")) return "The assistant's jobs are off; turn them on under Settings → Assistant → Background work.";
+  if (!background_setting(database, "enabled")) return "The assistant's jobs are off; turn them on under Settings → Assistant → The assistant's jobs.";
   if (is_paused(database)) return "Background work is paused; carry on under Settings → Assistant → Background work.";
   if (running) return running.job_id === row.id ? "This job is running now." : "Another job is running now; one runs at a time.";
   if (has_live_runs()) return "A reply is being written in a conversation, which goes first.";
