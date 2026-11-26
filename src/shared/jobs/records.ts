@@ -2,15 +2,15 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { and, desc, eq, gte, inArray, ne } from "@x-tech-laboratories/x-libs/drizzle";
+import { and, asc, desc, eq, gte, inArray, like, ne, not } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { contexts } from "../contexts/schema.ts";
-import { drizzle_of } from "../feature.ts";
+import { drizzle_of, new_id } from "../feature.ts";
 import { settings_feature } from "../settings.ts";
-import { background_defaults, background_settings, default_limits, type Job, type JobFields, type JobLimits, type JobMaker, type JobRun, type JobRunOutcome, type JobSchedule } from "./model.ts";
+import { background_defaults, background_settings, default_limits, maintenance_prefix, type BackgroundDevice, type Job, type JobFields, type JobLimits, type JobMaker, type JobRun, type JobRunOutcome, type JobSchedule } from "./model.ts";
 import { checked_schedule, describe_schedule, next_due, start_of_day } from "./schedule.ts";
-import { job_checks, job_device, job_runs, jobs } from "./schema.ts";
+import { background_devices, job_checks, job_device, job_runs, jobs } from "./schema.ts";
 
 // ── Checking ─────────────────────────────────────────────────────────────────
 
@@ -120,15 +120,17 @@ export function note_check(database: SqlDatabase, job_id: string, at: string, ma
   drizzle_of(database).insert(job_checks).values({ job_id, checked_at: at, context_mark: mark }).onConflictDoUpdate({ target: job_checks.job_id, set: { checked_at: at, context_mark: mark } }).run();
 }
 
-// The runs started today, on every device, that count against the caps: every one but those that gave way.
-export function counted_today(database: SqlDatabase, now: number, job_id?: string): { runs: number; tokens: number } {
+// The runs started today that count against the caps: every one but those that gave way. Left without a job, the
+// assistant's own jobs on every device together, the maintenance jobs, with budgets of their own, left out; a device
+// given counts only its runs.
+export function counted_today(database: SqlDatabase, now: number, job_id?: string, device?: string): { runs: number; tokens: number; rounds: number; items: number } {
   const since = new Date(start_of_day(now)).toISOString();
   const rows = drizzle_of(database)
-    .select({ input: job_runs.input_tokens, output: job_runs.output_tokens })
+    .select({ input: job_runs.input_tokens, output: job_runs.output_tokens, rounds: job_runs.rounds, items: job_runs.items })
     .from(job_runs)
-    .where(and(gte(job_runs.started_at, since), ne(job_runs.outcome, "gave_way"), job_id ? eq(job_runs.job_id, job_id) : undefined))
+    .where(and(gte(job_runs.started_at, since), ne(job_runs.outcome, "gave_way"), job_id ? eq(job_runs.job_id, job_id) : not(like(job_runs.job_id, `${maintenance_prefix}%`)), device ? eq(job_runs.device, device) : undefined))
     .all();
-  return { runs: rows.length, tokens: rows.reduce((sum, row) => sum + row.input + row.output, 0) };
+  return { runs: rows.length, tokens: rows.reduce((sum, row) => sum + row.input + row.output, 0), rounds: rows.reduce((sum, row) => sum + row.rounds, 0), items: rows.reduce((sum, row) => sum + row.items, 0) };
 }
 
 export function as_job(database: SqlDatabase, row: JobRow, now: number): Job {
@@ -161,16 +163,49 @@ export function background_setting<Key extends keyof typeof background_settings>
   const saved = settings_feature.methods.get_settings(database)[name];
   const fallback = background_defaults[name];
   if (typeof fallback === "boolean") return (typeof saved === "boolean" ? saved : fallback) as never;
+  if (typeof fallback === "string") return (typeof saved === "string" ? saved : fallback) as never;
   return (Number.isFinite(Number(saved)) && Number(saved) >= 0 && saved !== null && saved !== "" ? Number(saved) : fallback) as never;
 }
 
-const runs_here_key = "runs_here";
+// ── Devices ──────────────────────────────────────────────────────────────────
 
-// Whether this device is the one that runs jobs: off until the user turns it on here.
-export function runs_here(database: SqlDatabase): boolean {
-  return drizzle_of(database).select({ value: job_device.value }).from(job_device).where(eq(job_device.key, runs_here_key)).get()?.value === "true";
+const device_id_key = "device_id";
+
+// This device's own id, made once and kept in its own table, never synced.
+export function device_id_of(database: SqlDatabase): string {
+  const db = drizzle_of(database);
+  const kept = db.select({ value: job_device.value }).from(job_device).where(eq(job_device.key, device_id_key)).get()?.value;
+  if (kept) return kept;
+  const id = new_id();
+  db.insert(job_device).values({ key: device_id_key, value: id }).onConflictDoNothing().run();
+  return db.select({ value: job_device.value }).from(job_device).where(eq(job_device.key, device_id_key)).get()!.value;
 }
 
-export function set_runs_here(database: SqlDatabase, on: boolean): void {
-  drizzle_of(database).insert(job_device).values({ key: runs_here_key, value: String(on) }).onConflictDoUpdate({ target: job_device.key, set: { value: String(on) } }).run();
+// Says this device can run background work, under its name now; the first to start with none chosen becomes the one.
+export function register_device(database: SqlDatabase, name: string, kind: BackgroundDevice["kind"], now: number): string {
+  const id = device_id_of(database);
+  const started_at = new Date(now).toISOString();
+  drizzle_of(database).insert(background_devices).values({ id, name, kind, started_at }).onConflictDoUpdate({ target: background_devices.id, set: { name, kind, started_at } }).run();
+  if (!background_setting(database, "device")) settings_feature.methods.set_setting(database, background_settings.device, id);
+  return id;
+}
+
+export function list_devices(database: SqlDatabase): BackgroundDevice[] {
+  return drizzle_of(database)
+    .select()
+    .from(background_devices)
+    .orderBy(asc(background_devices.name), asc(background_devices.id))
+    .all()
+    .map((row) => ({ ...row, kind: row.kind === "server" ? "server" : "desktop" }));
+}
+
+// Whether this device is the one the user chose to run background work; every other device does none.
+export function runs_here(database: SqlDatabase): boolean {
+  const chosen = background_setting(database, "device");
+  return chosen !== "" && chosen === device_id_of(database);
+}
+
+// Whether background work goes on at all now: not paused.
+export function is_paused(database: SqlDatabase): boolean {
+  return background_setting(database, "paused");
 }

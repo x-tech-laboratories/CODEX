@@ -4,6 +4,7 @@ import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { wait_for_runs } from "../src/shared/conversations/run.ts";
 import type { JobFields } from "../src/shared/jobs/model.ts";
 import { check_jobs, context_mark, job_running, keep_running_jobs, use_job_host, wait_for_job } from "../src/shared/jobs/runner.ts";
+import { register_device } from "../src/shared/jobs/records.ts";
 import { checked_schedule, describe_schedule, is_due, next_due } from "../src/shared/jobs/schedule.ts";
 import { page_only_methods, user_only_settings } from "../src/shared/page_api.ts";
 import { bind_methods } from "../src/shared/store.ts";
@@ -37,7 +38,7 @@ function job_of(context_id: string | null, more: Partial<JobFields> = {}): JobFi
 // Background work on, and this device the one that runs it.
 function turn_on(fixture: Fixture): void {
   fixture.calls.set_setting("background.enabled", true);
-  fixture.calls.set_background_device(true);
+  fixture.calls.set_background_device(register_device(fixture.database, "Test laptop", "desktop", Date.now()));
 }
 
 async function check(): Promise<string | null> {
@@ -149,11 +150,11 @@ describe("background runs", () => {
     const id = fixture.calls.add_job(job_of(null));
     fixture.clock.now += 2 * hour;
     expect(check_jobs()).toBeNull();
-    await expect(fixture.calls.run_job_now(id)).rejects.toThrow("Background work is off");
+    await expect(fixture.calls.run_job_now(id)).rejects.toThrow("The assistant's jobs are off");
     fixture.calls.set_setting("background.enabled", true);
     expect(check_jobs()).toBeNull();
     expect(fixture.calls.get_background_state()).toMatchObject({ enabled: true, runs_here: false, device: "Test laptop", daily_runs: 24, daily_tokens: 200_000, runs_today: 0 });
-    fixture.calls.set_background_device(true);
+    fixture.calls.set_background_device(register_device(fixture.database, "Test laptop", "desktop", Date.now()));
     expect(await check()).toBe("done");
     expect(fixture.requests).toHaveLength(1);
   });

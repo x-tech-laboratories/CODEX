@@ -1,6 +1,7 @@
 // The Inbox: everything across CODEX that waits on the user, newest first: the changes conversations and jobs proposed,
-// with their evidence; the graph's proposed links and entities; proposed blueprints and changes to them; and the
-// background runs that ended in an error or at a limit. It only reads; deciding stays with each feature's page-only calls.
+// with their evidence, and those background maintenance proposed; the graph's proposed links and entities; proposed
+// blueprints and changes to them; the background runs that ended in an error or at a limit; and the daily digest of
+// background work. It only reads; deciding stays with each feature's page-only calls.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -14,6 +15,7 @@ import { summaries_of } from "../conversations/records.ts";
 import { define_feature, drizzle_of } from "../feature.ts";
 import { list_graph_proposals } from "../graph/reading.ts";
 import { as_run } from "../jobs/records.ts";
+import { maintenance_conversation_id, maintenance_prefix } from "../jobs/model.ts";
 import { job_runs, jobs } from "../jobs/schema.ts";
 import { list_proposals_of } from "../policy/proposals.ts";
 import type { InboxEntry } from "./model.ts";
@@ -37,7 +39,9 @@ function list_inbox(database: SqlDatabase): InboxEntry[] {
 
   for (const proposal of list_proposals_of(database, null, "waiting")) {
     conversation_ids.add(proposal.conversation_id);
-    entries.push({ key: `change:${proposal.id}`, kind: "change", id: proposal.id, title: proposal.summary, detail: proposal.reason === "outside content" ? "Proposed after reading text from other apps." : "Its level asks for your approval.", made_by: "the assistant", created_at: proposal.created_at, conversation_id: proposal.conversation_id, conversation_title: "", job_title: job_conversations.get(proposal.conversation_id) ?? "", route: conversation_route(proposal.conversation_id), proposal });
+    // One in background maintenance's own conversation was proposed by it, about the graph.
+    const by_maintenance = proposal.conversation_id === maintenance_conversation_id;
+    entries.push({ key: `change:${proposal.id}`, kind: "change", id: proposal.id, title: proposal.summary, detail: proposal.reason === "outside content" ? "Proposed after reading text from other apps." : "Its level asks for your approval.", made_by: by_maintenance ? "background maintenance" : "the assistant", created_at: proposal.created_at, conversation_id: proposal.conversation_id, conversation_title: "", job_title: job_conversations.get(proposal.conversation_id) ?? "", route: conversation_route(proposal.conversation_id), proposal });
   }
 
   const graph = list_graph_proposals(database);
@@ -59,7 +63,16 @@ function list_inbox(database: SqlDatabase): InboxEntry[] {
   const failed = db.select().from(job_runs).where(and(inArray(job_runs.outcome, ["error", "limit"]), eq(job_runs.dismissed_at, ""))).orderBy(desc(job_runs.started_at)).all().map(as_run);
   for (const run of failed) {
     if (run.conversation_id) conversation_ids.add(run.conversation_id);
-    entries.push({ key: `job_run:${run.id}`, kind: "job_run", id: run.id, title: `${run.outcome === "limit" ? "Stopped at a limit" : "Failed"}: ${run.title}`, detail: run.note, made_by: `the job ${run.title}`, created_at: run.ended_at || run.started_at, conversation_id: run.conversation_id, conversation_title: "", job_title: run.title, route: `#/jobs/${encodeURIComponent(run.job_id)}`, run });
+    const maintenance = run.job_id.startsWith(maintenance_prefix);
+    const route = maintenance ? "#/settings" : `#/jobs/${encodeURIComponent(run.job_id)}`;
+    entries.push({ key: `job_run:${run.id}`, kind: "job_run", id: run.id, title: `${run.outcome === "limit" ? "Stopped at a limit" : "Failed"}: ${run.title}`, detail: run.note, made_by: maintenance ? "background maintenance" : `the job ${run.title}`, created_at: run.ended_at || run.started_at, conversation_id: run.conversation_id, conversation_title: "", job_title: run.title, route, run });
+  }
+
+  const digests = db.select().from(job_runs).where(and(eq(job_runs.job_id, `${maintenance_prefix}digest`), eq(job_runs.outcome, "done"), eq(job_runs.dismissed_at, ""))).orderBy(desc(job_runs.started_at)).all().map(as_run);
+  for (const run of digests) {
+    if (run.applied.length === 0) continue;
+    const day = (run.ended_at || run.started_at).slice(0, 10);
+    entries.push({ key: `digest:${run.id}`, kind: "digest", id: run.id, title: `Background work, ${day}`, detail: run.applied.join(" "), made_by: "background maintenance", created_at: run.ended_at || run.started_at, conversation_id: "", conversation_title: "", job_title: "", route: "#/settings", run });
   }
 
   const titles = new Map(summaries_of(database, [...conversation_ids]).map((summary) => [summary.id, summary.title]));
@@ -81,7 +94,7 @@ export const inbox_feature = define_feature({
   api: {
     list_inbox: {
       description:
-        "Lists everything that waits for the user, newest first: changes the assistant proposed in conversations and background jobs, with their evidence; proposed links and entities of the graph; proposed blueprints and changes to them; and background runs that ended in an error or at a limit. Each names what it is, who made it and where it opens.",
+        "Lists everything that waits for the user, newest first: changes the assistant proposed in conversations and background jobs, with their evidence; proposed links and entities of the graph; proposed blueprints and changes to them; background runs that ended in an error or at a limit; and the daily digest of what background maintenance did. Each names what it is, who made it and where it opens.",
       params: [],
     },
     get_inbox_count: { description: "Counts what waits for the user in the Inbox.", params: [] },

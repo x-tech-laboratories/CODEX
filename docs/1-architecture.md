@@ -126,8 +126,12 @@ Drizzle, which FTS5 and vector blobs need. The server and the daemon open it and
   `get_item_texts` (256 KB at most, cut by the app) or its snippet.
 - **Change detection** (`indexer.ts`): each document's text is hashed; a pass writes only documents whose hash changed
   (FTS5 row, overlapping pieces of 1200 characters with 200 of overlap, and no vectors), updates where an unchanged
-  one sits, and removes documents gone. A pass runs at start, a moment after any write (the search feature's
-  `after_write`) and every minute, catching what came by sync.
+  one sits, and removes documents gone. A pass runs at start and a moment after any write (the search feature's
+  `after_write`), embedding nothing and reading at most 50 items' text from their apps (`texts_after_write`); the
+  maintenance jobs "Refresh the index" and "Embed documents" do the rest within their budgets, catching what came by
+  sync (see "Self-maintenance"). `index_now()` with no options still indexes and embeds everything, as Rebuild does. Each
+  pass notes the documents it wrote or removed, and each embedding the items given vectors, in the index's own
+  `changed` table, for the rules and similarity jobs.
 - **Embedders** are a third plugin provider beside `collector` and `engine` (tool plugins are a fourth; see "Tool plugins") (`src/shared/embedders/embedder.ts`):
   label, `model()`, `dimensions()`, optional `is_local()`, and `embed(texts)`. The bundled one
   (`src/server/embedders/openai.ts`) posts to an OpenAI-compatible `/embeddings` endpoint, Ollama's on this computer
@@ -205,7 +209,7 @@ entity comes back with its links and a removed link while both ends exist.
 
 ### Links without a model
 
-`rules.ts` runs after each index pass (`when_indexed` in the indexer), for the documents the pass wrote and those
+`rules.ts` runs in the maintenance job "Links from rules", for the documents index passes wrote since it last ran and those
 whose text holds the address of one written or whose parent it is, so it runs only for what changed; every document
 when the index was empty. Each rule makes accepted links with an id every device gives alike (`rule:<rule>:<from>><to>`),
 so two devices make one link:
@@ -220,13 +224,13 @@ so two devices make one link:
 A link a rule no longer finds is closed; one that comes back opens again. A link the user rejected, or one of that
 type someone else made, stands in its place.
 
-`similarity.ts` runs after a pass that embedded something: an item given new vectors (their mean, scaled to length
+`similarity.ts` runs in the maintenance job "Similar items" for the items given new vectors since it last ran: an item given new vectors (their mean, scaled to length
 one) is compared with every other item's, and those standing clearly above what it scores against the rest, judged
 by search's `meaning_floor` so the rule holds on any embedder's scale (`standing_out`), become proposed `related_to` links
 labelled "similar", made by `similarity` with the embedder and model, at most three waiting per item, never between two
 items already linked in any way or a pair once rejected.
 
-A pass that made or closed links tells the host (`on_change`), which records History and announces the change.
+A job that made or closed links tells the maintenance host (`on_change`), which records History and announces the change.
 
 ### Engines and the graph
 
@@ -665,21 +669,32 @@ Built 2026-11-26 on doc 4's decision 8. `src/shared/jobs/` keeps two synced tabl
 `is_on`, `made_by` `user`, `engine` or `program`, and the conversation its runs are kept in), versioned in History, and
 `job_runs` (when, the device by name, engine, model, rounds, tokens, what it applied and proposed in plain words, its
 `outcome`, `running`, `done`, `error`, `limit` or `gave_way`, a note, the conversation and run, the context mark it saw
-and when it was set aside). Two tables are this device's alone, never synced: `job_device` (whether this device runs
-background work) and `job_checks` (when a job was last found unchanged here). The global switch and caps are the
-synced settings `background.enabled` (off), `background.daily_runs` (24) and `background.daily_tokens` (200,000),
-among `user_only_settings`.
+and when it was set aside, and, for a maintenance job's run, how many things it handled) and `background_devices`
+(each desktop daemon or server that can run background work, by the id it made for itself, its name and kind, as it
+last said when it started). Two tables are this device's alone, never synced: `job_device` (this device's own id) and
+`job_checks` (when a job was last found unchanged here). The settings are synced and among `user_only_settings`:
+`background.enabled` (the assistant's jobs, off), `background.daily_runs` (24) and `background.daily_tokens` (200,000),
+`background.paused` (off), `background.device` (the device that runs background work), `background.tick_minutes` (30)
+and `background.hosted` (off).
+
+**One device does the work** (built 2026-11-27). `register_device` (`records.ts`), called by `keep_maintaining` as the
+server or the daemon starts, records the device and, when `background.device` is empty, names it, so the first desktop
+app or server to start is the one; another starting later leaves the choice alone. `runs_here` compares the setting
+with this device's own id; only that device runs the assistant's jobs, the maintenance jobs that write synced data, and
+the background refresh (`keep_refreshing` in `src/server/refreshing.ts`), and none of them while `background.paused`
+is on. The user changes it with the page-only `set_background_device(device_id)`.
 
 Calls: `list_jobs(context_id?)`, `get_job` (with its runs), `list_job_runs`, `get_background_state` (the switches, caps,
 today's use and whether a job runs), `add_job(fields)`, `change_job(id, fields)`, `remove_job`, `dismiss_job_runs(ids)`,
-and the page-only `set_job_on`, `run_job_now` and `set_background_device`. A job a program adds through a token or
+and the page-only `set_job_on`, `run_job_now` and `set_background_device`. `list_job_runs(null)` leaves the maintenance
+jobs' runs out, and `counted_today` counts them only against their own budgets. A job a program adds through a token or
 MCP starts off. Engines are offered `list_jobs` (CODEX's own words, not fenced), `add_job`, `change_job` and
 `remove_job`, changes at `proposal` until the user sets another level; their summaries say the job in plain words
 (`describe_schedule`). A change the engine applies itself runs as the `engine` caller (`caller.ts`), which `add_job`
 records as its maker.
 
 The runner (`runner.ts`), started by the server and the daemon with `keep_running_jobs` (a check every 30 seconds, the
-clock passed in), does nothing unless background work is on and this device runs it. A check takes the first job that
+clock passed in), does nothing unless the assistant's jobs are on, background work is not paused and this device runs it. A check takes the first job that
 is on and due (`schedule.ts`: "every" counts from its last run or check, "at" takes the latest slot at or before now
 on a chosen weekday; either way due once however much was missed), within its runs a day and the global caps
 (`counted_today`, every device's runs since local midnight, a run that gave way not counting), while no live reply is
@@ -699,13 +714,67 @@ both in Settings → This device → Notifications.
 
 The page: the **Jobs** page (`#/jobs`, `#/jobs/<id>` for one job's runs) with each job's schedule, next turn, latest
 run and device, an on switch, Run now, Change, History and Remove; a context's jobs under its notes; the job dialog
-(`JobDialog.tsx`); and Settings → Assistant → Background work (`BackgroundSettings.tsx`).
+(`JobDialog.tsx`); and Settings → Assistant → The assistant's jobs (`BackgroundSettings.tsx`).
+
+### Self-maintenance
+
+Built 2026-11-27 on doc 4's step 7. `src/shared/maintenance/` keeps CODEX's own upkeep as seven built-in jobs
+(`model.ts`), which the user can turn on or off and budget but not remove, apart from the jobs the assistant makes:
+
+| Job | Where | What it does |
+| --- | --- | --- |
+| `index` Refresh the index | every device | `sync_documents` with at most `items_per_run` items' text read from their apps (`get_item_texts` for an app read through the item calls); its check, `count_out_of_step`, compares the store's documents with the index without asking any app. |
+| `embed` Embed documents | every device | `embed_pending` with at most `items_per_run` pieces; its check counts pieces without a vector from the embedder in use, those it may not be sent left out. |
+| `rules` Links from rules | chosen device | `run_rules` for the documents waiting in the index's `changed` table under `rules`. |
+| `similarity` Similar items | chosen device | `propose_similar` for the items waiting under `similarity`. |
+| `tidy` Tidy the graph | chosen device | Ends (sets `valid_until`, never deletes) open links touching an item whose app no longer has it (`status` `missing`); proposes `same_as` between accepted entities of one kind sharing a name or other name (made by the rule `same_name`), never twice and never once rejected. No model call. |
+| `suggest` Suggest links | chosen device | The only model job, off until turned on: for contexts holding items whose `context_mark` changed since it last ran on them (`maintenance_contexts`), longest waiting first, a background `start_run` shaped like Suggest links (its message, tools, instructions and closing note) in one conversation per context named "Suggest links (background)". |
+| `digest` Daily digest | chosen device | Once a day, plain lines (`digest_lines`) of what each job applied and proposed since the last digest, failures, budgets used up, and how much waits in the Inbox; kept as the run's `applied`, listed in the Inbox as kind `digest` until set aside. Nothing to say, no entry. |
+
+The index and its vectors are never synced, so every device keeps its own: `index` and `embed` run on every device,
+and the rest only on the chosen one. Runs are kept in `job_runs` under `maintenance:<key>` with `items` (let go after
+30 days); what each device found when it last looked is the synced `maintenance_checks` (per job and device: when, the
+day, how many looks found nothing that day, the last reason and what part of the budget is used up). The setting
+`maintenance.jobs` holds each job's `on` and budget where the user changed them, read through `job_on` and `budget_of`
+(a value outside `budget_bounds` falls back to the default). Calls: `list_maintenance_jobs` and the page-only
+`set_maintenance_job(key, { on?, budget? })`.
+
+**The loop** (`loop.ts`). `keep_maintaining(host)` registers the device and looks each minute whether
+`background.tick_minutes` have passed; a tick (`tick()`) does nothing while paused, and otherwise takes each job in
+order that is on and this device's, waiting first while a reply the user waits for is written (`has_live_runs`) and
+giving up at a pause. `run_maintenance_job` checks the budget (runs a day, and for `suggest` model calls, counted as
+rounds, and tokens a day; on this device for `index` and `embed`, on every device together for the rest), then the
+job's cheap check, which makes no model call and asks no app; nothing to do, a reason such as no embedder, or a used-up
+budget is only noted in `maintenance_checks`, with no run. A job with work runs with a signal that aborts at
+`seconds_per_run`, when background work is paused (looked at every two seconds) and when the loop stops; it is kept as
+`done`, `error` (listed in the Inbox, opening Settings) or `gave_way`, with what it applied and proposed. A run that
+used the day's budget notes that at once, for Settings and the digest.
+
+**The action policy holds** (`jobs.ts`). The rules' links and the ending of links a rule or similarity made are CODEX's
+own derived data, made and ended as the rules always did. Ending a link the user, a program or an engine made is
+`close_graph_link`, a call with a level under the action policy though never offered to an engine (`maintenance_api`
+in `policy/policy.ts`, listed in Settings → Action policy after the engine's calls): at `background` it is applied and
+listed in the run; at `restricted` it is left and the run says so; otherwise it is proposed, once (a waiting or rejected
+proposal for that link stops another), in the conversation "Background maintenance" (`maintenance`, in no context,
+marked as a background job's so it is never the pane's default), where approving or rejecting it is recorded.
+Similarity, `same_as` and Suggest links make proposals by nature. No job changes another app; Suggest links runs at
+presence `background` under the same screen and taint rules as any run.
+
+**Hosted engines.** `background_engine` lets Suggest links run only when the engine in use is local (the hosting test
+of "Engines", a Tailscale address counting as hosted), unless `background.hosted` is on; otherwise the job is skipped
+with the reason shown in Settings. When it runs on a hosted engine the source and tool marks and the hosted log apply
+as in any run.
+
+**Settings** (`src/web/jobs/BackgroundSettings.tsx`): Settings → Assistant → Background work (the pause, the device,
+how often to look, and the hosted switch), Maintenance (each job's row with its state, where it runs and what it last
+did or why it last did nothing; its dialog holds the switch, each part of its budget with today's use, the last run
+and the last skip) and The assistant's jobs (their switch and caps).
 
 ### The Inbox
 
 `src/shared/inbox/` reads, and keeps nothing: `list_inbox()` gives every waiting proposal of the policy (with its
 evidence and conversation), every proposed graph link and entity, every proposed blueprint and blueprint change, and
-every job run that ended in an error or at a limit and was not set aside, newest first, each with plain words, who
+every job run that ended in an error or at a limit and was not set aside, and each daily digest not set aside, newest first, each with plain words, who
 made it, the conversation and job it came from and the route that opens it; `get_inbox_count()` counts them. The
 **Inbox** page (`src/web/inbox/`) decides in place through the features' own page-only calls (`resolve_proposal`,
 `accept_graph_proposals`, `reject_graph_proposals`, `accept_blueprint_proposals`, `reject_blueprint_proposals`) and
@@ -714,4 +783,4 @@ label, and the tray an Inbox row and tooltip with it.
 
 ### Still to come
 
-Self-maintenance, mood and curiosity, in doc 4's order.
+Mood and curiosity, in doc 4's order.

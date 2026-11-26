@@ -166,6 +166,13 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 6. **Jobs and blueprints.** *Built 2026-11-26: blueprints (proposed, accepted at the page, recalled into each run) and
    the assistant's jobs (scheduled, limited, run in the background), both described in doc 1.*
 7. **Self-maintenance:** jobs chosen by what changed, each with a budget, skipped when there is nothing to do.
+   *Built 2026-11-27 (`src/shared/maintenance/`, described in doc 1): seven built-in jobs beside the assistant's (the
+   index, embeddings, the rules' links, similar items, tidying the graph, Suggest links and a daily digest in the
+   Inbox), each with a cheap check that calls no model and no app, a switch and a budget of runs a day, items and time
+   a run, and for Suggest links, the only one calling a model and off until turned on, model calls and tokens a day; a
+   tick every 30 minutes, waiting for a live reply and stopping at a pause; changes under the action policy, the rest
+   proposed; a local engine unless the user allows a hosted one; and one device, named in a synced setting the user
+   changes at the page, doing the work, though every device keeps its own index.*
 8. **Mood and curiosity.**
 9. **SmartHarness as an engine:** conversation history and CODEX's tools in the task tree; a recorded set of real assistant jobs as the eval, with a hosted engine as the baseline. SmartHarness takes over one class of job at a time once it matches the baseline there.
 
@@ -183,7 +190,8 @@ follows the stream, an absolute `CODEX_USER_DATA` and `CODEX_SOCKET` are honoure
 words and clears when the embedder answers or its settings change, a proposal's "From" names only what its run had in
 front of it, Suggest links is shaped for a small model, similar items are judged against the rest rather than a fixed
 cosine, a job's conversation is no longer the pane's default, and each tool plugin has a "May be sent to a hosted engine"
-mark, without which a hosted engine is not offered its tools and is sent nothing that drew on them):
+mark, without which a hosted engine is not offered its tools and is sent nothing that drew on them; the
+self-maintenance loop is built and one device, chosen in a synced setting, does all background work):
 
 - No real model has run a background job: a scripted fake engine has, in tests and in the desktop app. How a real model
   keeps to a job's instruction with nobody to ask, and how many rounds and tokens real jobs need, is unknown.
@@ -191,14 +199,27 @@ mark, without which a hosted engine is not offered its tools and is sent nothing
   that let it is recorded as made by the engine.
 - Background runs apply only `background`-level changes and propose the rest; a `restricted` change is still refused,
   not proposed.
-- Which device runs jobs is the user's choice per device; nothing stops two devices both being switched on, and then
-  both run each due job (each run is recorded with its device, so it shows).
 - "Every so many" schedules count from the last run or check, and times of day are in the local time of the device that
   runs jobs, so moving that switch to a device in another time zone moves the times.
 - The server sends no notifications; only the desktop daemon notifies, through `agent/desktop_notify`.
 
-- No background job proposes links yet: rules and similarity run after each index pass, and an engine proposes only
-  when the user asks with Suggest links.
+- No real model has run Suggest links in the background; the scripted fake engine has, in tests. How many contexts a
+  day the default budget (four runs, 24 model calls, 60,000 tokens) covers on a real local model is unknown.
+- The device that runs background work is chosen in a synced setting; two devices starting at once with none chosen
+  can each name itself before they sync, and the one whose write syncs last wins. Until then both may do the work, as
+  before.
+- Every device keeps its own index, so "Refresh the index" and "Embed documents" run on each, and each embeds with its
+  own embedder; a device that is not chosen still reads items' text from their apps for its own index.
+- A pass after a write still reads up to 50 items' text from their apps outside any budget, so search finds a change at
+  once; reading text is the only part of a maintenance job a budget's time limit cannot stop mid-way, since an app's
+  text call is not stopped part way.
+- The digest is written at the first look of a day that finds something to say, covering the day before; it is not
+  held for a time of day.
+- Ending links covers items an app no longer has (`missing`); a context or entity removed already takes its links, as
+  before. Ending a link the user made at `background` level is listed in the run but has no undo of its own; the link
+  can be opened again by clearing when it ended.
+- Likely duplicate entities are found by a shared name or other name of one kind only; nothing finds two names of one
+  person, which waits for an engine.
 - How well a real model extracts entities and proposes links is unverified; only a scripted fake engine has proposed.
   Suggest links in its new shape (its graph in the instructions, four tools, six rounds) has not been run on a real
   model.
@@ -247,5 +268,5 @@ mark, without which a hosted engine is not offered its tools and is sent nothing
 - **Injected instructions** in mail, pages and files: the trust rule under "Action policy".
 - **Wrong links trusted:** every model-made link is a proposal with its evidence until accepted.
 - **Hosted engines see personal data:** the per-source mark in decision 6, and a log of what was sent (both built).
-- **Background cost:** budgets per job, and no model call when nothing changed.
+- **Background cost:** budgets per job, and no model call when nothing changed (built 2026-11-27).
 - **Mood that flatters:** the limits under "Mood and curiosity".

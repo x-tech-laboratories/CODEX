@@ -21,19 +21,24 @@ import { find_plugin_tool, run_tool } from "../tools/offered.ts";
 import { settings_feature } from "../settings.ts";
 import { migrations } from "./migrations/index.ts";
 import { default_level, is_policy_level, policy_levels, type PolicyEntry, type PolicyLevel, type Proposal, type ProposalStatus } from "./model.ts";
-import { changing_calls, level_of, offered_api, policy_setting, stored_levels } from "./policy.ts";
+import { leveled_calls, level_of, maintenance_api, policy_setting, proposable_spec, stored_levels } from "./policy.ts";
 import { list_proposals_of, proposal_of, settle_proposal } from "./proposals.ts";
 import { mark_before_change, undo_of_change, undo_state, undo_states, undo_steps, type ChangeUndoState } from "./undo.ts";
 import { policy_tables } from "./schema.ts";
 
 // ── Levels ───────────────────────────────────────────────────────────────────
 
+// A change only background maintenance makes is said as such.
 function get_action_policy(database: SqlDatabase): PolicyEntry[] {
-  return changing_calls().map((method) => ({ method, description: offered_api[method]!.description, level: level_of(database, method), destructive: offered_api[method]!.destructive === true }));
+  return leveled_calls().map((method) => {
+    const spec = proposable_spec(method)!;
+    const description = method in maintenance_api ? `Background maintenance: ${spec.description} It ends a link the user, a program or the assistant made once the item at its end is gone from its app.` : spec.description;
+    return { method, description, level: level_of(database, method), destructive: spec.destructive === true };
+  });
 }
 
 function set_action_level(database: SqlDatabase, method: string, level: PolicyLevel): void {
-  if (!changing_calls().includes(method)) throw new Error(`${method} is not a change an engine is offered; get_action_policy lists those.`);
+  if (!leveled_calls().includes(method)) throw new Error(`${method} is not a change an engine is offered; get_action_policy lists those.`);
   if (!is_policy_level(level)) throw new Error(`A level is one of ${policy_levels.join(", ")}.`);
   settings_feature.methods.set_setting(database, policy_setting, { ...stored_levels(database), [method]: level });
 }
@@ -55,7 +60,7 @@ function add_event(database: SqlDatabase, event: NewMessage): void {
 }
 
 function own_spec(method: string) {
-  const spec = offered_api[method];
+  const spec = proposable_spec(method);
   if (!spec) throw new Error(`${method} is no longer offered.`);
   return spec;
 }

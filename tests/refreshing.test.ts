@@ -8,6 +8,7 @@ import { app_info } from "../src/shared/collectors/collector.ts";
 import { use_plugins, type ContextPluginApi } from "../src/shared/collectors/host.ts";
 import { bind_methods, open_store } from "../src/shared/store.ts";
 import { keep_refreshing } from "../src/server/refreshing.ts";
+import { register_device } from "../src/shared/jobs/records.ts";
 
 // A collector whose app says each item's title, or fails when asked to.
 function tasks_plugin(answer: () => Promise<Record<string, { source_id: string; kind: string; title: string }>>) {
@@ -24,6 +25,8 @@ function open_database() {
   const database = new DatabaseSync(":memory:");
   open_store(database);
   const store = bind_methods(() => database, () => undefined);
+  // This device is the one that runs background work.
+  register_device(database, "Test laptop", "desktop", Date.now());
   const garden = store.add_context("Garden", null);
   store.add_item([garden], "tasks", { source_id: "t1", kind: "task", title: "Order seeds" }, "");
   return { database, store, garden };
@@ -54,6 +57,20 @@ describe("refreshing in the background", () => {
     clock += 60_000;
     await refreshing.check();
     expect(reports).toEqual([1, 0]);
+    refreshing.stop();
+  });
+
+  it("refreshes only on the device chosen for background work, and not while it is paused", async () => {
+    use_plugins([tasks_plugin(async () => ({ t1: { source_id: "t1", kind: "task", title: "Order more seeds" } }))]);
+    const { database, store } = open_database();
+    const on_report = vi.fn();
+    const refreshing = keep_refreshing(() => database, { on_report });
+    store.set_setting("background.paused", true);
+    await refreshing.check();
+    store.set_setting("background.paused", false);
+    store.set_setting("background.device", "another-device");
+    await refreshing.check();
+    expect(on_report).not.toHaveBeenCalled();
     refreshing.stop();
   });
 

@@ -1,11 +1,14 @@
 // Asks every collector what became of its items every so often, as the refresh_minutes setting says, so titles and
-// states stay current with no window open.
+// states stay current with no window open. Only the device chosen for background work asks, and none while background
+// work is paused; the others hear what it found through sync.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
-import type { RefreshReport } from "../shared/contexts/model.ts";import { bind_methods } from "../shared/store.ts";
+import type { RefreshReport } from "../shared/contexts/model.ts";
+import { is_paused, runs_here } from "../shared/jobs/records.ts";
+import { bind_methods } from "../shared/store.ts";
 
 // ── Refreshing ───────────────────────────────────────────────────────────────
 
@@ -21,7 +24,7 @@ export function keep_refreshing(
   let last = 0;
   let running = false;
   const check = async (): Promise<void> => {
-    if (running) return;
+    if (running || !runs_here(database()) || is_paused(database())) return;
     const methods = bind_methods(database, on_change);
     const minutes = Number(methods.get_settings().refresh_minutes);
     if (!(minutes > 0) || now() - last < minutes * minute_ms) return;

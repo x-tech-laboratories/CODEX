@@ -19,7 +19,7 @@ import { proposal_of } from "../policy/proposals.ts";
 import { subtree } from "../search/documents.ts";
 import { text_hash } from "../search/text.ts";
 import type { JobRun } from "./model.ts";
-import { as_run, background_setting, counted_today, fields_of, last_mark, last_turn_at, note_check, rows_with_ids, runs_here, type JobRow } from "./records.ts";
+import { as_run, background_setting, counted_today, fields_of, is_paused, last_mark, last_turn_at, note_check, rows_with_ids, runs_here, type JobRow } from "./records.ts";
 import { is_due } from "./schedule.ts";
 import { job_runs, jobs } from "./schema.ts";
 
@@ -152,7 +152,8 @@ function run_job(host: JobHost, row: JobRow, mark: string): Promise<JobRun> {
 
 // Why a job cannot run now, or empty when it can: background work off, a run going, or a cap reached.
 export function why_not(database: SqlDatabase, row: JobRow, now: number): string {
-  if (!background_setting(database, "enabled")) return "Background work is off; turn it on under Settings → Assistant → Background work.";
+  if (!background_setting(database, "enabled")) return "The assistant's jobs are off; turn them on under Settings → Assistant → The assistant's jobs.";
+  if (is_paused(database)) return "Background work is paused; carry on under Settings → Assistant → Background work.";
   if (running) return running.job_id === row.id ? "This job is running now." : "Another job is running now; one runs at a time.";
   if (has_live_runs()) return "A reply is being written in a conversation, which goes first.";
   const today = counted_today(database, now);
@@ -174,7 +175,7 @@ export function run_now(row: JobRow): Promise<JobRun> {
 export function check_jobs(): Promise<JobRun> | null {
   const host = job_host();
   const database = host.database();
-  if (running || !runs_here(database) || !background_setting(database, "enabled") || has_live_runs()) return null;
+  if (running || !runs_here(database) || !background_setting(database, "enabled") || is_paused(database) || has_live_runs()) return null;
   const now = host.now();
   for (const row of drizzle_of(database).select().from(jobs).where(eq(jobs.is_on, 1)).orderBy(asc(jobs.created_at)).all()) {
     if (!is_due(fields_of(row).schedule, last_turn_at(database, row), now)) continue;

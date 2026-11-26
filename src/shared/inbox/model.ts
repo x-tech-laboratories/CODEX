@@ -9,8 +9,9 @@ import type { Proposal } from "../policy/model.ts";
 
 // ── Entries ──────────────────────────────────────────────────────────────────
 
-// A proposed change, a proposed graph link or entity, a proposed blueprint or change to one, or a job's run that ended badly.
-export type InboxKind = "change" | "link" | "entity" | "blueprint" | "blueprint_change" | "job_run";
+// A proposed change, a proposed graph link or entity, a proposed blueprint or change to one, a job's run that ended
+// badly, or the day's digest of background work.
+export type InboxKind = "change" | "link" | "entity" | "blueprint" | "blueprint_change" | "job_run" | "digest";
 
 export interface InboxEntry {
   // The kind and the id, unique across the Inbox.
