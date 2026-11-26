@@ -9,6 +9,23 @@ export type MascotMood = "default" | "thinking" | "happy" | "sad" | "asleep";
 export const mascot_screen = { width: 130, height: 90 };
 export const moment_ms = 3000;
 
+// ── Head ─────────────────────────────────────────────────────────────────────
+
+// The part of CODEX's icon the head shows, and the screen inside it, in the icon's units.
+export const mascot_view = { x: 13.5, y: 16.5, width: 37, height: 30.5 };
+export const mascot_screen_box = { x: 19, y: 28, width: 26, height: 18 };
+
+// Where the screen sits in the head, as percentages of the head's box, for a canvas laid over it.
+export function screen_placement(): { left: string; top: string; width: string; height: string } {
+  const percent = (part: number, whole: number) => `${(part / whole) * 100}%`;
+  return {
+    left: percent(mascot_screen_box.x - mascot_view.x, mascot_view.width),
+    top: percent(mascot_screen_box.y - mascot_view.y, mascot_view.height),
+    width: percent(mascot_screen_box.width, mascot_view.width),
+    height: percent(mascot_screen_box.height, mascot_view.height),
+  };
+}
+
 export interface MascotState {
   // An engine is chosen and running.
   has_engine: boolean;
