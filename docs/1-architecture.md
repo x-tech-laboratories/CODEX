@@ -1,6 +1,7 @@
 # How CODEX is put together
 
-CODEX runs on X-Context's code, which merged into it on 2026-11-26 ([doc 4](4-merge-with-x-context.md)). This doc
+CODEX runs on X-Context's code, which merged into it on 2026-11-26 ([doc 4](4-merge-with-x-context.md)); X-Context was a separate
+application, and its repository no longer exists. This doc
 describes what runs today. The pre-merge assistant's design is in `done/done-assistant-architecture.md`, and its code
 in `legacy/`, where nothing builds it.
 
@@ -28,6 +29,11 @@ migrations beside it:
   It keeps only what the collector last said: title, snippet, where it opens, a state and a few facts.
 - `context_items`: which contexts hold which items, with a note each.
 
+A conversation with the assistant is an item too, of kind `conversation`, kept by CODEX itself rather than another app
+("Conversations and runs" below). `add_item_to_contexts` puts any kept item in more contexts and `move_item` moves one
+between contexts with its note; `remove_item` refuses to leave a conversation in no context, which
+`delete_conversation` deletes instead.
+
 Taking an item out of a context leaves its row, so History can put a deleted context back with its items.
 
 ## Collectors
@@ -36,6 +42,10 @@ A collector is an X-Libs plugin providing a `collector` (`src/shared/collectors/
 its app, `resolve` says what became of the ones kept, `manual` takes an item typed in by hand, and `pushed_from` says
 how items reach it from elsewhere. The store's calls open a plugin host for each use (`src/shared/collectors/host.ts`),
 so turning a plugin on, or giving it a key, holds at once on every device.
+
+One collector is CODEX's own: `codex.conversations` (`src/shared/conversations/collector.ts`), which
+`open_plugin_host` adds last for the database it opens, answers `resolve` for conversation items from the conversations
+themselves. It is never listed under Plugins, has no marks, and the Add dialog leaves it out.
 
 The plugins live where they can run. The network ones (X-Tasks, Trilium, links, email) are in
 `src/shared/collectors/bundled.ts`; Files needs `node:fs`, so it is in `src/server/collectors/files.ts`, and Firefox
@@ -68,7 +78,8 @@ store and the sources whenever it is lost. It is a derived cache, so it is reach
 Drizzle, which FTS5 and vector blobs need. The server and the daemon open it and start `keep_indexing`.
 
 - **Documents** (`documents.ts`): every context (name, notes), every item some context holds (title, snippet, the
-  user's notes on it) and every user and assistant message. An item's text from its app comes from the collector's
+  user's notes on it; a conversation's title and notes alone, carrying no source) and every user and assistant
+  message, placed in the contexts holding its conversation. An item's text from its app comes from the collector's
   optional `content(source_ids)`, read only when what its app said of the item (title, snippet, address, state,
   facts) changed, and kept only in the index. Files gives plain text and Markdown files up to 256 KB, X-Tasks a task's
   notes, Trilium a text note's words or a code note's text through ETAPI.
@@ -89,7 +100,8 @@ Drizzle, which FTS5 and vector blobs need. The server and the daemon open it and
   by reciprocal rank (k = 60). A vector hit counts only above a cosine of 0.3 and within three quarters of the
   nearest. A context given scopes it to that context and every context inside it.
 - **Calls** (`store.ts`): `search_index(query, context_id?, limit?)` gives items, contexts and messages with an
-  excerpt and where each is; `get_index_state` the counts, pending and withheld pieces, the embedder and the last
+  excerpt and where each is, a message with the conversation it is in (its id and title) and that conversation's
+  `codex://conversation/<id>` link as its `uri`; `get_index_state` the counts, pending and withheld pieces, the embedder and the last
   error; `rebuild_index` starts again from nothing. The engine is offered `search_index`, screened by source like
   every other read (PR A's withholding and trust). The first page's search uses it, and Settings → Index shows the
   state, the embedder and Rebuild.
@@ -115,7 +127,7 @@ X-Libs `create_history`. Versions sync; writes that arrive by sync are recorded 
 
 ## The assistant
 
-Built 2026-11-26 on [doc 4](4-merge-with-x-context.md)'s decisions 4 and 5: a conversation per context, answered by
+Built 2026-11-26 on [doc 4](4-merge-with-x-context.md)'s decisions 4 and 5: conversations kept as items, answered by
 an engine plugin that reaches CODEX's data only through CODEX's own calls, under the action policy.
 
 ### Engines
@@ -138,20 +150,43 @@ the store runs, by `load_collectors`, and never in the page.
 
 ### Conversations and runs
 
-`src/shared/conversations/` keeps `conversation_messages`, synced: one conversation per context, keyed by the
-context's id, and `general` for when none is open. A message is the user's, an answer (with the engine, model, tool
-calls with their results, error and token counts) or an event, such as an approved change. `send_message` keeps the
-user's message, starts a run (`run.ts`) and answers at once; one run at a time per conversation, held in memory where
-the store runs. As the engine streams, the run sends `conversation` events on the host's event stream: the server's
-`api/events` for a browser, and the daemon's, which the main process passes to the window as a `conversation` event
-(`PageApi.on_conversation`). When the run ends its answer is kept and `changed` is announced; `get_conversation`
-gives the messages, the proposals and the run still going, so a page opened mid-reply catches up. Removing a context
-removes its conversation and proposals, and stops a reply being written there; History brings the context back
-without them.
+`src/shared/conversations/` keeps two synced tables: `conversations` (an id, the title the user gave, empty while it
+goes by its first message clipped to 80 characters, and when it was made) and `conversation_messages`. Each
+conversation is an item (`records.ts`): `items` holds `conversation:<id>` from the `conversation` collector, kind
+`conversation`, its title, its latest exchange clipped as the snippet, `codex://conversation/<id>` as where it opens and
+when it was last used in its detail, rewritten whenever a message is kept or it is renamed; `context_items` holds its
+place in each context, with a note, so every view, History, "also in" and search take it as they take any item. One in
+no context has no membership. A message is the user's, an answer (with the engine, model, tool calls with their
+results, error and token counts) or an event, such as an approved change.
 
-The instructions (`instructions.ts`) say who the engine is, today's date and the open context: its name, its place in
-the tree, its notes, the contexts inside it and its items, whose titles, snippets and notes go inside an
-`<untrusted-data>` fence (`src/shared/engines/untrusted.ts`, which also blanks sentences that give orders).
+The calls: `list_conversations(context_id?)` lists a context's conversations, or for null those in no context, most
+recently used first, each with whether a reply is being written in it; `get_conversation(id)` gives the messages, the
+proposals and the run still going, so a page opened mid-reply catches up; `send_message(context_id, message,
+conversation_id?)` keeps the user's message and starts a run (`run.ts`), answering at once with both ids, where
+`context_id` is the context the user has open, which the engine is told about, and the conversation is the one named,
+a new one in that context for null, or, left out, the context's most recently used one; `stop_reply`,
+`rename_conversation` (an empty title goes back to the first message) and `delete_conversation`, which takes it out of
+every context with its messages and proposals and keeps its item marked missing, so History can still put a context
+back. One run at a time per conversation, held in memory where the store runs. As the engine streams, the run sends
+`conversation` events on the host's event stream: the server's `api/events` for a browser, and the daemon's, which the
+main process passes to the window as a `conversation` event (`PageApi.on_conversation`). When the run ends its answer
+is kept, unless the conversation was deleted meanwhile, and `changed` is announced.
+
+Removing a context removes the conversations no other context holds, with their messages, proposals and any reply
+being written there (`when_items_left` in the contexts store tells the conversations feature which items a removal left
+in no context); a conversation also held elsewhere stays. History brings a context back without the deleted ones.
+
+Before conversations were items, there was one per context, keyed by the context's id, and `general` for when none was
+open. Opening the store, and every write after, adopts any messages or proposals whose conversation has no row
+(`adopt_stray_conversations`): each becomes a conversation under the same id, in the context of that id when it exists,
+or in no context, so the general one and those of removed contexts are kept and empty ones were never rows. The same
+adoption takes in what a device still on that shape syncs.
+
+The instructions (`instructions.ts`) say who the engine is, today's date and the context the pane is open on: its
+name, its place in the tree, its notes, the contexts inside it and its items, whose titles, snippets and notes go inside
+an `<untrusted-data>` fence (`src/shared/engines/untrusted.ts`, which also blanks sentences that give orders), then its
+other conversations by title alone, as CODEX's own items. A run never sees a conversation item's latest exchange: the
+screened reads give it the title and notes only, and the `conversation` collector counts as sendable and trusted.
 
 ### Sources: privacy and trust
 
@@ -165,8 +200,8 @@ Each run opens a screen (`privacy/screen.ts`) with the marks as they stand and w
 instructions and every offered read that can carry other apps' text pass through it (`privacy/results.ts` holds one
 screener per such call, and a test holds that list to the policy's): for a hosted engine, entries from a source
 without `send_to_hosted` are taken out (items, followed feeds, a context's source group, a collector's search or
-feeds, a refresh's problem line) and one line after the result says how many were withheld from which source and
-why. The screen notes what each read let through, and only a source without `trusted` marks the run as having read
+feeds, a refresh's problem line, messages found by search) and one line after the result says how many were withheld,
+of what (items, messages, feeds and so on), from which source and why. The screen notes what each read let through, and only a source without `trusted` marks the run as having read
 outside content; a result with none of it left is not fenced and lowers nothing. At the end of a hosted run,
 `hosted_sends` keeps its time, engine, model and the counts per source sent and withheld (never the items),
 pruned to `hosted_log.keep_days`, 90 by default, and `list_hosted_sends` reads it for Settings.
@@ -176,7 +211,9 @@ content its run had read (the screen's included sources, which take in the sourc
 replayed; a proposal adds the collector its arguments name and the collector of an item it names by id, whose title
 its summary quotes). `["*"]`, the column's default, means not recorded, as on every row kept before 2026-11-26; the
 user's own messages are written with `[]` and are always theirs. `turns_of` replaces, for a hosted engine, any answer
-or event carrying a source it may not be sent with one line saying so, and notes it on the run's screen for the log;
+or event carrying a source it may not be sent with one line saying so, and notes it on the run's screen for the log; an
+answer or event it is replayed whole counts as reading its sources again, so one that drew on a source not marked
+trusted taints the run as reading that source would;
 the index stores each document's sources, so `search_index` screens message hits the same way and a hosted embedder
 is never sent them.
 
@@ -187,7 +224,8 @@ page-only calls.
 
 ### Tools and the action policy
 
-The tools are the contexts feature's calls (contexts, items, collectors and feeds), built from their api specs, less
+The tools are the contexts feature's calls (contexts, items, collectors and feeds, `move_item` and
+`add_item_to_contexts` among them, at `proposal` until the user sets another level), built from their api specs, less
 export, import and the card layout calls (`src/shared/policy/policy.ts`). A read runs at once; what it gives back is
 fenced unless it is only the user's own words (`list_contexts`, `list_collectors`) or holds no other app's text once
 screened, and holding text from a source not marked trusted marks the run as having read outside content, as does
@@ -212,8 +250,14 @@ events at the start of the user's next message. The policy's own calls and the c
 
 `src/web/assistant/` is the Shell's `side_pane`, titled Assistant, its open state kept by `use_side_pane`. At its head
 is RoboBuddy's face (`Mascot.tsx`, moods in `mascot.ts`: asleep with no engine or no store, thinking while a reply is
-written, happy or sad for three seconds when one ends) and the engine and model answering. `use_conversation` loads
-the open context's conversation and lays the streamed events over it until the kept answer arrives. Tool calls are
+written, happy or sad for three seconds when one ends), the engine and model answering, and the switcher: the title of
+the conversation shown, opening a menu of the context's conversations (those in no context when none is open) with
+when each was used and which are being written, then Rename, New conversation and a menu to move it, add it to more
+contexts, copy its link or delete it, asking first. The pane shows the context's most recently used conversation
+unless one was picked or asked for (`selection.ts`: an item's title, a search hit, or a `#/conversation/<id>` route,
+which a `codex://conversation/<id>` link opens, go to a context holding it and open the pane on it); New
+conversation leaves the box sending to a new one. `use_conversation` loads the one shown and lays the streamed events
+over it until the kept answer arrives; a reply keeps being written while the user looks at another. Tool calls are
 folded rows; waiting proposals are cards with Approve and Reject; the message box sends on Enter. Settings gains an
 Assistant category: Engine (which engine answers, whether it is local or hosted, and each engine plugin's own settings
 in its row), Action policy (each change's level, the two riskier levels badged) and Sent to hosted engines (the log).

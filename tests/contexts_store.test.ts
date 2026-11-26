@@ -159,6 +159,8 @@ describe("collectors", () => {
       ["fake", true, true, true, 0],
       ["broken", false, true, false, 0],
       ["links", false, false, false, 2],
+      // CODEX's own, answering for the conversations kept as items.
+      ["conversation", false, true, false, 0],
     ]);
   });
 

@@ -1,17 +1,24 @@
 # Merge with X-Context
 
-The plan to make CODEX one application: a personal knowledge base, a knowledge management tool and a personal assistant. [X-Context](https://github.com/x-tech-laboratories/X-Context) moves into this repository and is archived afterwards. Decided 2026-11-26; where this doc and docs 0–3 disagree, this one is newer.
+The plan to make CODEX one application: a personal knowledge base, a knowledge management tool and a personal assistant. X-Context, a separate application, moved into this repository: its code became CODEX's skeleton on 2026-11-26, and its repository no longer exists. Decided 2026-11-26; where this doc and docs 0–3 disagree, this one is newer.
 
 ## What it becomes
 
 - **Gathers:** an engine reads notes, tasks, bookmarks, files, contacts and mail from the apps that hold them, through MCP, plugins and APIs.
 - **Relates:** it links related items and groups them into contexts, guided by the user.
 - **Learns:** a knowledge graph of its own, with embeddings and retrieval, holds what it has learned about the user's world.
-- **Works with the user:** each context has a conversation stream of its own, and there is a general one for when no context is open; the assistant has a face and a mood.
+- **Works with the user:** conversations are items: a context holds as many as the user starts, listed with its other items, and conversations in no context are kept for when none is open; the assistant has a face and a mood.
+
+*Conversations are items by the owner's decision of 2026-11-26, replacing one conversation stream per context, and
+built the same day (doc 1, "Conversations and runs"): each is an item of kind `conversation` owned by CODEX, answered
+for by an internal collector, with a per-membership note, History of its memberships, "also in", search, and a
+`codex://conversation/<id>` link that opens it in the pane. It can be moved, sit in several contexts, or in none; the
+pane shows the open context's most recently used one, with a switcher and New conversation. Removing a context deletes
+the conversations no other context holds.*
 - **Keeps itself up:** in idle time it re-reads the graph, researches, and proposes new links.
 - **Remembers how:** schedules for its own recurring jobs, and blueprints for workflows the user has taught it.
 
-**Window:** the context tree on the left, the workspace in the middle (the items of a context, opened and edited), and the mascot with the context's conversation on the right.
+**Window:** the context tree on the left, the workspace in the middle (the items of a context, opened and edited), and the mascot with the context's conversations on the right.
 
 ## Decisions
 
@@ -107,7 +114,7 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 ## Order of work
 
 1. **Engine interface:** replace the interim one (`legacy/src/engine/engine.ts`, which has the task tree's signature) with conversation in, CODEX's tools in, events out. The hosted model adapters (`legacy/src/assistant/*Model.ts`, `models.ts`) and the direct loop carry over. *Done 2026-11-26: `src/shared/engines/engine.ts`, with the Anthropic and OpenAI-compatible engine plugins on the ported direct loop; the legacy files are deleted.*
-2. **Skeleton and conversation:** X-Context's code moves in (done 2026-11-26: it is `src/`, under CODEX's name, and the old code is in `legacy/`); conversations per context; the right pane with the mascot; engines as plugins. Needs a three-pane shell in X-Libs. *Done 2026-11-26: conversations, engines as plugins, the action policy for them, and the right pane with RoboBuddy's face, on X-Libs' `side_pane`.*
+2. **Skeleton and conversation:** X-Context's code moves in (done 2026-11-26: it is `src/`, under CODEX's name, and the old code is in `legacy/`); conversations; the right pane with the mascot; engines as plugins. Needs a three-pane shell in X-Libs. *Done 2026-11-26: conversations, engines as plugins, the action policy for them, and the right pane with RoboBuddy's face, on X-Libs' `side_pane`.*
 3. **Inbox and background queue** ported onto the new store, with the action policy.
 4. **Index and graph:** content extraction, embeddings, fused search, entities, links, proposals, the graph view. *Index
    built 2026-11-26 (`src/shared/search/`, described in doc 1): content read through an optional `content` on each
@@ -132,6 +139,12 @@ As of 2026-11-26:
 - The Claude-subscription engine and the SmartHarness engine are not built.
 - No real hosted or local model has answered yet; only fakes have.
 - A generic collector for any app answering the standard item calls waits until more apps answer them.
+- CODEX does not yet answer the standard four item calls (`list_item_kinds`, `search_items`, `get_items`,
+  `list_item_changes`) itself, so other apps cannot read its conversations or contexts as items.
+- Any token with write access can still push settings, the user-only ones included, through the sync exchange route,
+  until X-Libs can tell a device's token from any other; another change is addressing it.
+- A device still on the shape before conversations were items deletes, after any write of its own, the messages of
+  every conversation whose id is not a context's, and syncs those deletions; every device should be updated together.
 
 ## Later, as separate projects
 

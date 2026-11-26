@@ -4,7 +4,7 @@ Order and status of the assistant's work. The harness's own roadmap, including t
 
 ## Merge with X-Context
 
-Doc 4, "Order of work", comes first from 2026-11-26. The mail work below is frozen: mail moves to an application of its own (doc 4, decision 9).
+X-Context was a separate application whose code became CODEX's skeleton on 2026-11-26; its repository no longer exists. Doc 4, "Order of work", comes first from 2026-11-26. The mail work below is frozen: mail moves to an application of its own (doc 4, decision 9).
 
 ## Reactive assistant
 

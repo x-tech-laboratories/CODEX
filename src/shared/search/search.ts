@@ -7,6 +7,8 @@ import { inArray } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { items } from "../contexts/schema.ts";
+import { summaries_of } from "../conversations/records.ts";
+import { conversation_messages } from "../conversations/schema.ts";
 import { drizzle_of } from "../feature.ts";
 import { parse_sources } from "../privacy/sources.ts";
 import { context_tree, subtree } from "./documents.ts";
@@ -107,6 +109,9 @@ export async function search(database: SqlDatabase, index: SqlDatabase, query: s
   const rows = new Map((index.prepare(`SELECT key, kind, ref_id, collector, title, body, content, context_ids, sources FROM docs WHERE key IN (${keys.map(() => "?").join(", ")})`).all(...keys) as unknown as DocRow[]).map((row) => [row.key, row]));
   const item_ids = [...rows.values()].filter((row) => row.kind === "item").map((row) => row.ref_id);
   const item_rows = new Map(item_ids.length > 0 ? drizzle_of(database).select({ id: items.id, kind: items.kind, uri: items.uri }).from(items).where(inArray(items.id, item_ids)).all().map((row) => [row.id, row]) : []);
+  const message_ids = [...rows.values()].filter((row) => row.kind === "message").map((row) => row.ref_id);
+  const conversation_of = new Map(message_ids.length > 0 ? drizzle_of(database).select({ id: conversation_messages.id, conversation_id: conversation_messages.conversation_id }).from(conversation_messages).where(inArray(conversation_messages.id, message_ids)).all().map((row) => [row.id, row.conversation_id]) : []);
+  const conversations = new Map(summaries_of(database, [...new Set(conversation_of.values())]).map((summary) => [summary.id, summary]));
   const place = (id: string): HitPlace => ({ id, name: tree.get(id)?.name ?? id });
   return keys.flatMap((key): SearchHit[] => {
     const row = rows.get(key);
@@ -118,6 +123,8 @@ export async function search(database: SqlDatabase, index: SqlDatabase, query: s
     // The title is shown anyway, so it is never the excerpt too.
     const excerpt = shorten(words.excerpts.get(key) || meaning.excerpts.get(key) || row.body || row.content);
     const item = item_rows.get(row.ref_id);
-    return [{ kind: row.kind, id: row.ref_id, title: row.title, excerpt, collector: row.collector, item_kind: item?.kind ?? "", uri: item?.uri ?? "", where, sources: parse_sources(row.sources), matched_by, score: scores.get(key)! }];
+    const found_in = conversations.get(conversation_of.get(row.ref_id) ?? "");
+    const conversation = found_in ? { id: found_in.id, title: found_in.title } : null;
+    return [{ kind: row.kind, id: row.ref_id, title: row.title, excerpt, collector: row.collector, item_kind: item?.kind ?? "", uri: item?.uri ?? found_in?.link ?? "", where, conversation, sources: parse_sources(row.sources), matched_by, score: scores.get(key)! }];
   });
 }

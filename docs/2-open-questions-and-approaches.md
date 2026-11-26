@@ -118,7 +118,7 @@ Each request is a standalone run today; a follow-up such as "and the one before 
 
 ### Decided: CODEX owns its store, and mail leaves
 
-Decided 2026-11-26 (doc 4): the knowledge graph, the event queue, the Inbox and the conversations move to a store of CODEX's own when X-Context's code comes in, and SmartHarness keeps a store only for itself. The mail tables do not move: mail goes to an application of its own that CODEX reads over MCP, so the mail code here is frozen until then.
+Decided 2026-11-26 (doc 4): the knowledge graph, the event queue, the Inbox and the conversations move to a store of CODEX's own when X-Context's code comes in (X-Context was a separate application whose code became CODEX's skeleton on 2026-11-26; its repository no longer exists), and SmartHarness keeps a store only for itself. The mail tables do not move: mail goes to an application of its own that CODEX reads over MCP, so the mail code here is frozen until then.
 
 ## Other proposals
 

@@ -14,13 +14,18 @@ import { open_context_menu } from "@x-tech-laboratories/x-libs/web/react/menus";
 import { RichText } from "@x-tech-laboratories/x-libs/web/react/rich_text";
 import { Empty, Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
+import { Age } from "@x-tech-laboratories/x-libs/web/react/time";
+import type { MenuItem } from "@x-tech-laboratories/x-libs/web/menus";
 
 import type { CardPlace, ContextDetail, ContextItem, ContextSummary, ContextView as ViewName } from "../../shared/contexts/model.ts";
+import { conversation_collector, conversation_route } from "../../shared/conversations/model.ts";
+import { open_conversation } from "../assistant/selection.ts";
 import { attempt, calls, succeeds, use_data } from "../api.ts";
 import { open_item_history } from "../history/HistoryView.tsx";
 import { context_href, context_menu } from "./actions.tsx";
 import { add_item_dialog } from "./AddItemDialog.tsx";
 import { follow_dialog, report_text } from "./FeedDialogs.tsx";
+import { add_to_contexts, move_to_context, remove_from_context, rename_conversation } from "./item_actions.tsx";
 import { kind_order, look_of } from "./kinds.tsx";
 
 // ── Notes ────────────────────────────────────────────────────────────────────
@@ -86,29 +91,79 @@ function status_badge(status: string) {
   return status ? <Badge>{status}</Badge> : null;
 }
 
-function item_menu(context_id: string, item: ContextItem) {
+function holders_of(context_id: string, item: ContextItem): string[] {
+  return [context_id, ...item.also_in.map((other) => other.id)];
+}
+
+function is_conversation(item: ContextItem): boolean {
+  return item.collector === conversation_collector;
+}
+
+function open_item_conversation(context_id: string, item: ContextItem): void {
+  open_conversation(item.source_id, holders_of(context_id, item), context_id);
+}
+
+function item_menu(context_id: string, item: ContextItem): MenuItem[] {
+  const conversation = { id: item.source_id, title: item.title, is_named: item.detail.is_named === "true" };
+  const is_last = item.also_in.length === 0;
   return [
+    ...(is_conversation(item) && item.status !== "missing"
+      ? [
+          { label: "Open in the pane", run: () => open_item_conversation(context_id, item) },
+          { label: "Rename…", run: () => rename_conversation(conversation) },
+        ]
+      : []),
     { label: item.note ? "Edit note…" : "Add note…", run: () => edit_note(context_id, item) },
+    { label: "Move to…", disabled: item.status === "missing" && is_conversation(item), run: () => move_to_context(item, context_id, holders_of(context_id, item)) },
+    { label: "Also add to…", disabled: item.status === "missing" && is_conversation(item), run: () => add_to_contexts(item, holders_of(context_id, item)) },
     { label: "Copy address", disabled: !item.uri, run: () => void navigator.clipboard.writeText(item.uri).then(() => toast("Address copied.")) },
-    { label: "Remove from context", danger: true, separator_before: true, run: () => void succeeds(() => calls().remove_item(context_id, item.id), "Removed; the item stays in its app.") },
+    {
+      label: is_conversation(item) && is_last && item.status !== "missing" ? "Delete conversation…" : "Remove from context",
+      danger: true,
+      separator_before: true,
+      run: () => (item.status === "missing" ? void succeeds(() => calls().remove_item(context_id, item.id), "Removed.") : remove_from_context(context_id, item, item.also_in.length)),
+    },
   ];
 }
 
+// An item's title: a conversation opens in the pane, any other item in its own app.
+function ItemTitle({ context_id, item }: { context_id: string; item: ContextItem }) {
+  if (is_conversation(item) && item.status !== "missing") {
+    return (
+      <a
+        href={conversation_route(item.source_id)}
+        onClick={(event) => {
+          event.preventDefault();
+          open_item_conversation(context_id, item);
+        }}
+      >
+        {item.title}
+      </a>
+    );
+  }
+  return item.uri && !is_conversation(item) ? (
+    <a href={item.uri} target="_blank" rel="noreferrer">
+      {item.title}
+    </a>
+  ) : (
+    <span>{item.title}</span>
+  );
+}
+
 // What a row and a card both show of an item: its title opening it, its state, a line of it, the note and where else it is.
-function ItemText({ item }: { item: ContextItem }) {
+function ItemText({ context_id, item }: { context_id: string; item: ContextItem }) {
   return (
     <div className="item-text">
       <div className="item-title">
-        {item.uri ? (
-          <a href={item.uri} target="_blank" rel="noreferrer">
-            {item.title}
-          </a>
-        ) : (
-          <span>{item.title}</span>
-        )}
+        <ItemTitle context_id={context_id} item={item} />
         {status_badge(item.status)}
       </div>
       {item.snippet && <span className="muted item-snippet">{item.snippet}</span>}
+      {is_conversation(item) && item.detail.last_used_at && (
+        <span className="muted small">
+          Last used <Age epoch={Date.parse(item.detail.last_used_at) / 1000} />
+        </span>
+      )}
       {item.note && <span className="item-note">{item.note}</span>}
       {item.via_label && <span className="muted small">From {item.via_label}; a note keeps it here</span>}
       {item.also_in.length > 0 && (
@@ -127,7 +182,12 @@ function ItemText({ item }: { item: ContextItem }) {
 function ItemActions({ context_id, item }: { context_id: string; item: ContextItem }) {
   return (
     <span className="row-actions">
-      {item.uri && (
+      {is_conversation(item) && item.status !== "missing" && (
+        <button type="button" aria-label={`Open ${item.title}`} title="Open in the Assistant pane" onClick={() => open_item_conversation(context_id, item)}>
+          <Icon icon={ExternalLinkIcon} />
+        </button>
+      )}
+      {item.uri && !is_conversation(item) && (
         <a className="button" href={item.uri} target="_blank" rel="noreferrer" aria-label={`Open ${item.title}`} title="Open in its app">
           <Icon icon={ExternalLinkIcon} />
         </a>
@@ -143,7 +203,7 @@ function ItemRow({ context_id, item }: { context_id: string; item: ContextItem }
   return (
     <li className={item.status === "missing" ? "item-row is-missing" : "item-row"} onContextMenu={(event) => open_context_menu(event, item_menu(context_id, item))}>
       <Icon icon={look_of(item.kind).icon} />
-      <ItemText item={item} />
+      <ItemText context_id={context_id} item={item} />
       <ItemActions context_id={context_id} item={item} />
     </li>
   );
@@ -155,7 +215,7 @@ function ItemCard({ context_id, item }: { context_id: string; item: ContextItem 
       <div className="item-card-kind muted small">
         <Icon icon={look_of(item.kind).icon} /> {look_of(item.kind).singular}
       </div>
-      <ItemText item={item} />
+      <ItemText context_id={context_id} item={item} />
       <ItemActions context_id={context_id} item={item} />
     </div>
   );
@@ -359,7 +419,7 @@ function Page({ context, all }: { context: ContextDetail; all: ContextSummary[] 
       <Section title="Notes" class_name="context-notes">
         <Notes key={context.id} context={context} />
       </Section>
-      {context.items.length === 0 && <Empty title="Nothing here yet" hint="Add tasks, notes, files, emails and links from the apps that keep them." />}
+      {context.items.length === 0 && <Empty title="Nothing here yet" hint="Add tasks, notes, files, emails and links from the apps that keep them, or start a conversation in the Assistant pane." />}
       {context.view === "cards" && context.items.length > 0 && <ItemCards context={context} />}
       {context.view === "grouped" && context.items.length > 0 && <KindCards context={context} />}
       {context.view === "list" && group_by_kind(context.items).map(([kind, items]) => (

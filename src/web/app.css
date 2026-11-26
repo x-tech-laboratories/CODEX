@@ -283,3 +283,29 @@
 .proposal-card p {
   margin: 0;
 }
+
+/* The conversation switcher under the face: the shown conversation's title, which opens the list, then its actions. */
+.assistant-switcher {
+  display: flex;
+  align-items: center;
+  justify-self: stretch;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.assistant-switcher-pick {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.assistant-switcher-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

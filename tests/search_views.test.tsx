@@ -9,6 +9,8 @@ import { Dialogs } from "@x-tech-laboratories/x-libs/web/react/dialog";
 
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { add_message } from "../src/shared/conversations/messages.ts";
+import { add_conversation_record } from "../src/shared/conversations/records.ts";
+import { wanted_conversation } from "../src/web/assistant/selection.ts";
 import { index_now, open_index, settle_index, use_search_index } from "../src/shared/search/indexer.ts";
 import type { IndexState } from "../src/shared/search/model.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
@@ -53,7 +55,9 @@ describe("the first page's search", () => {
     const kitchen = fixture.calls.add_context("Kitchen", home);
     fixture.calls.set_context_notes(kitchen, "Grout colour to choose.");
     fixture.calls.add_item([kitchen], "links", { source_id: "https://example.org/grout", kind: "link", title: "Grout guide", uri: "https://example.org/grout", snippet: "Which grout for wet rooms" });
-    add_message(fixture.database, { conversation_id: "general", role: "user", text: "Remind me about the grout." });
+    add_conversation_record(fixture.database, kitchen, "c1");
+    fixture.calls.rename_conversation("c1", "Floor plans");
+    add_message(fixture.database, { conversation_id: "c1", role: "user", text: "Remind me about the grout." });
     await index_now();
     render(<HomeView />);
 
@@ -62,8 +66,12 @@ describe("the first page's search", () => {
     const link = await within(found).findByRole("link", { name: "Grout guide" });
     expect(link.getAttribute("href")).toBe("https://example.org/grout");
     expect(within(found).getByRole("link", { name: "Kitchen" }).getAttribute("href")).toBe(`#/context/${kitchen}`);
-    expect(within(found).getByText("You, in a conversation")).toBeTruthy();
-    expect(within(found).getByText("General conversation")).toBeTruthy();
+    // A message says which conversation it is in, and opens it in the pane on a context holding it.
+    const in_conversation = within(found).getByRole("link", { name: "Floor plans" });
+    expect(in_conversation.getAttribute("href")).toBe("#/conversation/c1");
+    expect(in_conversation.closest(".item-title")!.textContent).toBe("You, in Floor plans");
+    fireEvent.click(in_conversation);
+    expect(wanted_conversation()).toEqual({ context_id: kitchen, id: "c1" });
     expect(within(found).getByText("Which grout for wet rooms")).toBeTruthy();
     expect(within(found).getAllByText("Home").length).toBeGreaterThan(0);
 

@@ -2,7 +2,7 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { and, asc, desc, eq, ne } from "@x-tech-laboratories/x-libs/drizzle";
+import { and, asc, desc, eq } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { drizzle_of, new_id } from "../feature.ts";
@@ -46,12 +46,6 @@ export function list_proposals_of(database: SqlDatabase, conversation_id: string
 
 export function settle_proposal(database: SqlDatabase, id: string, status: ProposalStatus, result: string): void {
   drizzle_of(database).update(proposals).set({ status, result, resolved_at: new Date().toISOString() }).where(eq(proposals.id, id)).run();
-}
-
-// Every conversation that has proposals, but the general one.
-export function proposal_conversations(database: SqlDatabase): string[] {
-  const rows = drizzle_of(database).selectDistinct({ id: proposals.conversation_id }).from(proposals).where(ne(proposals.conversation_id, "general")).all();
-  return rows.map((row) => row.id);
 }
 
 export function remove_proposals(database: SqlDatabase, conversation_id: string): void {

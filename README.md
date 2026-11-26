@@ -8,13 +8,15 @@ files, emails and links that belong to it, from the apps that keep them. CODEX n
 is a pointer with what was last seen of it, and it opens in its own app.
 
 **The assistant is coming back.** CODEX was an assistant on [SmartHarness](https://github.com/x-tech-laboratories/SmartHarness)
-until version 0.2.1; from 0.3.0 it is built on the code of X-Context, which merged into it. The conversation pane, its
+until version 0.2.1; from 0.3.0 it is built on the code of X-Context, a separate application whose code became CODEX's
+skeleton on 2026-11-26 and whose repository no longer exists. The conversation pane, its
 engines and the action policy are back; the Inbox, background queue and knowledge view return one by one, as
 [docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) sets out. Until then the rest of the old assistant's
 code sits in [`legacy/`](legacy/README.md), where nothing builds or tests it.
 
 - **Contexts** nest, so Home holds Kitchen and Garden. Each has notes in Markdown and its items grouped by kind, each
-  with a note on why it is there and the other contexts that hold it too.
+  with a note on why it is there and the other contexts that hold it too. **Move to…** and **Also add to…** on any
+  item's menu move it to another context or put it in more; the conversations with the assistant are items too.
 - **Collectors** are plugins that bring items from other apps. Each searches its app, or takes items typed in by hand,
   or is sent items from elsewhere, and says what became of them: a refresh keeps new titles and states, and marks
   missing an item its app no longer has.
@@ -40,11 +42,20 @@ server's), never synced and never in backups. It is safe to delete, and **Rebuil
 
 ## The assistant
 
-The **Assistant** pane on the right, opened and closed from the robot button in the top bar, holds a conversation with
-CODEX about the context that is open, or a general one on the first page. Its face sleeps until an engine is set up,
-thinks while it writes, and smiles or frowns for a moment when a reply ends. Enter sends, Shift+Enter starts a new
-line, **Stop** ends a reply early, and the bin clears the conversation. Each tool call it made folds open to show its
-arguments and what came back.
+The **Assistant** pane on the right, opened and closed from the robot button in the top bar, holds conversations with
+CODEX about the context that is open. A context can hold as many conversations as you start: each is an item of the
+context, listed with its tasks and notes in every view, with its title (its first message until you rename it), its
+latest exchange and when it was last used, and like any item it takes a note, moves to another context and can sit in
+several. The pane shows the context's most recently used conversation; the title under the face opens a list of the
+others, showing which have a reply being written, and **+** starts a new one. A reply keeps being written while you look
+at another. Its ⋮ menu renames, moves, adds to more contexts, copies the conversation's `codex://conversation/<id>`
+link, or deletes it. With no context open, the pane holds the conversations that are in no context. Taking a
+conversation out of the last context holding it deletes it, after asking; deleting a context deletes the conversations
+no other context holds.
+
+Its face sleeps until an engine is set up, thinks while it writes, and smiles or frowns for a moment when a reply ends.
+Enter sends, Shift+Enter starts a new line, and **Stop** ends a reply early. Each tool call it made folds open to show
+its arguments and what came back.
 
 **Setting up an engine,** under **Settings → Assistant → Engine**: pick the engine under **Answering**, then open its row
 and fill in its settings.
@@ -82,7 +93,10 @@ holds only your own words, so reading its items no longer makes changes wait for
 in CODEX never do. **Settings → Assistant → Sent to hosted engines** lists every reply a hosted engine wrote, with how
 many items of each source it was sent, for 90 days unless changed. An earlier answer, an approved or rejected change, or
 a message found by search that drew on a source not marked for hosted engines is withheld from one the same way;
-answers kept before 2026-11-26 recorded no sources and are withheld from hosted engines.
+answers kept before 2026-11-26 recorded no sources and are withheld from hosted engines. An earlier answer that drew
+on a source not marked **Trusted content** makes the changes of every later reply in its conversation wait for you, as
+reading that source again would. Your conversations' titles are your own words, and a reply is never shown another
+conversation's latest exchange.
 
 The assistant's settings, the marks, the engine and embedder in use and every plugin's settings can be changed only on
 CODEX's own page; a token or an MCP client can read them, with keys hidden, but not change them.
@@ -171,7 +185,8 @@ The daemon keeps `codex.db` in the app's profile folder and serves the window on
 Closing the window leaves sync, backups, refreshing and the MCP server running. A tray icon lists the top-level
 contexts to open and brings the window back; **Quit completely** there or under **Settings → Desktop** stops the
 daemon too. The daemon tells you with a desktop notification when a refresh finds items gone from their apps. The app
-opens `codex://context/<id>` links on that context.
+opens `codex://context/<id>` links on that context, and `codex://conversation/<id>` links on a context holding the
+conversation, with it in the pane.
 
 ## Signing in, sync, backups and history
 
@@ -183,8 +198,9 @@ deleted context brought back; a refresh is left out, since it changes only what 
 
 ## Coming from X-Context
 
-An X-Context database moves over through the JSON files of **Settings → Import and export**: export the contexts in
-X-Context, then import that file in CODEX, which reads X-Context's exports as its own. Collector settings, such as
+X-Context was a separate application whose code became CODEX's skeleton on 2026-11-26; its repository no longer
+exists. An X-Context database moves over through the JSON files of **Settings → Import and export**: export the contexts
+in X-Context, then import that file in CODEX, which reads X-Context's exports as its own. Collector settings, such as
 the X-Tasks address and token, are set again under **Settings → Plugins**, since the plugins now carry CODEX's ids.
 The old CODEX's knowledge database is not carried over.
 

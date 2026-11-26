@@ -10,6 +10,7 @@ import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 import type { ContextPluginApi } from "../src/shared/collectors/host.ts";
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { add_message } from "../src/shared/conversations/messages.ts";
+import { add_conversation_record } from "../src/shared/conversations/records.ts";
 import { engine_tools, turns_of, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
 import { open_screen } from "../src/shared/privacy/screen.ts";
 import { index_now, open_index, settle_index, use_search_index } from "../src/shared/search/indexer.ts";
@@ -37,9 +38,9 @@ describe("earlier answers", () => {
       const read = await request.tools.call("get_item", { id: link });
       yield { type: "done", text: read.result.includes("Grout guide") ? "The Grout guide is here." : "Nothing." };
     });
-    await fixture.calls.send_message(kitchen, "What is the link?");
+    const { conversation_id } = await fixture.calls.send_message(kitchen, "What is the link?");
     await wait_for_runs();
-    const [question, answer] = fixture.calls.get_conversation(kitchen).messages;
+    const [question, answer] = fixture.calls.get_conversation(conversation_id).messages;
     expect([question!.sources, answer!.sources, answer!.text]).toEqual([[], ["links"], "The Grout guide is here."]);
 
     fixture.set_hosted(true);
@@ -58,10 +59,10 @@ describe("earlier answers", () => {
     const [send] = fixture.calls.list_hosted_sends();
     expect(send!.withheld).toEqual([{ collector: "links", label: "Web links", count: 2 }]);
     // The hosted answer read nothing from other apps.
-    expect(fixture.calls.get_conversation(kitchen).messages.at(-1)!.sources).toEqual([]);
+    expect(fixture.calls.get_conversation(conversation_id).messages.at(-1)!.sources).toEqual([]);
 
     fixture.calls.set_source_mark("codex.links", "send_to_hosted", true);
-    expect(turns_of(fixture.database, kitchen, await open_screen(fixture.database, true))[1]!.text).toBe("The Grout guide is here.");
+    expect(turns_of(fixture.database, conversation_id, await open_screen(fixture.database, true))[1]!.text).toBe("The Grout guide is here.");
   });
 
   it("kept before sources were recorded are withheld from a hosted engine, while the user's own messages are sent", async () => {
@@ -78,13 +79,55 @@ describe("earlier answers", () => {
 
   it("carry the sources of the answers they were written over, so a local answer echoing one is withheld too", async () => {
     const fixture = start_fixture();
+    add_conversation_record(fixture.database, null, "general");
     add_message(fixture.database, { conversation_id: "general", role: "assistant", text: "From a note.", sources: ["links"] });
     fixture.set_script(async function* () {
       yield { type: "done", text: "Echo." };
     });
-    await fixture.calls.send_message(null, "Say it again");
+    await fixture.calls.send_message(null, "Say it again", "general");
     await wait_for_runs();
-    expect(fixture.calls.get_conversation(null).messages.at(-1)!.sources).toEqual(["links"]);
+    expect(fixture.calls.get_conversation("general").messages.at(-1)!.sources).toEqual(["links"]);
+  });
+
+  it("drawn on a source not marked trusted taint the run they are replayed to, so its changes wait, as reading that source again would", async () => {
+    const fixture = start_fixture();
+    // A context holding nothing from other apps, so only the replayed answer can taint the run.
+    const kitchen = fixture.calls.add_context("Kitchen");
+    fixture.calls.set_action_level("rename_context", "auto");
+    add_conversation_record(fixture.database, kitchen, "c1");
+    add_message(fixture.database, { conversation_id: "c1", role: "user", text: "What is the link?", sources: [] });
+    add_message(fixture.database, { conversation_id: "c1", role: "assistant", text: "The Grout guide.", sources: ["links"] });
+    fixture.set_script(async function* (request) {
+      const outcome = await request.tools.call("rename_context", { id: kitchen, name: "Grout" });
+      yield { type: "done", text: outcome.result };
+    });
+
+    await fixture.calls.send_message(kitchen, "Rename the kitchen", "c1");
+    await wait_for_runs();
+    expect(fixture.calls.list_proposals("c1")).toMatchObject([{ method: "rename_context", reason: "outside content", status: "waiting" }]);
+    expect(fixture.calls.get_context(kitchen).name).toBe("Kitchen");
+
+    // Once that source is trusted, the same replay leaves the change at its own level.
+    fixture.calls.set_source_mark("codex.links", "trusted", true);
+    await fixture.calls.send_message(kitchen, "Rename it now", "c1");
+    await wait_for_runs();
+    expect(fixture.calls.get_context(kitchen).name).toBe("Grout");
+  });
+
+  it("withheld from a hosted engine taint nothing, since it never reads them", async () => {
+    const fixture = start_fixture({ hosted: true });
+    const { kitchen } = kitchen_of(fixture);
+    fixture.calls.set_action_level("rename_context", "auto");
+    add_conversation_record(fixture.database, kitchen, "c1");
+    add_message(fixture.database, { conversation_id: "c1", role: "assistant", text: "The Grout guide.", sources: ["links"] });
+    fixture.set_script(async function* (request) {
+      const outcome = await request.tools.call("rename_context", { id: kitchen, name: "Tiles" });
+      yield { type: "done", text: outcome.result };
+    });
+    await fixture.calls.send_message(kitchen, "Rename the kitchen", "c1");
+    await wait_for_runs();
+    // The open context's instructions hold the unmarked link, withheld too, so nothing outside was read.
+    expect(fixture.calls.get_context(kitchen).name).toBe("Tiles");
   });
 });
 
@@ -97,15 +140,15 @@ describe("proposals", () => {
       await request.tools.call("set_item_note", { context_id: kitchen, item_id: link, note: "floor" });
       yield { type: "done", text: "Proposed." };
     });
-    await fixture.calls.send_message(kitchen, "Note it");
+    const { conversation_id } = await fixture.calls.send_message(kitchen, "Note it");
     await wait_for_runs();
-    const [proposal] = fixture.calls.list_proposals(kitchen);
+    const [proposal] = fixture.calls.list_proposals(conversation_id);
     expect(proposal!.summary).toContain("Grout guide");
     expect(proposal!.sources).toEqual(["links"]);
     expect(JSON.stringify(fixture.requests.at(-1))).not.toContain("Grout");
 
     await fixture.calls.resolve_proposal(proposal!.id, "reject");
-    expect(fixture.calls.get_conversation(kitchen).messages.at(-1)).toMatchObject({ role: "event", sources: ["links"] });
+    expect(fixture.calls.get_conversation(conversation_id).messages.at(-1)).toMatchObject({ role: "event", sources: ["links"] });
     fixture.set_script(async function* () {
       yield { type: "done", text: "Ok." };
     });
@@ -168,7 +211,8 @@ describe("search", () => {
     expect(found.result).toContain("Plain: grout is cheap");
     expect(found.result).not.toContain("From the link");
     expect(found.result).not.toContain("shed");
-    expect(found.result).toContain("2 items (1 from sources not recorded (kept before 2026-11-26), 1 from Web links)");
+    // What was withheld is said for what it was: messages, not items.
+    expect(found.result).toContain("[Withheld: 2 messages (1 from sources not recorded (kept before 2026-11-26), 1 from Web links)");
     expect(hosted.context.has_outside_content).toBe(false);
 
     const local = await tools_for(false);

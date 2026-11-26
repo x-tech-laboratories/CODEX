@@ -12,6 +12,7 @@ import { Empty, Loaded, Skeleton } from "@x-tech-laboratories/x-libs/web/react/s
 import { describe_error } from "@x-tech-laboratories/x-libs/web/errors";
 
 import type { CollectorSummary, FoundItem } from "../../shared/collectors/collector.ts";
+import { conversation_collector } from "../../shared/conversations/model.ts";
 import { attempt, calls, use_data } from "../api.ts";
 import { look_of } from "./kinds.tsx";
 
@@ -124,7 +125,8 @@ function Pane({ collector, context_id, on_done }: { collector: CollectorSummary;
 }
 
 function AddItemDialog({ context_id, context_name, on_close }: { context_id: string; context_name: string; on_close: () => void }) {
-  const collectors = use_data((api) => api.list_collectors());
+  // Conversations are started in the Assistant pane, not added here.
+  const collectors = use_data(async (api) => (await api.list_collectors()).filter((each) => each.id !== conversation_collector));
   const [picked, set_picked] = useState<string | null>(null);
 
   return (

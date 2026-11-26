@@ -1,28 +1,34 @@
-// Conversations: one per context and one general one for when no context is open, each the user's messages and the
-// engine's answers with the tool calls it made. Sending a message starts a run where the store lives and answers at
-// once; the reply streams to open pages and is kept as a message when it ends.
+// Conversations: any number in each context, and those in no context, each kept as an item of kind "conversation"
+// so it lists, searches and moves like any other item. Sending a message starts a run where the store lives and
+// answers at once; the reply streams to open pages and is kept as a message when it ends.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { inArray, synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
+import { synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
-import { text } from "../api_schemas.ts";
+import { id_of, text } from "../api_schemas.ts";
+import { when_items_left } from "../contexts/store.ts";
 import { engine_setting } from "../engines/engine.ts";
-import { contexts } from "../contexts/schema.ts";
-import { define_feature, drizzle_of } from "../feature.ts";
-import { list_proposals_of, proposal_conversations, remove_proposals } from "../policy/proposals.ts";
-import { context_conversations, list_messages, remove_messages } from "./messages.ts";
+import { define_feature } from "../feature.ts";
+import { list_proposals_of } from "../policy/proposals.ts";
+import { list_messages } from "./messages.ts";
 import { migrations } from "./migrations/index.ts";
-import { conversation_id_of, type AssistantStatus, type Conversation } from "./model.ts";
+import { conversation_of_item, type AssistantStatus, type Conversation, type ConversationSummary } from "./model.ts";
+import { adopt_stray_conversations, conversation_ids_in, conversation_row, delete_conversation_records, rename_conversation_record, summaries_of } from "./records.ts";
 import { find_engine, is_running, run_state, start_run, stop_run_of } from "./run.ts";
 import { conversation_tables } from "./schema.ts";
 
 // ── Calls ────────────────────────────────────────────────────────────────────
 
-function get_conversation(database: SqlDatabase, context_id: string | null = null): Conversation {
-  const id = conversation_id_of(context_id);
-  return { id, context_id: context_id || null, messages: list_messages(database, id), proposals: list_proposals_of(database, id), run: run_state(id) };
+function list_conversations(database: SqlDatabase, context_id: string | null = null): ConversationSummary[] {
+  return summaries_of(database, conversation_ids_in(database, context_id || null), is_running);
+}
+
+function get_conversation(database: SqlDatabase, id: string): Conversation {
+  conversation_row(database, id);
+  const [summary] = summaries_of(database, [id], is_running);
+  return { ...summary!, messages: list_messages(database, id), proposals: list_proposals_of(database, id), run: run_state(id) };
 }
 
 async function get_assistant_status(database: SqlDatabase): Promise<AssistantStatus> {
@@ -30,49 +36,56 @@ async function get_assistant_status(database: SqlDatabase): Promise<AssistantSta
   return { engine, problem, engines };
 }
 
-function send_message(database: SqlDatabase, context_id: string | null, message: string): Promise<{ run_id: string }> {
-  return start_run(database, context_id || null, message);
+function send_message(database: SqlDatabase, context_id: string | null, message: string, conversation_id?: string | null): Promise<{ conversation_id: string; run_id: string }> {
+  return start_run(database, context_id || null, message, conversation_id);
 }
 
-function stop_reply(_database: SqlDatabase, context_id: string | null = null): boolean {
-  return stop_run_of(conversation_id_of(context_id));
+function stop_reply(_database: SqlDatabase, conversation_id: string): boolean {
+  return stop_run_of(conversation_id);
 }
 
-// Deletes the messages and proposals, so the next message starts afresh.
-function clear_conversation(database: SqlDatabase, context_id: string | null = null): void {
-  const id = conversation_id_of(context_id);
-  if (is_running(id)) throw new Error("A reply is still being written here; stop it first.");
-  remove_messages(database, id);
-  remove_proposals(database, id);
+function rename_conversation(database: SqlDatabase, id: string, title: string): void {
+  rename_conversation_record(database, id, title);
 }
 
-// A removed context takes its conversation with it: the messages, the proposals and a reply still being written.
-// History can bring the context back, but not its conversation.
-export function forget_removed_contexts(database: SqlDatabase): void {
-  const held = [...new Set([...context_conversations(database), ...proposal_conversations(database)])];
-  if (held.length === 0) return;
-  const kept = new Set(drizzle_of(database).select({ id: contexts.id }).from(contexts).where(inArray(contexts.id, held)).all().map((row) => row.id));
-  for (const id of held.filter((each) => !kept.has(each))) {
+// Deletes the conversation with its messages and proposals, from every context holding it, and stops its reply.
+function delete_conversation(database: SqlDatabase, id: string): void {
+  conversation_row(database, id);
+  stop_run_of(id);
+  delete_conversation_records(database, id);
+}
+
+// Conversations left in no context by a removed context go with it: their messages, proposals and any reply being
+// written. History can bring the context back, but not them.
+function forget_left_conversations(database: SqlDatabase, item_ids: string[]): void {
+  for (const id of item_ids.map(conversation_of_item).filter((each): each is string => each !== null)) {
     stop_run_of(id);
-    remove_messages(database, id);
-    remove_proposals(database, id);
+    delete_conversation_records(database, id);
   }
 }
 
+when_items_left(forget_left_conversations);
+
 // ── Feature ──────────────────────────────────────────────────────────────────
 
-const context_param = { name: "context_id", schema: { type: ["string", "null"], description: "The context's id, from list_contexts, or null for the general conversation held when no context is open." } };
+const context_param = { name: "context_id", schema: { type: ["string", "null"], description: "A context's id, from list_contexts, or null for no context." } };
+const conversation_param = { name: "id", schema: id_of("conversation") };
 
 export const conversations_feature = define_feature({
   id: "conversations",
   migrations: migrations.map((migration) => migration.statements),
   tables: synced_tables(conversation_tables),
-  methods: { get_conversation, get_assistant_status, send_message, stop_reply, clear_conversation },
+  methods: { list_conversations, get_conversation, get_assistant_status, send_message, stop_reply, rename_conversation, delete_conversation },
   api: {
+    list_conversations: {
+      description:
+        "Lists the conversations with the assistant held in one context, or, for null, those in no context, most recently used first: each with its title, when it was last used, how many messages it has, whether a reply is being written in it now and the contexts holding it.",
+      params: [{ ...context_param, optional: true }],
+    },
     get_conversation: {
       description:
-        "Gets the conversation with the assistant about one context, or the general one: every message oldest first, each answer with the engine and model that wrote it and the tool calls it made, the changes proposed in it, and the reply being written now, if any.",
-      params: [{ ...context_param, optional: true }],
+        "Gets one conversation with the assistant: every message oldest first, each answer with the engine and model that wrote it and the tool calls it made, the changes proposed in it, and the reply being written now, if any.",
+      params: [conversation_param],
     },
     get_assistant_status: {
       description: "Says which engine answers the conversations and with which model, or why none does, and lists every engine running.",
@@ -80,19 +93,29 @@ export const conversations_feature = define_feature({
     },
     send_message: {
       description:
-        "Sends the user's message to the assistant in a context's conversation, or the general one, and starts the reply; it answers at once with the run's id, and the reply is kept in the conversation when it ends. One reply is written at a time per conversation.",
-      params: [context_param, { name: "message", schema: text("The message, in Markdown.") }],
+        "Sends the user's message to the assistant and starts the reply, which is told about the context given; it answers at once with the conversation's id and the run's id, and the reply is kept in the conversation when it ends. Left out, the conversation is the context's most recently used one, or a new one when it has none; null starts a new one in that context, or in no context. One reply is written at a time per conversation.",
+      params: [
+        { ...context_param, schema: { ...context_param.schema, description: "The context the user has open, which the assistant is told about, or null for none." } },
+        { name: "message", schema: text("The message, in Markdown.") },
+        { name: "conversation_id", schema: { type: ["string", "null"], description: "The conversation's id, from list_conversations; null for a new one." }, optional: true },
+      ],
     },
     stop_reply: {
-      description: "Stops the reply being written in a context's conversation, or the general one, keeping what it had written; true when there was one.",
-      params: [{ ...context_param, optional: true }],
+      description: "Stops the reply being written in a conversation, keeping what it had written; true when there was one.",
+      params: [{ name: "conversation_id", schema: id_of("conversation") }],
     },
-    clear_conversation: {
-      description: "Deletes every message and proposal of a context's conversation, or the general one.",
-      params: [{ ...context_param, optional: true }],
+    rename_conversation: {
+      description: "Names a conversation; an empty title lets it go by its first message again.",
+      params: [conversation_param, { name: "title", schema: text("The new title; empty for its first message.") }],
+    },
+    delete_conversation: {
+      description: "Deletes a conversation with every message and proposal in it, from every context holding it, and stops a reply being written there.",
+      params: [conversation_param],
       destructive: true,
     },
   },
   setting_defaults: { [engine_setting]: "" },
-  after_write: forget_removed_contexts,
+  // Every conversation kept before conversations were items, and any a device still on that shape syncs in, becomes one.
+  on_open: (database) => void adopt_stray_conversations(database),
+  after_write: (database) => void adopt_stray_conversations(database),
 });

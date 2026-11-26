@@ -2,12 +2,13 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { asc, eq, ne } from "@x-tech-laboratories/x-libs/drizzle";
+import { asc, eq } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { drizzle_of, new_id } from "../feature.ts";
 import { parse_sources, unrecorded_source } from "../privacy/sources.ts";
 import type { ConversationMessage, ToolCallRecord } from "./model.ts";
+import { has_conversation, refresh_conversation_items } from "./records.ts";
 import { conversation_messages } from "./schema.ts";
 
 // ── Messages ─────────────────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ export function list_messages(database: SqlDatabase, conversation_id: string): C
 export type NewMessage = Pick<ConversationMessage, "conversation_id" | "role" | "text"> & Partial<Pick<ConversationMessage, "engine" | "model" | "tool_calls" | "error" | "input_tokens" | "output_tokens" | "sources">>;
 
 // Adds a message after every one before it, even one written in the same millisecond; without sources given, its
-// sources count as not recorded.
+// sources count as not recorded. The conversation's item takes the new exchange.
 export function add_message(database: SqlDatabase, message: NewMessage): ConversationMessage {
   const last = list_messages(database, message.conversation_id).at(-1);
   let created_at = new Date().toISOString();
@@ -52,15 +53,6 @@ export function add_message(database: SqlDatabase, message: NewMessage): Convers
     created_at,
   };
   drizzle_of(database).insert(conversation_messages).values(row).run();
+  refresh_conversation_items(database, has_conversation(database, message.conversation_id) ? [message.conversation_id] : []);
   return { ...row, tool_calls: message.tool_calls ?? [], sources: message.sources ?? [unrecorded_source] };
-}
-
-// Every conversation that has messages, but the general one.
-export function context_conversations(database: SqlDatabase): string[] {
-  const rows = drizzle_of(database).selectDistinct({ id: conversation_messages.conversation_id }).from(conversation_messages).where(ne(conversation_messages.conversation_id, "general")).all();
-  return rows.map((row) => row.id);
-}
-
-export function remove_messages(database: SqlDatabase, conversation_id: string): void {
-  drizzle_of(database).delete(conversation_messages).where(eq(conversation_messages.conversation_id, conversation_id)).run();
 }
