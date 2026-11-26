@@ -10,7 +10,7 @@ import { EventStream } from "@x-tech-laboratories/x-libs/server/events";
 import { register_call_table } from "@x-tech-laboratories/x-libs/server/call_table";
 import { register_mcp_route } from "@x-tech-laboratories/x-libs/server/mcp";
 import { register_error_replies, register_lenient_json_body } from "@x-tech-laboratories/x-libs/server/replies";
-import { register_accounts } from "@x-tech-laboratories/x-libs/server/account_sign_in";
+import { calls_under, register_accounts } from "@x-tech-laboratories/x-libs/server/account_sign_in";
 import { AccountStore } from "@x-tech-laboratories/x-libs/server/account_store";
 import type { Accounts } from "@x-tech-laboratories/x-libs/server/passwords";
 import type { BackupMethods } from "@x-tech-laboratories/x-libs/backup_protocol";
@@ -21,9 +21,8 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { context_bridge } from "../shared/bridge.ts";
 import { mcp_instructions as instructions } from "../shared/mcp.ts";
 import { stop_all_runs } from "../shared/conversations/run.ts";
-import { conversation_event } from "../shared/page_api.ts";
-import { page_only_refusal } from "../shared/page_api.ts";
-import { bind_methods, context_api, is_page_only_call, is_read_only, program_api, start_assistant, sync_engine } from "../shared/store.ts";
+import { conversation_event, user_only_settings } from "../shared/page_api.ts";
+import { bind_methods, context_api, is_read_only, page_only, start_assistant, sync_engine } from "../shared/store.ts";
 import { register_context_calls } from "./calls.ts";
 
 // ── Options ──────────────────────────────────────────────────────────────────
@@ -48,8 +47,17 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
   register_lenient_json_body(app);
   register_error_replies(app);
   const accounts = new AccountStore({ database: options.database, app_name: "CODEX", declared: options.declared, token_prefix: "cx" });
-  // Backups reach the whole database, the accounts included, so only an admin may manage them.
-  await register_accounts(app, { accounts, cookie_name: "codex_session", read_only_paths: ["/api/mcp"], needed: (_method, path) => (path.startsWith("/api/backup/") ? { role: accounts.top_role } : "any") });
+  // Backups reach the whole database, the accounts included, so only an admin may manage them. A token, a device's
+  // included, is refused the calls only the user at the page may make; a browser signed in with a password, itself or
+  // through a trusted proxy, is the user at the page.
+  await register_accounts(app, {
+    accounts,
+    cookie_name: "codex_session",
+    read_only_paths: ["/api/mcp"],
+    needed: (_method, path) => (path.startsWith("/api/backup/") ? { role: accounts.top_role } : "any"),
+    call_of: calls_under("/api/call"),
+    page_only,
+  });
 
   const changes = new EventStream();
   const database = () => options.database;
@@ -61,22 +69,21 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
     async (api) => {
       changes.register(api, "/events");
 
-      // A browser signed in with a password, itself or through a trusted proxy, is the user at the page; a token is a program.
-      register_context_calls(api, database, changes, (request) => request.viewer !== null && request.viewer.via !== "token");
+      register_context_calls(api, database, changes);
 
       api.get("/openapi.json", async () =>
         openapi_document(context_api, { title: "CODEX", version, description: instructions, path_of: (method) => `/api/call/${method}`, is_read_only }),
       );
 
-      // A change made through MCP is announced to every page, since no page made it.
+      // A change made through MCP is announced to every page, since no page made it; the page-only calls are not offered.
       await register_mcp_route(api, {
         name: "codex",
         version,
         instructions,
-        api: program_api,
+        api: context_api,
         is_read_only,
+        page_only,
         call: async (method, args) => {
-          if (is_page_only_call(method, args)) throw new Error(page_only_refusal);
           const methods = bind_methods(database, () => changes.announce_change());
           return context_bridge.dispatch(methods, method, args);
         },
@@ -89,6 +96,8 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
         database,
         back_up: async () => void (await options.backups.create_backup()),
         on_change: (request) => changes.announce_change(changes.client_id_of(request)),
+        // A setting only the user may change syncs only from the user's own devices, never from a program's token.
+        device_only: (change) => change.table === "settings" && user_only_settings.has(change.key),
       });
     },
     { prefix: "/api" },
