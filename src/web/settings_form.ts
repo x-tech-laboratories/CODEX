@@ -12,7 +12,35 @@ export const MODE_NAMES: Record<string, string> = {
 export type NumberField = { label: string; name: string; lowest: number; highest: number; step: number; digits: number };
 export type PathField = { label: string; name: string; kind: 'model' | 'directory' | 'database' };
 export type SwitchField = { label: string; name: string };
-export type FieldGroup = { heading: string; numbers?: NumberField[]; paths?: PathField[]; switches?: SwitchField[]; after?: NumberField[] };
+export type ChoiceField = { label: string; name: string; choices: { value: string; label: string }[] };
+// A text field; a command one holds a program and its arguments separated by spaces.
+export type TextField = { label: string; name: string; placeholder: string; command?: boolean };
+export type FieldGroup = {
+    heading: string;
+    hint?: string;
+    choices?: ChoiceField[];
+    texts?: TextField[];
+    numbers?: NumberField[];
+    paths?: PathField[];
+    switches?: SwitchField[];
+};
+
+export const PROVIDER_CHOICES = [
+    { value: 'local', label: 'Local' },
+    { value: 'openai', label: 'OpenAI-compatible' },
+    { value: 'anthropic', label: 'Anthropic' },
+];
+
+function provider_fields(prefix: 'model' | 'background_model'): { choices: ChoiceField[]; texts: TextField[] } {
+    return {
+        choices: [{ label: 'Runs on', name: `${prefix}_provider`, choices: PROVIDER_CHOICES }],
+        texts: [
+            { label: 'Hosted model name', name: `${prefix}_name`, placeholder: 'claude-opus-5-5, gpt-5, llama3.1' },
+            { label: 'Endpoint (empty for the provider\'s own)', name: `${prefix}_endpoint`, placeholder: 'http://localhost:11434/v1' },
+            { label: 'API key command', name: `${prefix}_api_key_command`, placeholder: 'A program that prints the key', command: true },
+        ],
+    };
+}
 
 const number = (label: string, name: string, lowest: number, highest: number, step: number, digits = 0): NumberField => ({
     label, name, lowest, highest, step, digits,
@@ -25,6 +53,8 @@ const number = (label: string, name: string, lowest: number, highest: number, st
 export const FIELD_GROUPS: FieldGroup[] = [
     {
         heading: 'Model',
+        hint: 'A hosted model sends each request, and what it reads, to that provider.',
+        ...provider_fields('model'),
         paths: [{ label: 'GGUF model path', name: 'model_path', kind: 'model' }],
         numbers: [
             number('Context size', 'context_size', 1, 1048576, 256),
@@ -63,9 +93,14 @@ export const FIELD_GROUPS: FieldGroup[] = [
         paths: [
             { label: 'SQLite database', name: 'knowledge_db_path', kind: 'database' },
             { label: 'Embedding GGUF model (empty searches by words only)', name: 'embedding_model_path', kind: 'model' },
-            { label: 'Background GGUF model (empty uses the main model)', name: 'background_model_path', kind: 'model' },
         ],
-        after: [
+    },
+    {
+        heading: 'Background model',
+        hint: 'Research and mail run here. Keep it local to keep mail on this computer while requests go to a hosted model.',
+        ...provider_fields('background_model'),
+        paths: [{ label: 'Background GGUF model (empty uses the main model)', name: 'background_model_path', kind: 'model' }],
+        numbers: [
             number('Context size (0 uses the main one)', 'background_context_size', 0, 1048576, 256),
             number('GPU layers', 'background_gpu_layers', -1, 1000, 1),
         ],
@@ -75,7 +110,7 @@ export const FIELD_GROUPS: FieldGroup[] = [
 export const MCP_SERVERS_HINT = 'A JSON list of servers; see the README for the fields each one needs.';
 
 export function number_fields(): NumberField[] {
-    return FIELD_GROUPS.flatMap((group) => [...(group.numbers ?? []), ...(group.after ?? [])]);
+    return FIELD_GROUPS.flatMap((group) => group.numbers ?? []);
 }
 
 export function path_fields(): PathField[] {
@@ -84,6 +119,14 @@ export function path_fields(): PathField[] {
 
 export function switch_fields(): SwitchField[] {
     return FIELD_GROUPS.flatMap((group) => group.switches ?? []);
+}
+
+export function choice_fields(): ChoiceField[] {
+    return FIELD_GROUPS.flatMap((group) => group.choices ?? []);
+}
+
+export function text_fields(): TextField[] {
+    return FIELD_GROUPS.flatMap((group) => group.texts ?? []);
 }
 
 // ============================================================================
@@ -126,6 +169,13 @@ export function settings_to_form(settings: Settings): FormValues {
         const value = Number(settings[field.name] ?? 0);
         text[field.name] = field.digits ? value.toFixed(field.digits) : String(value);
     }
+    for (const field of choice_fields()) {
+        text[field.name] = String(settings[field.name] ?? field.choices[0].value);
+    }
+    for (const field of text_fields()) {
+        const value = settings[field.name];
+        text[field.name] = field.command ? (Array.isArray(value) ? value.join(' ') : '') : String(value ?? '');
+    }
     const switches: Record<string, boolean> = {};
     for (const field of switch_fields()) {
         switches[field.name] = Boolean(settings[field.name]);
@@ -166,6 +216,13 @@ export function collect_settings(current: Settings, form: FormValues): Settings 
     for (const field of switch_fields()) {
         settings[field.name] = Boolean(form.switches[field.name]);
     }
+    for (const field of choice_fields()) {
+        settings[field.name] = form.text[field.name] ?? field.choices[0].value;
+    }
+    for (const field of text_fields()) {
+        const value = (form.text[field.name] ?? '').trim();
+        settings[field.name] = field.command ? value.split(/\s+/).filter(Boolean) : value;
+    }
     if (!String(settings.model_path).trim()) {
         throw new Error('model_path must be a non-empty string.');
     }
@@ -191,6 +248,8 @@ export function auto_size_request(form: FormValues): Record<string, unknown> {
         gpu_layers: parse_number_field(fields.gpu_layers, form.text.gpu_layers ?? ''),
         background_model_path: (form.text.background_model_path ?? '').trim(),
         background_gpu_layers: parse_number_field(fields.background_gpu_layers, form.text.background_gpu_layers ?? ''),
+        model_provider: form.text.model_provider ?? 'local',
+        background_model_provider: form.text.background_model_provider ?? 'local',
     };
 }
 

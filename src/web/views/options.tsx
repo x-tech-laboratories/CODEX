@@ -1,7 +1,7 @@
 // The Options page: the daemon's settings as a form, sized for this machine on request, the knowledge database's backups,
 // and this computer's launch at login.
 import { BackupSettings } from '@x-tech-laboratories/x-libs/web/react/backup_settings';
-import { PathInput, Switch } from '@x-tech-laboratories/x-libs/web/react/controls';
+import { PathInput, Segmented, Switch } from '@x-tech-laboratories/x-libs/web/react/controls';
 import { SettingRow, SettingsGroup } from '@x-tech-laboratories/x-libs/web/react/layout';
 
 import {
@@ -10,7 +10,9 @@ import {
 import { use_store } from '@x-tech-laboratories/x-libs/web/react/store';
 import { knowledge_backups } from '../lib/api.ts';
 import { use_workbench } from '../lib/workbench.ts';
-import { FIELD_GROUPS, MCP_SERVERS_HINT, type FormValues, type NumberField, type PathField, type SwitchField } from '../settings_form.ts';
+import {
+    FIELD_GROUPS, MCP_SERVERS_HINT, type ChoiceField, type FormValues, type NumberField, type PathField, type SwitchField, type TextField,
+} from '../settings_form.ts';
 
 type Change = (change: (values: FormValues) => FormValues) => void;
 
@@ -23,6 +25,33 @@ function NumberInput({ field, values, change }: { field: NumberField; values: Fo
                 min={field.lowest}
                 max={field.highest}
                 step={field.step}
+                value={values.text[field.name] ?? ''}
+                onChange={(event) => { const next = event.currentTarget.value; change((before) => ({ ...before, text: { ...before.text, [field.name]: next } })); }}
+            />
+        </SettingRow>
+    );
+}
+
+function ChoiceInput({ field, values, change }: { field: ChoiceField; values: FormValues; change: Change }) {
+    return (
+        <SettingRow label={field.label}>
+            <Segmented
+                label={field.label}
+                choices={field.choices}
+                value={values.text[field.name] ?? field.choices[0].value}
+                on_change={(next) => change((before) => ({ ...before, text: { ...before.text, [field.name]: next } }))}
+            />
+        </SettingRow>
+    );
+}
+
+function TextInput({ field, values, change }: { field: TextField; values: FormValues; change: Change }) {
+    return (
+        <SettingRow label={field.label} as_label>
+            <input
+                type="text"
+                spellCheck={false}
+                placeholder={field.placeholder}
                 value={values.text[field.name] ?? ''}
                 onChange={(event) => { const next = event.currentTarget.value; change((before) => ({ ...before, text: { ...before.text, [field.name]: next } })); }}
             />
@@ -51,6 +80,12 @@ function SwitchInput({ field, values, change }: { field: SwitchField; values: Fo
     );
 }
 
+// Whether this group picks a hosted provider; groups without a provider choice count as local.
+function is_hosted(group: { choices?: ChoiceField[] }, values: FormValues): boolean {
+    const choice = group.choices?.[0];
+    return choice !== undefined && (values.text[choice.name] ?? 'local') !== 'local';
+}
+
 export function Options() {
     const state = use_workbench();
     const values = use_store(form);
@@ -62,17 +97,19 @@ export function Options() {
         <div className="page options">
             <div className="options-grid">
                 {FIELD_GROUPS.map((group) => (
-                    <SettingsGroup key={group.heading} heading={group.heading}>
+                    <SettingsGroup key={group.heading} heading={group.heading} hint={group.hint}>
+                        {(group.choices ?? []).map((field) => <ChoiceInput key={field.name} field={field} values={shown} change={change} />)}
+                        {/* A hosted model's fields show only while a hosted provider is chosen, and a local model's only while it is not. */}
+                        {(group.texts ?? []).filter(() => is_hosted(group, shown)).map((field) => <TextInput key={field.name} field={field} values={shown} change={change} />)}
                         {group.heading === 'Background research' ? (
                             <>
                                 {(group.numbers ?? []).map((field) => <NumberInput key={field.name} field={field} values={shown} change={change} />)}
                                 {(group.paths ?? []).map((field) => <PathSetting key={field.name} field={field} values={shown} change={change} />)}
-                                {(group.after ?? []).map((field) => <NumberInput key={field.name} field={field} values={shown} change={change} />)}
                             </>
                         ) : (
                             <>
-                                {(group.paths ?? []).map((field) => <PathSetting key={field.name} field={field} values={shown} change={change} />)}
-                                {(group.numbers ?? []).map((field) => <NumberInput key={field.name} field={field} values={shown} change={change} />)}
+                                {(group.paths ?? []).filter(() => !is_hosted(group, shown)).map((field) => <PathSetting key={field.name} field={field} values={shown} change={change} />)}
+                                {(group.numbers ?? []).filter((field) => !is_hosted(group, shown) || !field.name.endsWith('gpu_layers')).map((field) => <NumberInput key={field.name} field={field} values={shown} change={change} />)}
                             </>
                         )}
                         {(group.switches ?? []).map((field) => <SwitchInput key={field.name} field={field} values={shown} change={change} />)}

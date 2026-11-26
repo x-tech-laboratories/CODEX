@@ -28,13 +28,15 @@
         "cli": "node dist/cli/index.js"
     },
     "dependencies": {
+        "@anthropic-ai/sdk": "^1.8.0",
         "@modelcontextprotocol/sdk": "^1.32.2",
         "@x-tech-laboratories/halon": "^0.32.1",
         "@x-tech-laboratories/robobuddy": "github:x-tech-laboratories/RoboBuddy#0ce6c01ed4116609ac78653fa9c5233906012a6c",
-        "@x-tech-laboratories/smartharness": "github:x-tech-laboratories/SmartHarness#d1b99b3ce067c874468f0f4474fe904dc8349924",
+        "@x-tech-laboratories/smartharness": "github:x-tech-laboratories/SmartHarness#a4f380b605d1f631409dde29548a009846b47a7b",
         "@x-tech-laboratories/x-libs": "^0.72.0",
         "force-graph": "^1.52.0",
         "node-llama-cpp": "^3.22.3",
+        "openai": "^7.56.0",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
         "sqlite-vec": "^0.1.9",

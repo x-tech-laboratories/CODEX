@@ -40,6 +40,14 @@ const settings = {
     background_max_pending_jobs: 100,
     background_prune_after_days: 90,
     background_max_store_megabytes: 1024,
+    model_provider: 'local',
+    model_endpoint: '',
+    model_name: '',
+    model_api_key_command: [],
+    background_model_provider: 'local',
+    background_model_endpoint: '',
+    background_model_name: '',
+    background_model_api_key_command: [],
 } as Settings;
 
 describe('settings form', () => {
@@ -102,6 +110,34 @@ describe('settings form', () => {
     });
 });
 
+describe('hosted models', () => {
+    it('shows the key command as words and reads it back as a list', () => {
+        const hosted = { ...settings, model_provider: 'anthropic', model_name: 'claude-opus-5-5', model_api_key_command: ['print-key', 'anthropic'] } as Settings;
+        const form = settings_to_form(hosted);
+        expect(form.text).toMatchObject({ model_provider: 'anthropic', model_name: 'claude-opus-5-5', model_api_key_command: 'print-key anthropic' });
+
+        form.text.background_model_provider = 'openai';
+        form.text.background_model_name = ' llama3.1 ';
+        form.text.background_model_api_key_command = '  ';
+        const collected = collect_settings(hosted, form);
+
+        expect(collected).toMatchObject({
+            model_api_key_command: ['print-key', 'anthropic'],
+            background_model_provider: 'openai',
+            background_model_name: 'llama3.1',
+            background_model_api_key_command: [],
+        });
+    });
+
+    it('fills a provider the settings lack with a local one', () => {
+        const { model_provider: _provider, model_api_key_command: _command, ...older } = settings;
+
+        const form = settings_to_form(older as Settings);
+
+        expect([form.text.model_provider, form.text.model_api_key_command]).toEqual(['local', '']);
+    });
+});
+
 describe('auto size', () => {
     it('asks about the models in the form and fills the four limits it suggests', () => {
         const form = settings_to_form({ ...settings, background_model_path: ' small.gguf ' });
@@ -116,7 +152,14 @@ describe('auto size', () => {
         const request = auto_size_request(form);
         const filled = apply_size_choice(form, choice);
 
-        expect(request).toEqual({ model_path: './models/model.gguf', gpu_layers: -1, background_model_path: 'small.gguf', background_gpu_layers: 0 });
+        expect(request).toEqual({
+            model_path: './models/model.gguf',
+            gpu_layers: -1,
+            background_model_path: 'small.gguf',
+            background_gpu_layers: 0,
+            model_provider: 'local',
+            background_model_provider: 'local',
+        });
         expect(filled.text).toMatchObject({ context_size: '16384', max_tokens: '3072', background_max_tokens: '512', background_context_size: '8192' });
         expect(size_choice_message(choice)).toBe(
             '6.0 GB free on the GPU. Context 16384, max tokens 3072, background context 8192, background max tokens 512. Apply or save to use them.',

@@ -136,6 +136,14 @@ describe('a run from start to finish', () => {
         expect(unchanged.steps).toHaveLength(1);
     });
 
+    it('names the model a run uses, whether this window began it or not', () => {
+        const ours = events(begin_run(initial_state(), 3), ['run.started', { run_id: 3, prompt: 'x', model: 'claude-opus-5-5 (Anthropic)' }]);
+        const older = events(initial_state(), ['run.started', { run_id: 4, prompt: 'x' }]);
+
+        expect(ours).toMatchObject({ model: 'claude-opus-5-5 (Anthropic)', status: 'Running on claude-opus-5-5 (Anthropic)' });
+        expect(older.model).toBe('');
+    });
+
     it('reports a failed and a cancelled run on the final page', () => {
         const running = begin_run(initial_state(), 1);
 

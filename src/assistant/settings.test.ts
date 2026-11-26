@@ -102,3 +102,37 @@ describe('imap accounts', () => {
     });
 });
 
+// ============================================================================
+// Model providers
+// ============================================================================
+
+describe('model providers', () => {
+    it('runs every model locally by default', () => {
+        expect(ASSISTANT_DEFAULT_SETTINGS.model_provider).toBe('local');
+        expect(ASSISTANT_DEFAULT_SETTINGS.background_model_provider).toBe('local');
+    });
+
+    it('takes a hosted model by name, trimming its fields, with its key from a command', () => {
+        const checked = validateAssistantSettings({
+            ...ASSISTANT_DEFAULT_SETTINGS,
+            model_provider: 'openai',
+            model_endpoint: ' http://localhost:11434/v1 ',
+            model_name: ' llama3.1 ',
+            model_api_key_command: ['print-key', 'openai'],
+        });
+
+        expect([checked.model_endpoint, checked.model_name]).toEqual(['http://localhost:11434/v1', 'llama3.1']);
+    });
+
+    it('refuses an unknown provider, a hosted model without a name, a bad endpoint and a bad key command', () => {
+        const settings = { ...ASSISTANT_DEFAULT_SETTINGS };
+
+        expect(() => validateAssistantSettings({ ...settings, model_provider: 'cloud' })).toThrow(/model_provider must be one of/);
+        expect(() => validateAssistantSettings({ ...settings, background_model_provider: 'anthropic' })).toThrow(/background_model_name must name the model/);
+        expect(() => validateAssistantSettings({ ...settings, model_endpoint: 'localhost:11434' })).toThrow(/model_endpoint must be an http/);
+        expect(() => validateAssistantSettings({ ...settings, model_name: 7 })).toThrow(/model_name must be a string/);
+        expect(() => validateAssistantSettings({ ...settings, model_api_key_command: 'print-key openai' })).toThrow(/model_api_key_command/);
+        expect(() => validateAssistantSettings({ ...settings, model_api_key_command: [''] })).toThrow(/model_api_key_command/);
+    });
+});
+

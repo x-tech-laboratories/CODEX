@@ -44,11 +44,39 @@ export type MailSettings = {
     mail_rule_proposal_threshold: number;
 };
 
-export type AssistantSettings = Settings & MailSettings;
+// ============================================================================
+// Model provider settings
+// ============================================================================
+
+export const MODEL_PROVIDERS = ['local', 'openai', 'anthropic'] as const;
+export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
+
+// A hosted model is named by its provider, endpoint and model name; its key comes from running api_key_command.
+export type ModelProviderSettings = {
+    model_provider: ModelProvider;
+    model_endpoint: string;
+    model_name: string;
+    model_api_key_command: string[];
+    background_model_provider: ModelProvider;
+    background_model_endpoint: string;
+    background_model_name: string;
+    background_model_api_key_command: string[];
+};
+
+export type AssistantSettings = Settings & MailSettings & ModelProviderSettings;
 
 export const ASSISTANT_DEFAULT_SETTINGS: Readonly<AssistantSettings> = Object.freeze({
     ...DEFAULT_SETTINGS,
     knowledge_db_path: DEFAULT_KNOWLEDGE_DB_PATH,
+    // Every model runs on this computer unless a hosted provider is chosen; background work, mail included, can stay local on its own.
+    model_provider: 'local',
+    model_endpoint: '',
+    model_name: '',
+    model_api_key_command: [],
+    background_model_provider: 'local',
+    background_model_endpoint: '',
+    background_model_name: '',
+    background_model_api_key_command: [],
     // Maildir folders whose new/ messages become events; none are read until one is listed.
     mail_maildir_paths: [],
     mail_max_age_days: 7,
@@ -80,7 +108,34 @@ export function validateAssistantSettings(input: Record<string, unknown>): Assis
             throw new Error(`${name} must be an integer from ${minimum} to ${maximum}.`);
         }
     }
+    validateModelProvider(values, 'model');
+    validateModelProvider(values, 'background_model');
     return values as AssistantSettings;
+}
+
+// Check one model's provider fields, trimming the text ones.
+function validateModelProvider(values: Record<string, unknown>, prefix: 'model' | 'background_model'): void {
+    const provider = values[`${prefix}_provider`];
+    if (!(MODEL_PROVIDERS as readonly unknown[]).includes(provider)) {
+        throw new Error(`${prefix}_provider must be one of: ${MODEL_PROVIDERS.join(', ')}.`);
+    }
+    for (const name of [`${prefix}_endpoint`, `${prefix}_name`]) {
+        if (typeof values[name] !== 'string') {
+            throw new Error(`${name} must be a string.`);
+        }
+        values[name] = (values[name] as string).trim();
+    }
+    const endpoint = values[`${prefix}_endpoint`] as string;
+    if (endpoint && !/^https?:\/\/\S+$/.test(endpoint)) {
+        throw new Error(`${prefix}_endpoint must be an http or https address, or empty for the provider's own.`);
+    }
+    if (provider !== 'local' && !values[`${prefix}_name`]) {
+        throw new Error(`${prefix}_name must name the model, such as claude-opus-5-5 or llama3.1, when ${prefix}_provider is ${String(provider)}.`);
+    }
+    const command = values[`${prefix}_api_key_command`];
+    if (!Array.isArray(command) || command.some((part) => typeof part !== 'string' || !part)) {
+        throw new Error(`${prefix}_api_key_command must be a program and its arguments, or empty for none.`);
+    }
 }
 
 const ALLOWED_IMAP_FIELDS = new Set(['name', 'host', 'port', 'username', 'password_command', 'folder']);

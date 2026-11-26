@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SizeChoice } from '@x-tech-laboratories/smartharness/autoSize';
 import { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
-import { LocalModel } from '@x-tech-laboratories/smartharness/model';
+import { LocalModel, localModelSource } from '@x-tech-laboratories/smartharness/model';
 import { ASSISTANT_DEFAULT_SETTINGS as DEFAULT_SETTINGS, loadAssistantSettings as loadSettings, type AssistantSettings as Settings } from '../assistant/settings.js';
 import type { ExecuteTaskTreeOptions } from '@x-tech-laboratories/smartharness/taskTree';
 import { DaemonError } from './client.js';
@@ -119,11 +119,15 @@ describe('HarnessDaemon', () => {
         expect(listed.map((run) => [run.id, run.tasks_done, run.tasks_total])).toEqual([[stopped, 1, 3]]);
         expect(unfinished).toEqual(listed);
         expect(finishedEvent.result).toBe('Resumed answer');
-        expect((await events.waitFor('run.started')).prompt).toBe('Plan the trip');
+        const started = await events.waitFor('run.started');
+        expect(started.prompt).toBe('Plan the trip');
+        // A resumed run keeps its saved options but runs on the model the settings name now.
+        expect(started.model).toBe(settings.model_path);
         const [prompt, given] = executeTaskTree.mock.calls[0] as unknown as TaskTreeCall;
         expect(prompt).toBe('Plan the trip');
         expect(given.resumeRunId).toBe(stopped);
         expect(given.modelPath).toBe('saved.gguf');
+        expect(given.modelSource?.key).toBe(localModelSource(settings.model_path, settings.context_size, settings.gpu_layers).key);
         expect(given.mode).toBe('draft');
 
         await client.call('discard_run', { run_id: stopped });
@@ -297,6 +301,19 @@ describe('HarnessDaemon', () => {
         expect(autoSize.mock.calls.at(-1)).toEqual(['big.gguf', 0, null]);
     });
 
+    it('leaves a hosted model at the sizes set for it and sizes only the local background model', async () => {
+        const autoSize = vi.fn(async (): Promise<SizeChoice> => ({ context_size: 8192, max_tokens: 2048, background_max_tokens: 1024, explanation: 'Small' }));
+        const daemon = await start({ autoSize });
+        const client = await daemon.client();
+
+        const hostedOnly = await client.call<Record<string, unknown>>('auto_size', { model_provider: 'openai', background_model_provider: 'openai' });
+        const withLocal = await client.call<Record<string, unknown>>('auto_size', { model_provider: 'anthropic', background_model_path: 'small.gguf', background_gpu_layers: 0 });
+
+        expect(hostedOnly).toMatchObject({ context_size: settings.context_size, background_context_size: 0, explanation: 'A hosted model keeps the sizes set for it' });
+        expect(withLocal).toMatchObject({ context_size: settings.context_size, background_context_size: 8192, explanation: 'A hosted model keeps the sizes set for it; background Small' });
+        expect(autoSize.mock.calls).toEqual([['small.gguf', 0, null]]);
+    });
+
     it('gives a separate background model its own cache and unloads it when idle', async () => {
         const clock = vi.fn().mockReturnValueOnce(100).mockReturnValueOnce(100 + BACKGROUND_MODEL_IDLE_SECONDS);
         const harness = new HarnessDaemon(settings, settingsPath, { dependencies: { monotonic: clock } });
@@ -304,24 +321,42 @@ describe('HarnessDaemon', () => {
         vi.spyOn(LocalModel, 'load').mockResolvedValue(fakeModel);
         const current = harness.getSettings();
 
-        expect(await harness.backgroundModel(current)).toEqual([harness.modelLock, harness.modelCache]);
+        const [mainLock, mainCache, mainSource] = await harness.backgroundModel(current);
+        expect([mainLock, mainCache]).toEqual([harness.modelLock, harness.modelCache]);
+        expect(mainSource.key).toBe(localModelSource(current.model_path, current.context_size, current.gpu_layers).key);
 
         current.background_model_path = 'big.gguf';
-        const [lock, cache] = await harness.backgroundModel(current);
+        const big = localModelSource('big.gguf', current.context_size, 0);
+        const [lock, cache, source] = await harness.backgroundModel(current);
         expect(lock).toBe(harness.backgroundModelLock);
         expect(cache).toBe(harness.backgroundModelCache);
+        expect(source.key).toBe(big.key);
 
-        await cache.get('big.gguf', current.context_size, 0);
+        await cache.get(big);
         await harness.unloadIdleBackgroundModel(false);
-        expect(cache.has('big.gguf', current.context_size, 0)).toBe(true);
+        expect(cache.has(big)).toBe(true);
         await harness.unloadIdleBackgroundModel(false);
-        expect(cache.has('big.gguf', current.context_size, 0)).toBe(false);
+        expect(cache.has(big)).toBe(false);
         expect(harness.backgroundStatus).toBe('Idle; background model unloaded');
 
-        await cache.get('big.gguf', current.context_size, 0);
+        await cache.get(big);
         current.background_model_path = '';
         await harness.backgroundModel(current);
-        expect(cache.has('big.gguf', current.context_size, 0)).toBe(false);
+        expect(cache.has(big)).toBe(false);
+    });
+
+    it('keeps background work on a local model while requests go to a hosted one', async () => {
+        const harness = new HarnessDaemon(settings, settingsPath);
+        const current = { ...harness.getSettings(), model_provider: 'anthropic' as const, model_name: 'claude-opus-5-5', background_model_path: '' };
+
+        const [lock, , source] = await harness.backgroundModel(current);
+        expect(lock).toBe(harness.modelLock);
+        expect(source.label).toContain('claude-opus-5-5');
+
+        current.background_model_path = 'small.gguf';
+        const [backgroundLock, , backgroundSource] = await harness.backgroundModel(current);
+        expect(backgroundLock).toBe(harness.backgroundModelLock);
+        expect(backgroundSource.label).toBe('small.gguf');
     });
 
     it('researches a queued topic on request while idle research is paused', async () => {

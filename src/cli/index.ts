@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { installStarterAgents } from '@x-tech-laboratories/smartharness/agents';
 import { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
 import { ModelCache } from '@x-tech-laboratories/smartharness/model';
+import { mainModelSource } from '../assistant/models.js';
 import { expandUser, MODE_CHOICES } from '@x-tech-laboratories/smartharness/settings';
 import { assistantSettingsPath as defaultSettingsPath, loadAssistantSettings as loadSettings, validateAssistantSettings as validateSettings, type AssistantSettings as Settings } from '../assistant/settings.js';
 import { executeTaskTree, savedRunOptions, type ExecuteTaskTreeOptions } from '@x-tech-laboratories/smartharness/taskTree';
@@ -243,6 +244,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliEnviro
                 confirmActions: settings.confirm_actions,
                 maxTaskDepth: settings.max_task_depth,
                 maxTaskNodes: settings.max_task_nodes,
+                modelSource: mainModelSource(settings),
             });
         }
     } catch (error) {
@@ -293,6 +295,7 @@ async function resume(settings: Settings, io: CliEnvironment): Promise<number> {
                 ...savedRunOptions(saved.options),
                 showThinking: settings.show_thinking,
                 clarificationCallback: interactive ? (question) => askClarification(io, question) : null,
+                modelSource: mainModelSource(settings),
                 resumeRunId: Number(saved.id),
             }));
     } catch (error) {
