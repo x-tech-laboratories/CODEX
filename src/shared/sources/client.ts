@@ -1,7 +1,7 @@
-// Talking to an app through the Application Standard's four read-only item calls, and nothing else: its API takes a
-// call's arguments as a JSON list, at POST /api/call/<method> (as CODEX serves them) or POST /api/<method> (as an X-Libs
-// call table does), so the first that answers is remembered. Failures are put in plain words, and the token never
-// reaches one.
+// Talking to an app through the Application Standard's four read-only item calls, and nothing else: the standard's
+// POST /api/call/<method> with the arguments as a JSON list in order, falling back to POST /api/<method> for an app not
+// yet on the standard path, and the first that answers is remembered. Failures are put in plain words, and the token
+// never reaches one.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -13,7 +13,7 @@ export const item_read_calls = ["list_item_kinds", "search_items", "get_items", 
 
 export type ItemReadCall = (typeof item_read_calls)[number];
 
-// Where an app's API takes calls, tried in order.
+// The standard path, then X-Tasks' older one; the fallback can go once every X-Tasks server CODEX reads answers at /api/call/.
 const call_prefixes = ["/api/call/", "/api/"];
 
 const wait_ms = 15_000;

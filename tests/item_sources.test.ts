@@ -10,7 +10,7 @@ import { build_app } from "../src/server/app.ts";
 import { use_plugins } from "../src/shared/collectors/host.ts";
 import { offered_api } from "../src/shared/policy/policy.ts";
 import { open_screen } from "../src/shared/privacy/screen.ts";
-import { forget_prefixes } from "../src/shared/sources/client.ts";
+import { forget_prefixes, list_kinds, search } from "../src/shared/sources/client.ts";
 import { read_cursor } from "../src/shared/sources/collector.ts";
 import { bind_methods, open_store } from "../src/shared/store.ts";
 import { start_fake_item_app, type FakeItemApp } from "./fake_item_app.ts";
@@ -83,6 +83,27 @@ describe("apps read through the item calls", () => {
     await no_search.close();
     expect(await calls.get_item_source_status(id)).toEqual({ ok: false, message: expect.stringContaining("Could not reach Partial"), kinds: [] });
     await expect(calls.get_item_source_status("nope")).rejects.toThrow("There is no app nope");
+  });
+
+  it("are called at the standard path first, and at the older one only for an app not yet on it", async () => {
+    const standard = await fake({ notes, prefix: "/api/call/" });
+    const older = await fake({ notes, prefix: "/api/" });
+    const fetched = vi.spyOn(globalThis, "fetch");
+    try {
+      await list_kinds({ name: "Standard", address: standard.address, token });
+      expect(fetched.mock.calls.map(([url]) => String(url))).toEqual([`${standard.address}/api/call/list_item_kinds`]);
+
+      fetched.mockClear();
+      await list_kinds({ name: "Older", address: older.address, token });
+      await search({ name: "Older", address: older.address, token }, "boiler", 5);
+      expect(fetched.mock.calls.map(([url]) => String(url))).toEqual([
+        `${older.address}/api/call/list_item_kinds`,
+        `${older.address}/api/list_item_kinds`,
+        `${older.address}/api/search_items`,
+      ]);
+    } finally {
+      fetched.mockRestore();
+    }
   });
 
   it("each become a collector of their own, whose items cannot collide with another app's", async () => {
