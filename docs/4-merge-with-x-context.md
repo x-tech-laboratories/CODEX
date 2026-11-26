@@ -32,6 +32,9 @@ the conversations no other context holds.*
    - **Tool plugins:** prebuilt tools installed like any other plugin, beside collector and engine plugins.
    - **Tools the engine writes:** a script saved by proposal, read by the user before its first use, and run in a sandbox where it can call only CODEX's tools.
 6. **Sources are other apps' MCP servers,** chosen during setup, each marked for whether its content may be sent to a hosted engine. The X-apps follow one shared convention for this (proposed for the Application Standard), so one collector reads them all.
+   *Built 2026-11-26: the convention is the Application Standard's four item calls, and one collector reads every app
+   answering them, each app added in Settings with an address and read-only token and marked on its own
+   (`src/shared/sources/`, described in doc 1).*
    *Built 2026-11-26 for the collector plugins (`src/shared/privacy/`, described in doc 1): each has two marks in its
    row under Settings → Plugins, both off until turned on. "May be sent to a hosted engine": an engine is hosted unless
    it says it is local (Anthropic never is; an OpenAI-compatible endpoint is when its host is loopback or a
@@ -76,6 +79,9 @@ read as before, keys hidden, and sync from the user's own devices as before. Syn
 2026-11-26): the server takes a change to one of these settings only from a device that signed in for sync, so a
 program's token cannot change them through the sync exchange, and it cannot replace the server's data either. The
 marking lives in X-Libs (`page_only` specs, `page_only_calls`, and sync's `device_only`), so every app can use it.
+Backups honour it as well (built 2026-11-26): restoring a server's backup, deleting one and changing the backup
+schedule answer only the user at the page, so no token, an admin's included, can put back a crafted backup holding
+other settings; MCP offers no backup call, and the desktop's backups are reached only from its window.
 
 Withheld content has no side door (built 2026-11-26): every stored answer, event and proposal records which sources'
 content its run had read, as collector ids, and a proposal also the sources its summary names. A hosted engine is not
@@ -143,8 +149,9 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 ## Known gaps
 
 As of 2026-11-26 (closed on 2026-11-26: CODEX answers the four standard item calls; a reply's tool calls show where each
-was made in it; proposals carry their evidence and applied changes can be undone; a link or entity added through a
-token or MCP is a program's proposal; History brings a removed context back with its links):
+was made in it; a token can no longer restore or delete the server's backups; proposals carry their evidence and
+applied changes can be undone; a link or entity added through a token or MCP is a program's proposal; History brings a
+removed context back with its links):
 
 - No background job proposes links yet: rules and similarity run after each index pass, and an engine proposes only
   when the user asks with Suggest links.
@@ -154,9 +161,16 @@ token or MCP is a program's proposal; History brings a removed context back with
   answered end to end on 2026-11-26: tool calls, proposals, trusted sources and stopping worked. What that run found
   (requests outgrowing the context, a large fixed prompt, unseen reasoning and raw provider errors) is fixed, but not
   yet tried on a real model again.
-- A generic collector for any app answering the standard item calls waits until more apps answer them.
+- The collector for apps answering the item calls gives the index only each item's 200-character snippet, as the four
+  calls carry nothing more; an app's full text would need a fifth, optional call in the standard.
+- An app read through the item calls is reached over HTTP with a token, not over its MCP server as decision 6 says;
+  the item calls are the shared convention it names, so MCP would add nothing for reading.
+- An app's kinds are read when it is saved, not on each refresh, so a kind an app adds later shows once the app is
+  saved again.
 - CODEX's own items (`codex://entity/<id>` among them) are not read by the index's `app_link` rule as links to
   entities, and the graph gives an entity node no `uri`; the item calls' links open entities on the Graph page.
+- The backup guard is CODEX's own hook around X-Libs' generic call table; X-Libs' `register_backup_routes` has no such
+  option yet, so another app on it still lets an admin's token restore.
 - A device still on the shape before conversations were items deletes, after any write of its own, the messages of
   every conversation whose id is not a context's, and syncs those deletions; every device should be updated together.
 - The graph proposes two items as related above a fixed cosine of 0.8 (`graph/similarity.ts`); with Qwen3-Embedding,

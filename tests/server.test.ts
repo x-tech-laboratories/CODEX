@@ -141,7 +141,9 @@ describe("server", () => {
     const listed = await mcp("tools/list");
     const tools = listed.tools as { name: string; annotations: { readOnlyHint: boolean } }[];
     // Approving a change and setting a level are the user's alone, so no MCP client is offered them.
-    expect(tools.map((tool) => tool.name).sort()).toEqual(method_names.filter((name) => !["resolve_proposal", "undo_change", "set_action_level", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals"].includes(name)).sort());
+    expect(tools.map((tool) => tool.name).sort()).toEqual(
+      method_names.filter((name) => !["resolve_proposal", "undo_change", "set_action_level", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals", "add_item_source", "change_item_source", "remove_item_source"].includes(name)).sort(),
+    );
     expect(tools.some((tool) => tool.name === "get_action_policy" || tool.name === "list_proposals")).toBe(true);
     expect(tools.find((tool) => tool.name === "list_contexts")!.annotations.readOnlyHint).toBe(true);
     expect(tools.find((tool) => tool.name === "add_context")!.annotations.readOnlyHint).toBe(false);
@@ -177,6 +179,47 @@ describe("server", () => {
     expect((await signed({ method: "POST", url: "/api/backup/create_backup", payload: [] })).json()).toEqual(taken);
     expect(fake_backups.create_backup).toHaveBeenCalled();
     expect((await signed({ method: "POST", url: "/api/backup/drop_everything", payload: [] })).statusCode).toBe(404);
+  });
+
+  it("restores, deletes and reschedules backups only for the user at the page, never for a token", async () => {
+    await start();
+    fake_backups.restore_backup.mockClear();
+    fake_backups.remove_backup.mockClear();
+    fake_backups.set_backup_schedule.mockClear();
+    const made = async (read_only: boolean) => (await as_page({ method: "POST", url: "/api/account/tokens", payload: { name: `script ${read_only}`, read_only } })).json<{ token: string }>().token;
+    // The admin's own device token, an admin's program token that may change things, and a read-only one.
+    const tokens = [token, await made(false), await made(true)];
+    const guarded: [string, unknown[]][] = [
+      ["restore_backup", [taken.name]],
+      ["remove_backup", [taken.name]],
+      ["set_backup_schedule", [{ automatic: false, to_keep: 0 }]],
+    ];
+    for (const each of tokens) {
+      for (const [method, args] of guarded) {
+        // The address spelled with an escaped letter reaches the same route, and is refused the same way.
+        for (const url of [`/api/backup/${method}`, `/api/backup/${method.replace("e", "%65")}`]) {
+          const refused = await app.inject({ method: "POST", url, headers: { authorization: `Bearer ${each}` }, payload: args });
+          expect([url, refused.statusCode]).toEqual([url, 403]);
+        }
+      }
+    }
+    expect(fake_backups.restore_backup).not.toHaveBeenCalled();
+    expect(fake_backups.remove_backup).not.toHaveBeenCalled();
+    expect(fake_backups.set_backup_schedule).not.toHaveBeenCalled();
+    // Listing, taking a backup and reading the schedule stay open to an admin's token.
+    expect((await signed({ method: "POST", url: "/api/backup/list_backups", payload: [] })).statusCode).toBe(200);
+    expect((await signed({ method: "POST", url: "/api/backup/create_backup", payload: [] })).statusCode).toBe(200);
+    expect((await signed({ method: "POST", url: "/api/backup/get_backup_schedule", payload: [] })).statusCode).toBe(200);
+
+    // The page still restores, deletes and sets the schedule.
+    expect((await as_page({ method: "POST", url: "/api/backup/restore_backup", payload: [taken.name] })).statusCode).toBe(204);
+    expect(fake_backups.restore_backup).toHaveBeenCalledWith(taken.name);
+    expect((await as_page({ method: "POST", url: "/api/backup/remove_backup", payload: [taken.name] })).statusCode).toBe(204);
+    expect((await as_page({ method: "POST", url: "/api/backup/set_backup_schedule", payload: [{ automatic: true, to_keep: 7 }] })).statusCode).toBe(204);
+
+    // No MCP client is offered a backup call at all.
+    const tools = ((await mcp("tools/list")).tools as { name: string }[]).map((tool) => tool.name);
+    expect(tools.filter((name) => name.includes("backup"))).toEqual([]);
   });
 
   it("streams a reply to the pages over the event stream as it is written, and keeps it", async () => {
@@ -279,6 +322,7 @@ describe("server", () => {
       embedder: "openai-embeddings",
       "hosted_log.keep_days": 1,
       plugins: { "codex.openai": { enabled: true, settings: { endpoint: "https://elsewhere.example.org/v1", api_key_command: "touch /tmp/x" } } },
+      item_sources: [{ id: "elsewhere", name: "Elsewhere", address: "https://elsewhere.example.org", token: "", kinds: [] }],
     };
     expect(Object.keys(protected_values).sort()).toEqual([...user_only_settings].sort());
     const before = (await signed({ method: "POST", url: "/api/call/get_settings", payload: [] })).json() as Record<string, unknown>;

@@ -65,7 +65,7 @@ const collectors_section: SettingsSection = {
 // ── Import and export ────────────────────────────────────────────────────────
 
 // The settings an imported file may set; anything else in it is ignored.
-const importable_settings = new Set(["refresh_minutes", "history.keep_days", "plugins", "engine", "action_policy", "source_marks", "hosted_log.keep_days", "embedder"]);
+const importable_settings = new Set(["refresh_minutes", "history.keep_days", "plugins", "engine", "action_policy", "source_marks", "hosted_log.keep_days", "embedder", "item_sources"]);
 
 function TransferRows() {
   const contexts_picker = useRef<HTMLInputElement>(null);
@@ -100,7 +100,7 @@ function TransferRows() {
         <button type="button" onClick={() => contexts_picker.current?.click()}>Import</button>
         <input ref={contexts_picker} type="file" accept=".json,application/json" hidden onChange={(event) => void import_contexts(event)} />
       </SettingRow>
-      <SettingRow label="Settings" hint="Every setting as one JSON file, with the plugins' keys left out.">
+      <SettingRow label="Settings" hint="Every setting as one JSON file, with the plugins' keys and the apps' tokens left out.">
         <button type="button" onClick={() => void save_settings()}>Export</button>
         <button type="button" onClick={() => settings_picker.current?.click()}>Import</button>
         <input ref={settings_picker} type="file" accept=".json,application/json" hidden onChange={(event) => void import_settings(event)} />
