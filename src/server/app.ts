@@ -23,7 +23,7 @@ import { mcp_instructions as instructions } from "../shared/mcp.ts";
 import { stop_all_runs } from "../shared/conversations/run.ts";
 import { conversation_event } from "../shared/page_api.ts";
 import { page_only_refusal } from "../shared/page_api.ts";
-import { bind_methods, context_api, is_page_only, is_read_only, program_api, start_assistant, sync_engine } from "../shared/store.ts";
+import { bind_methods, context_api, is_page_only_call, is_read_only, program_api, start_assistant, sync_engine } from "../shared/store.ts";
 import { register_context_calls } from "./calls.ts";
 
 // ── Options ──────────────────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
         api: program_api,
         is_read_only,
         call: async (method, args) => {
-          if (is_page_only(method)) throw new Error(page_only_refusal);
+          if (is_page_only_call(method, args)) throw new Error(page_only_refusal);
           const methods = bind_methods(database, () => changes.announce_change());
           return context_bridge.dispatch(methods, method, args);
         },

@@ -9,5 +9,11 @@ export const migrations: DrizzleMigration[] = [
       "CREATE TABLE `conversation_messages` (\n\t`id` text PRIMARY KEY,\n\t`conversation_id` text NOT NULL,\n\t`role` text NOT NULL,\n\t`text` text DEFAULT '' NOT NULL,\n\t`engine` text DEFAULT '' NOT NULL,\n\t`model` text DEFAULT '' NOT NULL,\n\t`tool_calls` text DEFAULT '[]' NOT NULL,\n\t`error` text DEFAULT '' NOT NULL,\n\t`input_tokens` integer DEFAULT 0 NOT NULL,\n\t`output_tokens` integer DEFAULT 0 NOT NULL,\n\t`created_at` text NOT NULL\n);",
       "CREATE INDEX `conversation_messages_by_conversation` ON `conversation_messages` (`conversation_id`,`created_at`);"
     ]
+  },
+  {
+    "name": "20261126090940_sources",
+    "statements": [
+      "ALTER TABLE `conversation_messages` ADD `sources` text DEFAULT '[\"*\"]' NOT NULL;"
+    ]
   }
 ];

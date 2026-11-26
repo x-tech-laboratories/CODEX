@@ -6,6 +6,7 @@ import { asc, eq, ne } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { drizzle_of, new_id } from "../feature.ts";
+import { parse_sources, unrecorded_source } from "../privacy/sources.ts";
 import type { ConversationMessage, ToolCallRecord } from "./model.ts";
 import { conversation_messages } from "./schema.ts";
 
@@ -27,12 +28,13 @@ export function list_messages(database: SqlDatabase, conversation_id: string): C
     .where(eq(conversation_messages.conversation_id, conversation_id))
     .orderBy(asc(conversation_messages.created_at), asc(conversation_messages.id))
     .all()
-    .map((row) => ({ ...row, role: row.role as ConversationMessage["role"], tool_calls: parsed_calls(row.tool_calls) }));
+    .map((row) => ({ ...row, role: row.role as ConversationMessage["role"], tool_calls: parsed_calls(row.tool_calls), sources: parse_sources(row.sources) }));
 }
 
-export type NewMessage = Pick<ConversationMessage, "conversation_id" | "role" | "text"> & Partial<Pick<ConversationMessage, "engine" | "model" | "tool_calls" | "error" | "input_tokens" | "output_tokens">>;
+export type NewMessage = Pick<ConversationMessage, "conversation_id" | "role" | "text"> & Partial<Pick<ConversationMessage, "engine" | "model" | "tool_calls" | "error" | "input_tokens" | "output_tokens" | "sources">>;
 
-// Adds a message after every one before it, even one written in the same millisecond.
+// Adds a message after every one before it, even one written in the same millisecond; without sources given, its
+// sources count as not recorded.
 export function add_message(database: SqlDatabase, message: NewMessage): ConversationMessage {
   const last = list_messages(database, message.conversation_id).at(-1);
   let created_at = new Date().toISOString();
@@ -46,10 +48,11 @@ export function add_message(database: SqlDatabase, message: NewMessage): Convers
     output_tokens: 0,
     ...message,
     tool_calls: JSON.stringify(message.tool_calls ?? []),
+    sources: JSON.stringify(message.sources ?? [unrecorded_source]),
     created_at,
   };
   drizzle_of(database).insert(conversation_messages).values(row).run();
-  return { ...row, tool_calls: message.tool_calls ?? [] };
+  return { ...row, tool_calls: message.tool_calls ?? [], sources: message.sources ?? [unrecorded_source] };
 }
 
 // Every conversation that has messages, but the general one.

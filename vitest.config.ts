@@ -17,10 +17,10 @@ export default defineConfig({
       thresholds: {
         // A point under the measure, so run-to-run noise cannot fail a run, and never below the floor already set.
         autoUpdate: (new_threshold, previous_threshold) => Math.max(previous_threshold, Math.floor(new_threshold) - 1),
-        lines: 83,
+        lines: 84,
         statements: 82,
-        functions: 78,
-        branches: 78,
+        functions: 79,
+        branches: 79,
       },
     },
   },

@@ -38,6 +38,8 @@ export interface Proposal {
   arguments: Record<string, unknown>;
   summary: string;
   reason: ProposalReason;
+  // The sources whose content the run had read or its summary names, by collector id; "*" when not recorded.
+  sources: string[];
   status: ProposalStatus;
   result: string;
   created_at: string;
