@@ -144,8 +144,6 @@ As of 2026-11-26:
 - A generic collector for any app answering the standard item calls waits until more apps answer them.
 - CODEX does not yet answer the standard four item calls (`list_item_kinds`, `search_items`, `get_items`,
   `list_item_changes`) itself, so other apps cannot read its conversations or contexts as items.
-- Any token with write access can still push settings, the user-only ones included, through the sync exchange route,
-  until X-Libs can tell a device's token from any other; another change is addressing it.
 - A device still on the shape before conversations were items deletes, after any write of its own, the messages of
   every conversation whose id is not a context's, and syncs those deletions; every device should be updated together.
 
