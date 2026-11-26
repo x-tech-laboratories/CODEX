@@ -129,6 +129,25 @@ describe("estimating tokens", () => {
   });
 });
 
+describe("fitting at the edges", () => {
+  it("puts the note on what was left out in a system message of its own when there are no instructions", () => {
+    const messages: ChatMessage[] = [];
+    for (let turn = 0; turn < 6; turn += 1) messages.push({ role: "user", content: "q".repeat(1600) }, { role: "assistant", content: "a".repeat(1600) });
+    messages.push({ role: "user", content: "newest" });
+
+    const fit = fit_request(messages, undefined, at(4096, 512));
+
+    expect(fit.fits).toBe(true);
+    if (!fit.fits) return;
+    expect(fit.messages[0]).toEqual({ role: "system", content: left_out_note });
+    expect(fit.messages.at(-1)!.content).toBe("newest");
+  });
+
+  it("says it cannot fit a conversation with no user message to shorten", () => {
+    expect(fit_request([{ role: "system", content: "s" }, { role: "assistant", content: "a".repeat(20_000) }], undefined, at(4096, 512)).fits).toBe(false);
+  });
+});
+
 describe("shortening before leaving out", () => {
   const marker = /\n\n\[… [\d,]+ characters left out here: the message was too long for this model's context …\]\n\n/;
 

@@ -362,8 +362,9 @@ export function graph_part(database: SqlDatabase, context_id: string, screen: Sc
   const by_key = new Map(view.nodes.map((node) => [node.key, node]));
   const entities = view.nodes.filter((node) => node.kind === "entity");
   const entity_text = (node: GraphNode) => `- "${shortened(node.label)}" (${node.type}, id ${node.key}, ${node.status})`;
-  const link_text = (link: GraphLink) => `- "${shortened(by_key.get(link.from)?.label ?? link.from)}" (${link.from}) ${link.type} "${shortened(by_key.get(link.to)?.label ?? link.to)}" (${link.to}), ${link.status}`;
-  const link_sources = (link: GraphLink) => [...new Set([...link.sources, ...(by_key.get(link.from)?.sources ?? []), ...(by_key.get(link.to)?.sources ?? [])])];
+  // Every link drawn has both its ends among the nodes drawn.
+  const link_text = (link: GraphLink) => `- "${shortened(by_key.get(link.from)!.label)}" (${link.from}) ${link.type} "${shortened(by_key.get(link.to)!.label)}" (${link.to}), ${link.status}`;
+  const link_sources = (link: GraphLink) => [...new Set([...link.sources, ...by_key.get(link.from)!.sources, ...by_key.get(link.to)!.sources])];
   const shown_entities = screen_sourced(screen, entities, (node) => node.sources, (node) => node.key, () => "entity");
   const shown_links = screen_sourced(screen, view.links, link_sources, (link) => link.id, () => "link");
   const listed_entities = capped(shown_entities.value, entity_text, listing_caps.entities);

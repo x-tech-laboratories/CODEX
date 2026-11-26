@@ -362,6 +362,20 @@ describe("proposals", () => {
     expect(conversation.messages[1]!.notices).toEqual(["Suggest links proposed nothing this time."]);
   });
 
+  it("from Suggest links, cap the entities and links listed, saying how many more there are", async () => {
+    const fixture = start_fixture();
+    const { garden, seeds } = garden_of(fixture);
+    for (let at = 0; at < 40; at += 1) fixture.calls.add_graph_link(seeds, `entity:${fixture.calls.add_entity("topic", `Topic number ${at}`)}`, "about");
+
+    await fixture.calls.suggest_links(garden);
+    await wait_for_runs();
+
+    const { instructions } = fixture.requests[0]!;
+    // Each listing is capped by its count and its characters, and says how many it left out.
+    expect(instructions.match(/\n\d+ more are not listed here\./g)).toHaveLength(2);
+    expect(instructions.match(/ about "Topic number/g)!.length).toBeLessThan(40);
+  });
+
   it("from Suggest links, refuse a tool it is not offered and end with how many proposals it made", async () => {
     const fixture = start_fixture();
     const { garden, seeds, shop } = garden_of(fixture);

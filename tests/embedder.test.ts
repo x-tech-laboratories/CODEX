@@ -88,6 +88,18 @@ describe("the OpenAI-compatible embedder", () => {
     await expect(openai_embedder(() => ({ ...settings, model: " " })).embed(["a"])).rejects.toThrow("Set the embedding model");
   });
 
+  it("falls back to its defaults when nothing is set, and passes a stop on as it is rather than as a failure", async () => {
+    const bare = openai_embedder(() => ({}));
+    expect([bare.model(), bare.dimensions()]).toEqual(["", 768]);
+    await expect(bare.embed_query!("anything")).rejects.toThrow("Set the embedding model");
+
+    const fake = await start_endpoint((input) => ({ body: vectors_of(input) }));
+    const stopped = new AbortController();
+    stopped.abort();
+    const embedder = openai_embedder(() => ({ endpoint: fake.endpoint, model: "m", dimensions: 3 }));
+    await expect(embedder.embed(["a"], stopped.signal)).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("is local on Ollama's address by default and hosted elsewhere, and is provided as a plugin", async () => {
     expect(is_hosted(openai_embedder(() => ({})))).toBe(false);
     expect(is_hosted(openai_embedder(() => ({ endpoint: "https://api.openai.com/v1" })))).toBe(true);
@@ -112,6 +124,12 @@ describe("an embedder's failures in plain words", () => {
     expect(explain(answered(404)).message).toBe("The embedder at 10.0.0.5:8081 has no embeddings at that address. Check its endpoint under Settings → Index; it usually ends in /v1.");
     expect(explain(answered(429)).message).toBe("The embedder at 10.0.0.5:8081 is limiting how often it is asked. Indexing tries again later.");
     expect(explain(answered(500))).toEqual({ message: "The embedder at 10.0.0.5:8081 could not answer.", detail: "answered 500" });
+  });
+
+  it("names an endpoint's port from its scheme when the address gives none", () => {
+    expect(explain_embedder_failure(new TypeError("fetch failed"), "https://embed.example.org/v1", "", "m").message).toMatch(/^The embedder at embed\.example\.org:443 /);
+    expect(explain_embedder_failure(new TypeError("fetch failed"), "http://embed.example.org/v1", "", "m").message).toMatch(/^The embedder at embed\.example\.org:80 /);
+    expect(explain_embedder_failure(new TypeError("fetch failed"), "not an address", "", "m").message).toMatch(/^The embedder at the address in its settings /);
   });
 
   it("keeps a failure already in plain words as it is, and names the default endpoint when none is set", () => {

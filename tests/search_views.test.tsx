@@ -142,8 +142,11 @@ describe("Settings → Index", () => {
     expect(within(details).getByText("Details")).toBeTruthy();
     expect(within(details).getByText("fetch failed (ECONNREFUSED)")).toBeTruthy();
     cleanup();
-    render(<StateRows state={state} />);
+    render(<StateRows state={{ ...state, is_working: true, pending: 0, withheld: 0, embedder: { ...state.embedder!, is_local: true } }} />);
     expect(screen.queryByText("Last problem")).toBeNull();
+    expect(screen.getByText("Indexing now…")).toBeTruthy();
+    expect(screen.getByText("E, m, local.")).toBeTruthy();
+    expect(screen.getByText("4 of 10 pieces of text embedded.")).toBeTruthy();
   });
 });
 
