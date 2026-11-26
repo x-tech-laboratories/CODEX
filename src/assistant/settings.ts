@@ -63,12 +63,17 @@ export type ModelProviderSettings = {
     background_model_api_key_command: string[];
 };
 
-export type AssistantSettings = Settings & MailSettings & ModelProviderSettings;
+// The task tree makes small local models capable; the direct loop suits a model able enough to work a request on its own.
+export const ENGINE_NAMES = ['task_tree', 'direct'] as const;
+export type EngineName = (typeof ENGINE_NAMES)[number];
+
+export type AssistantSettings = Settings & MailSettings & ModelProviderSettings & { engine: EngineName };
 
 export const ASSISTANT_DEFAULT_SETTINGS: Readonly<AssistantSettings> = Object.freeze({
     ...DEFAULT_SETTINGS,
     knowledge_db_path: DEFAULT_KNOWLEDGE_DB_PATH,
     // Every model runs on this computer unless a hosted provider is chosen; background work, mail included, can stay local on its own.
+    engine: 'task_tree',
     model_provider: 'local',
     model_endpoint: '',
     model_name: '',
@@ -107,6 +112,9 @@ export function validateAssistantSettings(input: Record<string, unknown>): Assis
         if (!isInteger(value) || value < minimum || value > maximum) {
             throw new Error(`${name} must be an integer from ${minimum} to ${maximum}.`);
         }
+    }
+    if (!(ENGINE_NAMES as readonly unknown[]).includes(values.engine)) {
+        throw new Error(`engine must be one of: ${ENGINE_NAMES.join(', ')}.`);
     }
     validateModelProvider(values, 'model');
     validateModelProvider(values, 'background_model');

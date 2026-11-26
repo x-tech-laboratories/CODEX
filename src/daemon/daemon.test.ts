@@ -71,6 +71,28 @@ describe('HarnessDaemon', () => {
         expect((await client.call<Record<string, unknown>>('status')).run).toBeNull();
     });
 
+    it('works a request on the engine the settings choose, and names it', async () => {
+        const executeTaskTree = vi.fn(async () => 'Tree answer');
+        const runDirect = vi.fn(async () => 'Direct answer');
+        const daemon = await start({ executeTaskTree, runDirect });
+        const events = new EventLog();
+        const client = await daemon.client(events.handler);
+
+        expect((await client.call<Record<string, unknown>>('status')).engine).toEqual({
+            name: 'task_tree',
+            label: 'SmartHarness task tree',
+            features: { task_tree: true, resumable: true },
+        });
+        await client.call('run', { prompt: 'Plan a trip', settings: { engine: 'direct' } });
+        const finished = await events.waitFor('run.finished');
+
+        expect(finished.result).toBe('Direct answer');
+        expect((await events.waitFor('run.started')).engine).toBe('direct');
+        expect(executeTaskTree).not.toHaveBeenCalled();
+        await client.call('apply_settings', { settings: { engine: 'direct' } });
+        expect(((await client.call<Record<string, unknown>>('status')).engine as Record<string, unknown>).features).toEqual({ task_tree: false, resumable: false });
+    });
+
     it('broadcasts the tree and keeps it for interfaces that connect later', async () => {
         const tree = [{ id: '1', prompt: 'Draft a plan', status: 'running' }];
         const lateStatus: unknown[] = [];

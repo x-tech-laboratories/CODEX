@@ -31,6 +31,8 @@ import { runNextJob, type BackgroundStep, type Job } from '@x-tech-laboratories/
 import { titleConversations } from '@x-tech-laboratories/smartharness/titles';
 import { expandUser } from '@x-tech-laboratories/smartharness/settings';
 import { backgroundModelSource, mainModelSource } from '../assistant/models.js';
+import { ENGINES, engineFor } from '../engine/engine.js';
+import { runDirect } from '../engine/directEngine.js';
 import { assistantSettingsPath as defaultSettingsPath, saveAssistantSettings as saveSettings, validateAssistantSettings as validateSettings, type AssistantSettings as Settings } from '../assistant/settings.js';
 import { executeTaskTree, RunStopped, savedRunOptions, type ExecuteTaskTreeOptions } from '@x-tech-laboratories/smartharness/taskTree';
 import { LineReader } from '../main/daemonBridge.js';
@@ -219,6 +221,7 @@ export class ActiveRun {
 // The work the daemon hands to other modules, replaceable so tests can run without a model.
 export type DaemonDependencies = {
     executeTaskTree: (userPrompt: string, options: ExecuteTaskTreeOptions) => Promise<string>;
+    runDirect: (userPrompt: string, options: ExecuteTaskTreeOptions) => Promise<string>;
     autoSize: typeof autoSize;
     researchOneTopic: BackgroundStep;
     indexKnowledge: BackgroundStep;
@@ -237,6 +240,7 @@ const defaultImapConnector = new ImapConnector();
 
 const DEFAULT_DEPENDENCIES: DaemonDependencies = {
     executeTaskTree,
+    runDirect,
     autoSize,
     researchOneTopic,
     indexKnowledge,
@@ -248,7 +252,8 @@ const DEFAULT_DEPENDENCIES: DaemonDependencies = {
         const imap = await defaultImapConnector.poll(settings, options);
         return maildir || imap;
     },
-    handleEvents: (settings, options) => handleNextEvent(settings, options, ASSISTANT_EVENT_HANDLERS),
+    // A request left for later and a drafted reply run on the engine the settings choose.
+    handleEvents: (settings, options) => handleNextEvent(settings, options, ASSISTANT_EVENT_HANDLERS, engineFor(settings).run),
     refreshEnvironment: (settings) => refreshEnvironment(settings),
     monotonic: () => performance.now() / 1000,
 };
@@ -681,6 +686,7 @@ export class HarnessDaemon {
             settings: this.getSettings(),
             settings_path: this.settingsPath,
             run: this.run !== null ? this.run.snapshot() : null,
+            engine: this.engineStatus(),
             background: { status: this.backgroundStatus, output: this.backgroundOutput },
             suspended: this.suspended,
             unfinished_runs: this.unfinishedRuns(),
@@ -689,6 +695,12 @@ export class HarnessDaemon {
 
     getSettings(): Settings {
         return { ...this.settings };
+    }
+
+    // The engine the settings choose and what it shows, so an interface can leave out what it lacks.
+    engineStatus(): Json {
+        const engine = engineFor(this.getSettings());
+        return { name: engine.name, label: engine.label, features: engine.features };
     }
 
     applySettings(settings: Json = {}): Settings {
@@ -798,7 +810,9 @@ export class HarnessDaemon {
         this.nextRunId += 1;
         this.run = run;
         this.workerWakeup.set();
-        this.broadcast('run.started', { run_id: run.id, prompt, model: run.modelSource.label });
+        // Only the task tree saves runs, so a resumed run is always one of its own.
+        const engine = saved !== null ? ENGINES.task_tree : engineFor(settings ?? this.getSettings());
+        this.broadcast('run.started', { run_id: run.id, prompt, model: run.modelSource.label, engine: engine.name });
         this.runTask = this.executeRun(run, settings, interactive, saved);
         return { run_id: run.id };
     }
@@ -901,7 +915,8 @@ export class HarnessDaemon {
                     });
                 } else {
                     const runSettings = settings!;
-                    data.result = await this.dependencies.executeTaskTree(run.prompt, {
+                    const runner = runSettings.engine === 'direct' ? this.dependencies.runDirect : this.dependencies.executeTaskTree;
+                    data.result = await runner(run.prompt, {
                         modelPath: runSettings.model_path,
                         contextSize: runSettings.context_size,
                         gpuLayers: runSettings.gpu_layers,

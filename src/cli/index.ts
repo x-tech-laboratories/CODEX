@@ -10,6 +10,7 @@ import { installStarterAgents } from '@x-tech-laboratories/smartharness/agents';
 import { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
 import { ModelCache } from '@x-tech-laboratories/smartharness/model';
 import { mainModelSource } from '../assistant/models.js';
+import { runDirect } from '../engine/directEngine.js';
 import { expandUser, MODE_CHOICES } from '@x-tech-laboratories/smartharness/settings';
 import { assistantSettingsPath as defaultSettingsPath, loadAssistantSettings as loadSettings, validateAssistantSettings as validateSettings, type AssistantSettings as Settings } from '../assistant/settings.js';
 import { executeTaskTree, savedRunOptions, type ExecuteTaskTreeOptions } from '@x-tech-laboratories/smartharness/taskTree';
@@ -27,6 +28,8 @@ export type CliEnvironment = {
     loadSettings: (settingsPath: string) => Settings;
     installStarterAgents?: () => void;
     executeTaskTree: (userPrompt: string, options: ExecuteTaskTreeOptions) => Promise<string>;
+    // The direct engine; a test environment without one runs every request as a task tree.
+    runDirect?: (userPrompt: string, options: ExecuteTaskTreeOptions) => Promise<string>;
     connectToDaemon: (options: { onEvent: EventHandler; start: boolean }) => Promise<DaemonClient>;
     stdinIsTTY: boolean;
     stdoutIsTTY: boolean;
@@ -60,6 +63,7 @@ export function processEnvironment(): CliEnvironment {
         loadSettings,
         installStarterAgents,
         executeTaskTree,
+        runDirect,
         connectToDaemon: (options) => connectToDaemon(options),
         stdinIsTTY: Boolean(process.stdin.isTTY),
         stdoutIsTTY: Boolean(process.stdout.isTTY),
@@ -223,7 +227,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliEnviro
         if (daemonResult !== null) {
             result = daemonResult;
         } else {
-            result = await runInProcess(io, prompt, {
+            const runner = settings.engine === 'direct' && io.runDirect ? io.runDirect : io.executeTaskTree;
+            result = await runInProcess(runner, prompt, {
                 modelPath: settings.model_path,
                 contextSize: settings.context_size,
                 gpuLayers: settings.gpu_layers,
@@ -261,10 +266,10 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliEnviro
 // ============================================================================
 
 // Runs the request here with its own model cache, unloading the model afterwards so the GPU lock is let go.
-async function runInProcess(io: CliEnvironment, prompt: string, options: ExecuteTaskTreeOptions): Promise<string> {
+async function runInProcess(runner: CliEnvironment['executeTaskTree'], prompt: string, options: ExecuteTaskTreeOptions): Promise<string> {
     const modelCache = new ModelCache();
     try {
-        return await io.executeTaskTree(prompt, { ...options, modelCache });
+        return await runner(prompt, { ...options, modelCache });
     } finally {
         await modelCache.unload();
     }
@@ -291,7 +296,7 @@ async function resume(settings: Settings, io: CliEnvironment): Promise<number> {
         const daemonResult = await runWithDaemon(String(saved.prompt), settings, interactive, io, Number(saved.id));
         result =
             daemonResult ??
-            (await runInProcess(io, String(saved.prompt), {
+            (await runInProcess(io.executeTaskTree, String(saved.prompt), {
                 ...savedRunOptions(saved.options),
                 showThinking: settings.show_thinking,
                 clarificationCallback: interactive ? (question) => askClarification(io, question) : null,

@@ -17,7 +17,9 @@ installation and configuration.
 By default models run through `node-llama-cpp` from a local GGUF file and
 nothing leaves the computer. A hosted model, such as Claude or a GPT model, is
 something you choose, for requests, for background work, or both; see
-[Hosted models](#hosted-models).
+[Hosted models](#hosted-models). The engine that works a request is a choice
+too: SmartHarness's task tree, or a direct tool-calling loop for a model able
+enough not to need one; see [Engines](#engines).
 
 See [docs/0-goal.md](docs/0-goal.md) for what the assistant is for.
 
@@ -269,6 +271,7 @@ another. Unknown keys are rejected.
 	"mail_imap_accounts": [],
 	"mail_draft_replies": true,
 	"mail_rule_proposal_threshold": 3,
+	"engine": "task_tree",
 	"model_provider": "local",
 	"model_endpoint": "",
 	"model_name": "",
@@ -312,6 +315,25 @@ context that fits in memory, up to 32768 tokens, then gives a quarter of it to
 `max_tokens` and an eighth to `background_max_tokens`. With a separate
 background model, it sizes that model on its own device as well and sets
 `background_context_size` and `background_max_tokens` from it.
+
+### Engines
+
+`engine` picks how a request is worked. `task_tree`, the default, is
+SmartHarness's: the request is split into narrow tasks, each decided, written
+and checked, which is what makes a small local model capable, and an
+unfinished run can be resumed. `direct` hands the whole request to one model
+in a tool-calling loop: it gets the same tools and safety rules (web search
+and fetch, reading files, and writing files, running tests and MCP tools only
+as the settings allow, approved first when `confirm_actions` is on), plus a
+`recall` tool that searches the knowledge store. It suits a hosted model or a
+large local one, takes fewer calls, and keeps no task tree, so the window
+shows the run as a single task and it cannot be resumed. A direct run stops
+after `max_task_nodes` rounds of tool calls.
+
+The engine also works a request left for later and a drafted mail reply.
+Background research, titling and learning stay SmartHarness's whichever engine
+runs. The `status` method reports the engine and its features, and
+`run.started` names it.
 
 ### Hosted models
 
@@ -419,6 +441,8 @@ request starts, and it is unloaded after five minutes without background work.
 | `src/assistant/eventHandlers.ts`                     | The event handlers the daemon runs: the harness's own plus mail                                             |
 | `src/assistant/identity.ts`                          | CODEX's names for the harness's folders and instructions file, set when imported                    |
 | `src/assistant/settings.ts`                          | The assistant's settings: the harness's plus mail and model providers, and where the files live            |
+| `src/engine/engine.ts`                               | The engines a request can run on, chosen by the `engine` setting                                            |
+| `src/engine/directEngine.ts`, `share/assistant/prompts/direct.txt` | The direct engine: one model working the request in a tool-calling loop                     |
 | `src/assistant/models.ts`                            | Which model requests and background work run on, local or hosted, as SmartHarness model sources           |
 | `src/assistant/openaiModel.ts`, `src/assistant/anthropicModel.ts` | Hosted models behind an OpenAI-compatible endpoint and Anthropic's Messages API                |
 | `src/assistant/secretCommand.ts`                     | Reading a password or API key from a command, so settings never hold it                                    |
