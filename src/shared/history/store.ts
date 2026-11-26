@@ -119,6 +119,11 @@ function kind_of(kind: string): { item: ItemKind; history: History<Snapshot> } {
   return { item, history };
 }
 
+// The versions of one kind of item, such as "context" or "entity", for other features to read.
+export function history_of(kind: string): History<Snapshot> {
+  return kind_of(kind).history;
+}
+
 // ── Keeping ──────────────────────────────────────────────────────────────────
 
 export const history_tables = [...histories.values()].map((history) => history.synced_table);

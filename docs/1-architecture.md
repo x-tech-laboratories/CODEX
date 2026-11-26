@@ -203,6 +203,25 @@ and opens the pane on it, and each linked item shows its count of links, which o
 Entities are documents of the search index too (`entity:<id>`, their name, kind and other names), placed in the
 contexts they are linked to, directly or through an item, so `search_index` finds them with their sources screened.
 
+## Items for other apps
+
+`src/shared/items/` answers the Application Standard's four item calls through X-Libs `item_calls`, scheme `codex`, for
+CODEX's own things alone: `context`, `conversation` and `entity`, each id the kind and CODEX's id (`context:<id>`),
+since a conversation kept from before conversations were items has its context's id. Search matches every word of the
+query in a context's name and notes, a conversation's title (its first message clipped, until named) and the notes on
+its memberships, and an entity's name and other names, titles that hold the query first. `get_items` reads the rows as
+they are now. `list_item_changes` reads contexts and entities from their History versions (`history_item_changes`), a
+context's version changing with its memberships, and conversations, which History does not keep, from `item_marks`: a
+table of this device's alone, never synced, holding what other apps were last told of each conversation (title,
+snippet, detail) and when that changed, brought up to date whenever these calls read conversations; a new mark is
+dated by the conversation's own record, a changed or deleted one by when it was first noticed, always later than any
+time given before, so a caller's moment misses nothing. A conversation's item never carries a message: its snippet
+names the contexts holding it, its detail when it was last used and how many messages it has. The calls are in
+`context_api`, so REST, OpenAPI, the server's MCP and the desktop's local MCP serve them as reads; the server's
+sign-in is given `is_read_only`, so a read-only token makes them (and the other reads) over REST as over MCP. They are
+not in the policy's `offered_api`, so no engine is offered them. `route_of_link` opens `codex://entity/<id>` on the
+Graph page at that entity.
+
 ## The Thunderbird add-on
 
 `thunderbird/` is a WebExtension built by `vite.thunderbird.config.ts`. Its popup reads the email shown, lists the
