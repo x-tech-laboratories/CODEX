@@ -454,7 +454,10 @@ export function poke_index(delay_ms = 1500): void {
     set_meta(current.index(), "last_error_detail", "");
   }
   clearTimeout(poke_timer);
-  poke_timer = setTimeout(() => void index_now({ embed: false, most_texts: texts_after_write }).catch((error: unknown) => console.warn("index:", error)), delay_ms);
+  // The index may have been let go of meanwhile, as a test or a stopping host does.
+  poke_timer = setTimeout(() => {
+    if (current) void index_now({ embed: false, most_texts: texts_after_write }).catch((error: unknown) => console.warn("index:", error));
+  }, delay_ms);
 }
 
 // Indexes the store at start, embedding nothing; the maintenance jobs keep it up from then on, catching changes that
