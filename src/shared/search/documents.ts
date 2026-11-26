@@ -11,6 +11,7 @@ import { context_items, contexts, items } from "../contexts/schema.ts";
 import { conversation_messages } from "../conversations/schema.ts";
 import { general_conversation } from "../conversations/model.ts";
 import { drizzle_of } from "../feature.ts";
+import { parse_sources } from "../privacy/sources.ts";
 import type { HitKind } from "./model.ts";
 import { text_hash } from "./text.ts";
 
@@ -28,6 +29,9 @@ export interface SourceDocument {
   // What the store says of it: an item's snippet and notes, a context's notes, a message's text.
   body: string;
   context_ids: string[];
+  // The sources whose content it carries: an item's collector, or what an answer's run had read; none for what the
+  // user wrote.
+  sources: string[];
   // Changes when what the item's app said of it changes, which is when its text is read again.
   source_hash: string;
 }
@@ -37,7 +41,7 @@ export function read_documents(database: SqlDatabase): SourceDocument[] {
   const db = drizzle_of(database);
   const documents: SourceDocument[] = [];
   for (const context of db.select().from(contexts).all()) {
-    documents.push({ key: `context:${context.id}`, kind: "context", ref_id: context.id, collector: "", source_id: "", title: context.name, body: context.notes, context_ids: [context.id], source_hash: "" });
+    documents.push({ key: `context:${context.id}`, kind: "context", ref_id: context.id, collector: "", source_id: "", title: context.name, body: context.notes, context_ids: [context.id], sources: [], source_hash: "" });
   }
   const memberships = db.select({ item_id: context_items.item_id, context_id: context_items.context_id, note: context_items.note }).from(context_items).all();
   const held = new Map<string, { context_ids: string[]; notes: string[] }>();
@@ -59,6 +63,7 @@ export function read_documents(database: SqlDatabase): SourceDocument[] {
       title: item.title,
       body: [item.snippet, ...entry.notes].filter((part) => part.trim()).join("\n"),
       context_ids: entry.context_ids.sort(),
+      sources: [item.collector],
       source_hash: text_hash(JSON.stringify([item.collector, item.title, item.snippet, item.uri, item.status, item.detail])),
     });
   }
@@ -66,7 +71,7 @@ export function read_documents(database: SqlDatabase): SourceDocument[] {
   for (const message of messages) {
     if (!message.text.trim()) continue;
     const context_ids = message.conversation_id === general_conversation ? [] : [message.conversation_id];
-    documents.push({ key: `message:${message.id}`, kind: "message", ref_id: message.id, collector: "", source_id: "", title: message.role === "user" ? "You" : "Assistant", body: message.text, context_ids, source_hash: "" });
+    documents.push({ key: `message:${message.id}`, kind: "message", ref_id: message.id, collector: "", source_id: "", title: message.role === "user" ? "You" : "Assistant", body: message.text, context_ids, sources: message.role === "user" ? [] : parse_sources(message.sources), source_hash: "" });
   }
   return documents;
 }

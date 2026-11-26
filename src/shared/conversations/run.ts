@@ -17,16 +17,16 @@ import { drizzle_of, new_id } from "../feature.ts";
 import { is_read_only } from "../page_api.ts";
 import { brings_outside_content, decide, is_offered, level_of, offered_api, type Presence } from "../policy/policy.ts";
 import { add_proposal } from "../policy/proposals.ts";
-import { summarize_call } from "../policy/summaries.ts";
+import { sources_named, summarize_call } from "../policy/summaries.ts";
 import { screen_result } from "../privacy/results.ts";
-import { counts_of, local_screen, open_screen, taints, withheld_line, type Screen } from "../privacy/screen.ts";
+import { counts_of, local_screen, may_send, note_source, open_screen, taints, withheld_line, type Screen } from "../privacy/screen.ts";
 import { record_hosted_send } from "../privacy/store.ts";
 import { settings_feature } from "../settings.ts";
 import { reply_ended, reply_started } from "./activity.ts";
 import { assistant_host, type AssistantHost } from "./host.ts";
 import { screened_instructions } from "./instructions.ts";
 import { add_message, list_messages } from "./messages.ts";
-import { conversation_id_of, general_conversation, type AssistantStatus, type EngineSummary, type RunState, type ToolCallRecord } from "./model.ts";
+import { conversation_id_of, general_conversation, type ConversationMessage, type AssistantStatus, type EngineSummary, type RunState, type ToolCallRecord } from "./model.ts";
 
 // ── Engines ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +67,11 @@ export interface ToolContext {
   on_decided?: (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id">) => void;
 }
 
+// The sources whose content the run has read so far, by collector id, for what it keeps.
+export function read_sources(screen: Screen): string[] {
+  return [...screen.included.keys()].sort();
+}
+
 // CODEX's offered calls as tools, each call through the policy: reads run, changes run, wait or are refused by level.
 export function engine_tools(context: ToolContext): EngineTools {
   const definitions = Object.entries(offered_api).map(([name, spec]) => ({ name, description: spec.description, parameters: input_schema(spec) }));
@@ -103,7 +108,8 @@ export function engine_tools(context: ToolContext): EngineTools {
         const decision = decide(level_of(database, name), context.presence, context.has_outside_content);
         if (decision.action === "refuse") return decided(name, { outcome: "refused" }, { result: `The user does not permit ${name}, so it was not run.`, is_error: true });
         if (decision.action === "propose") {
-          const proposal = add_proposal(database, { conversation_id: context.conversation_id, method: name, arguments: given, summary: summarize_call(database, name, given), reason: decision.reason });
+          const sources = [...new Set([...read_sources(screen), ...sources_named(database, given)])].sort();
+          const proposal = add_proposal(database, { conversation_id: context.conversation_id, method: name, arguments: given, summary: summarize_call(database, name, given), reason: decision.reason, sources });
           const why = decision.reason === "outside content" ? " because this conversation has read text from other apps" : "";
           return decided(
             name,
@@ -156,12 +162,30 @@ export function stop_all_runs(): void {
   for (const run of runs.values()) run.abort.abort();
 }
 
+// An answer or event as the engine may read it: whole when every source its run had read may reach this engine, or
+// one line saying it was withheld and why; either way noted on the run's screen for its log. The user's own messages
+// are theirs and always sent.
+function screened_text(screen: Screen, message: ConversationMessage): string {
+  if (message.role === "user") return message.text;
+  const key = `message:${message.id}`;
+  const held_back = message.sources.filter((source) => !may_send(screen, source));
+  if (held_back.length === 0) {
+    for (const source of message.sources) note_source(screen.included, source, key);
+    return message.text;
+  }
+  for (const source of held_back) note_source(screen.withheld, source, key);
+  const what = message.role === "event" ? "An earlier event" : "An earlier answer";
+  const from = held_back.map((source) => screen.label_of(source)).join(", ");
+  return `[${what} is withheld from this hosted engine: it drew on ${from}, which the user has not marked “May be sent to a hosted engine”.]`;
+}
+
 // The conversation so far as the engine reads it: the user's messages and the answers, with what became of its
 // proposals told at the start of the user's next message, and without failures.
-export function turns_of(database: SqlDatabase, conversation_id: string): EngineTurn[] {
+export function turns_of(database: SqlDatabase, conversation_id: string, screen: Screen = local_screen()): EngineTurn[] {
   const turns: EngineTurn[] = [];
   let events: string[] = [];
-  for (const message of list_messages(database, conversation_id)) {
+  for (const raw of list_messages(database, conversation_id)) {
+    const message = raw.text.trim() ? { ...raw, text: screened_text(screen, raw) } : raw;
     if (message.role === "event") events.push(message.text);
     else if (message.text.trim()) {
       const text = message.role === "user" && events.length > 0 ? `(Since your last answer: ${events.join(" ")})\n\n${message.text}` : message.text;
@@ -185,7 +209,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   const screen = await open_screen(database, is_hosted(found.running));
   const instructions = screened_instructions(database, context_id || null, new Date().toISOString().slice(0, 10), screen);
   if (runs.has(conversation_id)) throw new Error("A reply is still being written here; stop it or wait for it first.");
-  add_message(database, { conversation_id, role: "user", text: text.trim() });
+  add_message(database, { conversation_id, role: "user", text: text.trim(), sources: [] });
   const state: RunState = { run_id: new_id(), engine: found.engine.label, model: found.engine.model, started_at: new Date().toISOString(), text: "", tool_calls: [] };
   const run: Run = { conversation_id, screen, abort: new AbortController(), state, done: Promise.resolve() };
   runs.set(conversation_id, run);
@@ -199,7 +223,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
     screen,
     on_decided: (name, record) => note_decision(run, name, record),
   });
-  const request = { instructions: instructions.value, conversation: turns_of(database, conversation_id), tools };
+  const request = { instructions: instructions.value, conversation: turns_of(database, conversation_id, screen), tools };
   run.done = drive(run, found.running.run(request, run.abort.signal), host);
   host.emit({ conversation_id, run_id: state.run_id, type: "started", engine: state.engine, model: state.model });
   return { run_id: state.run_id };
@@ -276,6 +300,7 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
       error,
       input_tokens,
       output_tokens,
+      sources: read_sources(run.screen),
     });
   } finally {
     host.emit({ ...base, type: "finished", error });

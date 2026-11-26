@@ -9,6 +9,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { open_plugin_host } from "../collectors/host.ts";
 import { settings_feature } from "../settings.ts";
 import { mark_names, unmarked, type SourceCount, type SourceMark } from "./model.ts";
+import { unrecorded_label, unrecorded_source } from "./sources.ts";
 
 // ── Marks ────────────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ function make_screen(is_hosted: boolean, marks: Map<string, SourceMark>, labels:
   return {
     is_hosted,
     mark_of: (collector) => marks.get(collector) ?? unmarked,
-    label_of: (collector) => labels.get(collector) ?? collector,
+    label_of: (collector) => (collector === unrecorded_source ? unrecorded_label : (labels.get(collector) ?? collector)),
     collectors: [...labels.keys()],
     included: new Map(),
     withheld: new Map(),
@@ -80,7 +81,7 @@ export interface Screened<Value> {
   withheld: Map<string, number>;
 }
 
-function note(into: Map<string, Set<string>>, collector: string, key: string): void {
+export function note_source(into: Map<string, Set<string>>, collector: string, key: string): void {
   const keys = into.get(collector) ?? new Set<string>();
   keys.add(key);
   into.set(collector, keys);
@@ -96,10 +97,33 @@ export function screen_entries<Entry>(screen: Screen, entries: Entry[], collecto
     if (may_send(screen, collector)) {
       kept.push(entry);
       sources.add(collector);
-      note(screen.included, collector, key_of(entry));
+      note_source(screen.included, collector, key_of(entry));
     } else {
       withheld.set(collector, (withheld.get(collector) ?? 0) + 1);
-      note(screen.withheld, collector, key_of(entry));
+      note_source(screen.withheld, collector, key_of(entry));
+    }
+  }
+  return { value: kept, sources, withheld };
+}
+
+// Keeps the entries the engine may be sent when each carries several sources, or none: one is kept only when every
+// source it carries may be sent, and one withheld is counted once, under the first source that may not.
+export function screen_sourced<Entry>(screen: Screen, entries: Entry[], sources_of: (entry: Entry) => string[], key_of: (entry: Entry) => string): Screened<Entry[]> {
+  const kept: Entry[] = [];
+  const sources = new Set<string>();
+  const withheld = new Map<string, number>();
+  for (const entry of entries) {
+    const carried = sources_of(entry);
+    const blocked = carried.find((source) => !may_send(screen, source));
+    if (blocked === undefined) {
+      kept.push(entry);
+      for (const source of carried) {
+        sources.add(source);
+        note_source(screen.included, source, key_of(entry));
+      }
+    } else {
+      withheld.set(blocked, (withheld.get(blocked) ?? 0) + 1);
+      note_source(screen.withheld, blocked, key_of(entry));
     }
   }
   return { value: kept, sources, withheld };
@@ -112,7 +136,7 @@ export function taints(screen: Screen, sources: Iterable<string>): boolean {
 
 // One line telling the engine how many items were held back and why, so it can tell the user; empty when none were.
 export function withheld_line(screen: Screen, withheld: Map<string, number>): string {
-  const counts = [...withheld].filter(([, count]) => count > 0);
+  const counts = [...withheld].filter(([, count]) => count > 0).sort(([first], [second]) => screen.label_of(first).localeCompare(screen.label_of(second)));
   if (counts.length === 0) return "";
   const total = counts.reduce((sum, [, count]) => sum + count, 0);
   const each = counts.map(([collector, count]) => `${count} from ${screen.label_of(collector)}`).join(", ");

@@ -20,6 +20,8 @@ export interface Fixture {
   requests: EngineRequest[];
   announced: () => number;
   set_script: (script: Script) => void;
+  // Makes the fake engine hosted or local from the next reply on.
+  set_hosted: (hosted: boolean) => void;
 }
 
 // A scripted engine plugin, provided as "fake", answering with whatever the test's script yields.
@@ -30,6 +32,7 @@ export function start_fixture(options: { choose_engine?: boolean; hosted?: boole
   const events: ConversationEvent[] = [];
   const requests: EngineRequest[] = [];
   let announcements = 0;
+  let hosted = options.hosted === true;
   let script: Script = async function* () {
     yield { type: "done", text: "Hello." };
   };
@@ -41,7 +44,7 @@ export function start_fixture(options: { choose_engine?: boolean; hosted?: boole
       context.provide("engine", "fake", {
         label: "Fake",
         model: () => "fake-model",
-        is_local: () => options.hosted !== true,
+        is_local: () => !hosted,
         run: (request, signal) => {
           requests.push(request);
           return script(request, signal);
@@ -56,5 +59,5 @@ export function start_fixture(options: { choose_engine?: boolean; hosted?: boole
   start_assistant({ database: () => database, announce, emit: (event) => (events.push(event), options.on_event?.(event)) });
   const calls = bind_methods(() => database, announce);
   if (options.choose_engine !== false) calls.set_setting("engine", "fake");
-  return { database, calls, events, requests, announced: () => announcements, set_script: (next) => (script = next) };
+  return { database, calls, events, requests, announced: () => announcements, set_script: (next) => (script = next), set_hosted: (next) => (hosted = next) };
 }

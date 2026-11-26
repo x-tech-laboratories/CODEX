@@ -58,6 +58,20 @@ lower a run (they are still fenced as data); items from an unmarked source do, w
 in the open context's instructions; context names and notes the user wrote in CODEX never do. `set_source_mark`,
 like `set_action_level`, answers only the user at the page.
 
+These settings are the user's alone (built 2026-11-26): the action policy, the source marks, which engine answers and
+which embedder the index uses, how long the hosted log is kept, and every plugin's on or off and settings (which hold
+each engine's and embedder's endpoint and key command). Only the user at CODEX's own page, a signed-in browser or the
+desktop window, can write them, through `set_setting` or the calls above; a token over the API and every MCP client are
+refused, and no engine is offered any of these calls (a test holds the engine's tools to a written allow-list). They
+read as before, keys hidden, and sync from the user's own devices as before.
+
+Withheld content has no side door (built 2026-11-26): every stored answer, event and proposal records which sources'
+content its run had read, as collector ids, and a proposal also the sources its summary names. A hosted engine is not
+replayed an earlier answer or event, nor shown a message found by search, that carries a source not marked for it; it
+gets one line saying what was left out and why, and the log counts it. The user's own typed messages are always sent.
+Answers and events kept before 2026-11-26 recorded nothing, so they count as carrying unknown sources and are withheld
+from hosted engines and hosted embedders.
+
 - **Only the user approves or raises a level.** `resolve_proposal` and `set_action_level` answer only the user at the page (a signed-in browser, or the desktop window); a token over the API is refused, and MCP and engines are never offered them.
 - **New functions start at proposal only.**
 - **Every applied change is recorded** with what made it (user, rule or engine), the evidence, and an undo.

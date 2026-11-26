@@ -78,4 +78,15 @@ export function is_page_only(method: string): boolean {
   return page_only_calls.has(method);
 }
 
+// Settings that keep the user in charge, written only by the user at the page: the action policy, the source marks,
+// which engine answers and which embedder the index uses, how long the hosted log is kept, and every plugin's on or
+// off and settings, which hold each engine's and embedder's endpoint and key command. They are read like any other.
+export const user_only_settings: ReadonlySet<string> = new Set(["action_policy", "source_marks", "engine", "embedder", "hosted_log.keep_days", "plugins"]);
+
+// Whether this call with these arguments, in order, is the user's alone: a page-only call, or a write to a setting
+// only the user may change.
+export function is_page_only_call(method: string, args: readonly unknown[]): boolean {
+  return is_page_only(method) || (method === "set_setting" && user_only_settings.has(String(args[0])));
+}
+
 export const page_only_refusal = "Only you can do this, from CODEX's own page; a token or an MCP client cannot.";

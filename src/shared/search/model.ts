@@ -25,6 +25,9 @@ export interface SearchHit {
   // Where it is: the contexts holding an item, the context a context sits in, or the context whose conversation holds
   // a message (none for a top-level context or the general conversation).
   where: HitPlace[];
+  // The sources whose content it carries, by collector id: an item's collector, or what an answer's run had read ("*"
+  // when not recorded); none for what the user wrote.
+  sources: string[];
   // How it was found: by its words, by its meaning, or both.
   matched_by: ("words" | "meaning")[];
   score: number;

@@ -70,7 +70,45 @@ describe("the levels", () => {
   });
 });
 
+// Every call an engine may be offered, written out, so a new call becomes a tool only by being added here.
+const allowed_tools = [
+  "add_context",
+  "add_contexts_from_feed_group",
+  "add_contexts_from_feeds",
+  "add_item",
+  "add_manual_item",
+  "follow_feed",
+  "get_context",
+  "get_item",
+  "list_collector_feeds",
+  "list_collectors",
+  "list_contexts",
+  "list_feed_group_news",
+  "move_context",
+  "refresh_items",
+  "remove_context",
+  "remove_item",
+  "rename_context",
+  "search_collector",
+  "search_index",
+  "search_kept_items",
+  "set_context_archived",
+  "set_context_notes",
+  "set_item_note",
+  "stop_feed_group_news",
+  "unfollow_feed",
+];
+
 describe("a run's tools", () => {
+  it("are exactly the allowed calls, and never settings, plugins, the policy, marks or anything only the page may call", () => {
+    const fixture = start_fixture();
+    const { tools } = tools_of(fixture);
+    expect(tools.definitions.map((tool) => tool.name).sort()).toEqual(allowed_tools);
+    for (const never of ["set_setting", "get_settings", "set_action_level", "resolve_proposal", "set_source_mark", "rebuild_index", "import_contexts", "send_message", "clear_conversation"]) {
+      expect(allowed_tools).not.toContain(never);
+    }
+  });
+
   it("run reads, fencing what other apps wrote, and refuse calls that are not offered or arguments that do not fit", async () => {
     const fixture = start_fixture();
     const kitchen = fixture.calls.add_context("Kitchen");

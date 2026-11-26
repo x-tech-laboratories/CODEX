@@ -28,7 +28,7 @@ import { read_desktop_settings, type DaemonMethods, type DesktopSettings } from 
 import { mcp_instructions } from "../shared/mcp.ts";
 import { stop_all_runs } from "../shared/conversations/run.ts";
 import { conversation_event, page_only_refusal, type DeviceMethods } from "../shared/page_api.ts";
-import { bind_methods, is_page_only, is_read_only, needs_upgrade, open_store, program_api, start_assistant, sync_engine } from "../shared/store.ts";
+import { bind_methods, is_page_only_call, is_read_only, needs_upgrade, open_store, program_api, start_assistant, sync_engine } from "../shared/store.ts";
 import { register_context_calls } from "../server/calls.ts";
 import { load_collectors } from "../server/collectors/index.ts";
 import { keep_refreshing } from "../server/refreshing.ts";
@@ -151,7 +151,7 @@ const local_mcp = create_local_mcp({
   settings_file: join(profile, "mcp.json"),
   default_port: 3922,
   call: (method, args) => {
-    if (is_page_only(method)) throw new Error(page_only_refusal);
+    if (is_page_only_call(method, args)) throw new Error(page_only_refusal);
     return context_bridge.dispatch(bind_methods(() => database, announce_change), method, args);
   },
 });

@@ -39,7 +39,8 @@ export const settings_feature = define_feature({
       params: [],
     },
     set_setting: {
-      description: "Sets one setting by key to any JSON value.",
+      description:
+        "Sets one setting by key to any JSON value. The settings that keep the user in charge (action_policy, source_marks, engine, embedder, hosted_log.keep_days and plugins) can be changed only by the user at CODEX's own page; tokens and MCP clients are refused.",
       params: [{ name: "key", schema: text("The setting's key, such as refresh_minutes.") }, { name: "value", schema: { description: "The new value." } }],
     },
   },
