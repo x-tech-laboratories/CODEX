@@ -328,3 +328,45 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Graph ────────────────────────────────────────────────────────────────── */
+
+/* The drawing with what is chosen beside it, one above the other on a narrow window. */
+.graph-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  gap: var(--space-5);
+  align-items: start;
+  margin-block: var(--space-4);
+}
+
+@media (max-width: 900px) {
+  .graph-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.graph-main,
+.graph-side,
+.graph-detail,
+.graph-search,
+.graph-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.graph-search {
+  margin-block: var(--space-4);
+}
+
+.graph-main .tree {
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.graph-detail h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

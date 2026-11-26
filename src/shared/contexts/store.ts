@@ -117,7 +117,7 @@ function view_of(database: SqlDatabase, context_id: string): { view: ContextView
   } catch {
     card_places = [];
   }
-  return { view: row?.view === "cards" || row?.view === "grouped" ? row.view : "list", card_places };
+  return { view: row?.view === "cards" || row?.view === "grouped" || row?.view === "graph" ? row.view : "list", card_places };
 }
 
 function save_view(database: SqlDatabase, context_id: string, values: { view?: ContextView; card_places?: string }): void {
@@ -661,7 +661,7 @@ export const contexts_feature = define_feature({
     move_item,
     refresh_items,
     set_context_view: (database: SqlDatabase, id: string, view: ContextView): void => {
-      if (view !== "list" && view !== "cards" && view !== "grouped") throw new Error('A context shows its items as "list", "cards" or "grouped".');
+      if (view !== "list" && view !== "cards" && view !== "grouped" && view !== "graph") throw new Error('A context shows its items as "list", "cards", "grouped" or "graph".');
       save_view(database, id, { view });
     },
     set_card_places: (database: SqlDatabase, id: string, places: CardPlace[]): void => save_view(database, id, { card_places: JSON.stringify(checked_places(places)) }),
@@ -702,10 +702,10 @@ export const contexts_feature = define_feature({
     },
     set_context_view: {
       description:
-        "Shows a context's items as a list grouped by kind, as a card per item, or grouped: a card per kind, such as one holding every task, each listing its items. Cards sit in a grid and can be moved and resized.",
+        "Shows a context's items as a list grouped by kind, as a card per item, grouped: a card per kind, such as one holding every task, each listing its items, or as the graph of the context, its items, their entities and links. Cards sit in a grid and can be moved and resized.",
       params: [
         { name: "id", schema: id_of("context") },
-        { name: "view", schema: { type: "string", enum: ["list", "cards", "grouped"], description: "list, cards or grouped." } },
+        { name: "view", schema: { type: "string", enum: ["list", "cards", "grouped", "graph"], description: "list, cards, grouped or graph." } },
       ],
     },
     set_card_places: {

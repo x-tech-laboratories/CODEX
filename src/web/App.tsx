@@ -18,6 +18,7 @@ import { open_conversation, wanted_watch } from "./assistant/selection.ts";
 import { ContextTree } from "./contexts/ContextTree.tsx";
 import { ContextView } from "./contexts/ContextView.tsx";
 import { HomeView } from "./contexts/HomeView.tsx";
+import { GraphPage } from "./graph/GraphPage.tsx";
 import { HistoryView } from "./history/HistoryView.tsx";
 import { SettingsView } from "./settings/SettingsView.tsx";
 import { sidebar_views, SidebarFoot } from "./Sidebar.tsx";
@@ -65,10 +66,10 @@ function SignedInApp() {
 function Pages({ me, on_sign_out }: { me: Me | null; on_sign_out?: () => void }) {
   const route = use_route();
   const [named_section = "overview", ...rest] = route.parts;
-  const is_own = named_section === "settings" || named_section === "history" || named_section === "context" || (me !== null && own_sections.includes(named_section));
+  const is_own = named_section === "settings" || named_section === "history" || named_section === "graph" || named_section === "context" || (me !== null && own_sections.includes(named_section));
   const section = is_own ? named_section : "overview";
   const context_id = section === "context" ? (rest[0] ?? null) : null;
-  const own_labels: Record<string, string> = { settings: "Settings", history: "History", account: "Your account", users: "Users", context: "Context" };
+  const own_labels: Record<string, string> = { settings: "Settings", history: "History", graph: "Graph", account: "Your account", users: "Users", context: "Context" };
   const label = own_labels[section] ?? "Contexts";
   const view_key = route.parts.join("/");
   const is_admin = me !== null && me.role === me.roles.at(-1);
@@ -102,6 +103,7 @@ function Pages({ me, on_sign_out }: { me: Me | null; on_sign_out?: () => void })
     if (me && section === "account") return <AccountView client={accounts} />;
     if (me && section === "users") return <UsersView client={accounts} me={me} />;
     if (section === "history") return <HistoryView />;
+    if (section === "graph") return <GraphPage focus={rest[0] ? decodeURIComponent(rest[0]) : null} />;
     return section === "settings" ? <SettingsView /> : <HomeView />;
   };
 

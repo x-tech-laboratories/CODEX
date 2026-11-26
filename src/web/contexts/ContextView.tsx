@@ -3,7 +3,7 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Badge, Chip, Chips } from "@x-tech-laboratories/x-libs/web/react/badges";
 import { Dialog, open_dialog } from "@x-tech-laboratories/x-libs/web/react/dialog";
 import { AddIcon, ExternalLinkIcon, HistoryIcon, Icon, MoreIcon, RefreshIcon } from "@x-tech-laboratories/x-libs/web/react/icons";
@@ -21,6 +21,8 @@ import type { CardPlace, ContextDetail, ContextItem, ContextSummary, ContextView
 import { conversation_collector, conversation_route } from "../../shared/conversations/model.ts";
 import { open_conversation } from "../assistant/selection.ts";
 import { attempt, calls, succeeds, use_data } from "../api.ts";
+import { GraphPanel } from "../graph/GraphPanel.tsx";
+import { graph_href } from "../graph/GraphPage.tsx";
 import { open_item_history } from "../history/HistoryView.tsx";
 import { context_href, context_menu } from "./actions.tsx";
 import { add_item_dialog } from "./AddItemDialog.tsx";
@@ -150,6 +152,20 @@ function ItemTitle({ context_id, item }: { context_id: string; item: ContextItem
   );
 }
 
+// How many links each item of the open context has, by node key.
+const LinkCounts = createContext<Record<string, number>>({});
+
+// A small count of an item's links, opening the graph on it.
+function LinkCount({ item }: { item: ContextItem }) {
+  const count = useContext(LinkCounts)[`item:${item.id}`] ?? 0;
+  if (count === 0) return null;
+  return (
+    <a className="muted small" href={graph_href(`item:${item.id}`)} title="Open the graph on it">
+      {count} {count === 1 ? "link" : "links"}
+    </a>
+  );
+}
+
 // What a row and a card both show of an item: its title opening it, its state, a line of it, the note and where else it is.
 function ItemText({ context_id, item }: { context_id: string; item: ContextItem }) {
   return (
@@ -157,6 +173,7 @@ function ItemText({ context_id, item }: { context_id: string; item: ContextItem 
       <div className="item-title">
         <ItemTitle context_id={context_id} item={item} />
         {status_badge(item.status)}
+        <LinkCount item={item} />
       </div>
       {item.snippet && <span className="muted item-snippet">{item.snippet}</span>}
       {is_conversation(item) && item.detail.last_used_at && (
@@ -350,6 +367,12 @@ function GroupNews({ context }: { context: ContextDetail }) {
   );
 }
 
+// Starts a conversation asking the assistant to propose links, and opens the pane on it.
+async function suggest_links(context_id: string): Promise<void> {
+  const started = await attempt(() => calls().suggest_links(context_id));
+  if (started) open_conversation(started.conversation_id, [context_id], context_id);
+}
+
 async function refresh(context_id: string): Promise<void> {
   const report = await attempt(() => calls().refresh_items(context_id));
   if (!report) return;
@@ -359,6 +382,7 @@ async function refresh(context_id: string): Promise<void> {
 }
 
 function Page({ context, all }: { context: ContextDetail; all: ContextSummary[] }) {
+  const counts = use_data((api) => api.list_link_counts(context.id), [context.id]);
   const summary = all.find((each) => each.id === context.id) ?? { ...context };
   const go_home = () => (window.location.hash = "/overview");
   return (
@@ -374,6 +398,7 @@ function Page({ context, all }: { context: ContextDetail; all: ContextSummary[] 
                 { value: "list", label: "List" },
                 { value: "cards", label: "Cards" },
                 { value: "grouped", label: "Grouped" },
+                { value: "graph", label: "Graph" },
               ]}
               value={context.view}
               on_change={(view) => void succeeds(() => calls().set_context_view(context.id, view))}
@@ -383,6 +408,9 @@ function Page({ context, all }: { context: ContextDetail; all: ContextSummary[] 
             </button>
             <button type="button" onClick={() => follow_dialog(context.id, context.name, context.feeds)} title="Gather what a tag or project in another app holds">
               Follow…
+            </button>
+            <button type="button" onClick={() => void suggest_links(context.id)} title="Ask the assistant to read these items and propose people, topics and links">
+              Suggest links
             </button>
             <button type="button" onClick={() => void refresh(context.id)} title="Ask each app what became of these items">
               <Icon icon={RefreshIcon} /> Refresh
@@ -419,7 +447,9 @@ function Page({ context, all }: { context: ContextDetail; all: ContextSummary[] 
       <Section title="Notes" class_name="context-notes">
         <Notes key={context.id} context={context} />
       </Section>
-      {context.items.length === 0 && <Empty title="Nothing here yet" hint="Add tasks, notes, files, emails and links from the apps that keep them, or start a conversation in the Assistant pane." />}
+      <LinkCounts.Provider value={counts.data ?? {}}>
+      {context.view === "graph" && <GraphPanel key={context.id} context_id={context.id} label={`Graph of ${context.name}`} />}
+      {context.view !== "graph" && context.items.length === 0 && <Empty title="Nothing here yet" hint="Add tasks, notes, files, emails and links from the apps that keep them, or start a conversation in the Assistant pane." />}
       {context.view === "cards" && context.items.length > 0 && <ItemCards context={context} />}
       {context.view === "grouped" && context.items.length > 0 && <KindCards context={context} />}
       {context.view === "list" && group_by_kind(context.items).map(([kind, items]) => (
@@ -431,6 +461,7 @@ function Page({ context, all }: { context: ContextDetail; all: ContextSummary[] 
           </ul>
         </Section>
       ))}
+      </LinkCounts.Provider>
     </>
   );
 }

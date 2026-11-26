@@ -28,8 +28,8 @@ export interface SeededFrom {
   label: string;
 }
 
-// A list grouped by kind, a card per item, or a card per kind holding its items.
-export type ContextView = "list" | "cards" | "grouped";
+// A list grouped by kind, a card per item, a card per kind holding its items, or the graph of the context.
+export type ContextView = "list" | "cards" | "grouped" | "graph";
 
 // Where an item's card sits in the context's grid, in cells: column, row, width and height.
 export interface CardPlace {

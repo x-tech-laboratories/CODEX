@@ -10,6 +10,8 @@ export default defineConfig({
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     // The pre-merge assistant in legacy/ is kept for porting and is never run.
     exclude: [...configDefaults.exclude, "legacy/**"],
+    // X-Libs' graph widget is run through Vite, so a test can stand in for force-graph, which needs a real canvas.
+    server: { deps: { inline: [/x-libs\/dist\/web\/react\/graph/] } },
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,tsx}", "thunderbird/**/*.{ts,tsx}"],
@@ -17,7 +19,7 @@ export default defineConfig({
       thresholds: {
         // A point under the measure, so run-to-run noise cannot fail a run, and never below the floor already set.
         autoUpdate: (new_threshold, previous_threshold) => Math.max(previous_threshold, Math.floor(new_threshold) - 1),
-        lines: 87,
+        lines: 88,
         statements: 86,
         functions: 82,
         branches: 81,

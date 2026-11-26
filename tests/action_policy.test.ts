@@ -107,7 +107,7 @@ const allowed_tools = [
 ];
 
 // The core set a model with a small context is offered, written out the same way.
-const allowed_core_tools = ["add_context", "add_item_to_contexts", "get_context", "get_item", "list_contexts", "move_item", "remove_item", "rename_context", "search_index", "set_context_notes", "set_item_note"];
+const allowed_core_tools = ["add_context", "add_item_to_contexts", "get_context", "get_item", "list_contexts", "move_item", "propose_entity", "propose_link", "remove_item", "rename_context", "search_index", "set_context_notes", "set_item_note"];
 
 describe("a run's tools", () => {
   it("are exactly the allowed calls, and never settings, plugins, the policy, marks or anything only the page may call", () => {
