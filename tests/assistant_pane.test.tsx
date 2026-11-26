@@ -12,7 +12,7 @@ import type { ConversationEvent } from "../src/shared/conversations/model.ts";
 import { wait_for_runs } from "../src/shared/conversations/run.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { data_watch, set_page_api } from "../src/web/api.ts";
-import { AssistantPane, ProposalCard } from "../src/web/assistant/AssistantPane.tsx";
+import { AssistantPane, ProposalCard, Thinking } from "../src/web/assistant/AssistantPane.tsx";
 import { Mascot } from "../src/web/assistant/Mascot.tsx";
 import { lasting_mood, moment_after, screen_placement } from "../src/web/assistant/mascot.ts";
 import { want_conversation } from "../src/web/assistant/selection.ts";
@@ -154,6 +154,30 @@ describe("the assistant's pane", () => {
     expect(await screen.findByText("Hello there.")).toBeTruthy();
     await waitFor(() => expect(screen.queryByText("Thinking…")).toBeNull());
     expect(screen.queryByText(/a greeting/)).toBeNull();
+  });
+
+  it("keeps the opened thinking at its newest text as it streams, until the reader scrolls up", () => {
+    // jsdom lays nothing out, so the box reports a fixed height and a content height that grows with the text.
+    const sized = (element: HTMLElement) => {
+      Object.defineProperty(element, "clientHeight", { configurable: true, get: () => 100 });
+      Object.defineProperty(element, "scrollHeight", { configurable: true, get: () => element.textContent!.length * 10 });
+    };
+    const { rerender, container } = render(<Thinking text={"a".repeat(30)} />);
+    const box = container.querySelector<HTMLElement>(".reply-thinking-text")!;
+    sized(box);
+
+    rerender(<Thinking text={"a".repeat(60)} />);
+    expect(box.scrollTop).toBe(600);
+
+    box.scrollTop = 100;
+    fireEvent.scroll(box);
+    rerender(<Thinking text={"a".repeat(90)} />);
+    expect(box.scrollTop).toBe(100);
+
+    box.scrollTop = 800;
+    fireEvent.scroll(box);
+    rerender(<Thinking text={"a".repeat(120)} />);
+    expect(box.scrollTop).toBe(1200);
   });
 
   it("puts a failure in plain words with its raw detail behind Details, and shows what was left out to fit", async () => {

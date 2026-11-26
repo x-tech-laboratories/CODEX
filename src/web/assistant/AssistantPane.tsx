@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from
 import type { MenuItem } from "@x-tech-laboratories/x-libs/web/menus";
 import { age } from "@x-tech-laboratories/x-libs/web/format";
 import { AddIcon, ChevronDownIcon, EditIcon, Icon, UndoIcon } from "@x-tech-laboratories/x-libs/web/react/icons";
+import { use_follow_tail } from "@x-tech-laboratories/x-libs/web/react/following";
 import { FormGroup } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Markdown } from "@x-tech-laboratories/x-libs/web/react/markdown";
 import { MenuButton } from "@x-tech-laboratories/x-libs/web/react/menu_button";
@@ -131,11 +132,15 @@ export function ReplyError({ error, detail }: { error: string; detail: string })
   );
 }
 
-// What a reasoning model is thinking, folded under a Thinking row that opens to show it streaming.
-function Thinking({ text }: { text: string }) {
+// What a reasoning model is thinking, folded under a Thinking row that opens to about ten lines, following the newest
+// text as it streams unless the reader has scrolled up.
+export function Thinking({ text, active = true }: { text: string; active?: boolean }) {
+  const tail = use_follow_tail<HTMLParagraphElement>(text, active);
   return (
     <FormGroup class_name="reply-thinking" summary={<span className="muted small">Thinking…</span>}>
-      <p className="muted small reply-thinking-text">{text}</p>
+      <p ref={tail.ref} className="muted small reply-thinking-text" onScroll={tail.on_scroll}>
+        {text}
+      </p>
     </FormGroup>
   );
 }
@@ -185,7 +190,7 @@ function Reply({ run }: { run: LiveRun }) {
       {reply_parts(run.text, run.tool_calls).map((part, at, parts) =>
         "call" in part ? <ToolCallRow key={part.call.id} call={part.call} /> : <Markdown key={`text-${at}`} text={part.text} follow={at === parts.length - 1} />,
       )}
-      {run.reasoning ? <Thinking text={run.reasoning} /> : !run.text && <p className="muted small">Thinking…</p>}
+      {run.reasoning ? <Thinking text={run.reasoning} active={!run.finished} /> : !run.text && <p className="muted small">Thinking…</p>}
     </div>
   );
 }
