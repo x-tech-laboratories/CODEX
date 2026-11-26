@@ -1,0 +1,38 @@
+// The desktop app's page: the preload has put the main process's calls on the window.
+
+// ── Imports ──────────────────────────────────────────────────────────────────
+
+import type { Client } from "@x-tech-laboratories/x-libs/electron/bridge";
+import type { CertificateClient } from "@x-tech-laboratories/x-libs/certificate_protocol";
+import type { EventsClient } from "@x-tech-laboratories/x-libs/electron/events";
+import type { LocalMcpClient } from "@x-tech-laboratories/x-libs/local_mcp_protocol";
+
+import { certificates_api_name, desktop_api_name, device_api_name, events_api_name, context_api_name, local_mcp_api_name, type DeviceMethods, type ContextEvents, type PageApi } from "../../shared/page_api.ts";
+import type { DesktopMethods } from "../../shared/desktop.ts";
+import type { ContextMethods } from "../../shared/store.ts";
+
+// ── Api ──────────────────────────────────────────────────────────────────────
+
+type DesktopWindow = Record<string, unknown>;
+
+export function is_desktop(): boolean {
+  return context_api_name in window;
+}
+
+export function desktop_api(): PageApi {
+  const desktop = window as unknown as DesktopWindow;
+  const events = desktop[events_api_name] as EventsClient<ContextEvents>;
+  const device = desktop[device_api_name] as Client<DeviceMethods>;
+  // The tray opens the page on a route, such as a context.
+  events.on("open", (route) => (location.hash = route));
+  return {
+    host: "desktop",
+    calls: desktop[context_api_name] as Client<ContextMethods>,
+    device,
+    backups: device,
+    certificates: desktop[certificates_api_name] as CertificateClient,
+    local_mcp: desktop[local_mcp_api_name] as LocalMcpClient,
+    desktop: desktop[desktop_api_name] as Client<DesktopMethods>,
+    on_change: (listener) => events.on("changed", listener),
+  };
+}

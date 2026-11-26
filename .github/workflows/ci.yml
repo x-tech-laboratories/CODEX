@@ -14,25 +14,26 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      # The build and the tests need neither the Electron binary nor node-llama-cpp's prebuilt binaries.
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      NODE_LLAMA_CPP_SKIP_DOWNLOAD: 'true'
+      # The builds and the tests need no Electron binary.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-      - run: npm ci --ignore-scripts
+      - run: npm ci
       - run: npm run build
+      - run: npm run build:desktop
+      - run: npm run build:thunderbird
       - run: npm run coverage
       - run: git diff --exit-code vitest.config.ts
       - run: npm run lint
 
-  # Builds the package TechNet deploys, so a dependency bump that breaks it fails here.
+  # Builds the server package TechNet deploys and the desktop app, so a dependency bump that breaks either fails here.
   nix:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
-      - run: nix build .#default
+      - run: nix build .#default .#desktop

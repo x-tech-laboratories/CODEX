@@ -1,13 +1,21 @@
 {
-    "extends": "./tsconfig.base.json",
-    "include": ["src/web/**/*", "src/preload/index.d.ts", "src/shared/ipc.ts"],
-    "exclude": ["src/**/*.test.ts"],
-    "compilerOptions": {
-        "target": "ES2024",
-        "module": "ESNext",
-        "moduleResolution": "Bundler",
-        "lib": ["ES2024", "DOM", "DOM.Iterable"],
-        "jsx": "react-jsx",
-        "types": ["vite/client"]
-    }
+  "extends": "./tsconfig.base.json",
+  "include": [
+    "src/web",
+    "src/shared",
+    "thunderbird"
+  ],
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.web.tsbuildinfo",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "vite/client"
+    ],
+    "jsx": "react-jsx"
+  }
 }

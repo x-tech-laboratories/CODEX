@@ -1,0 +1,61 @@
+{
+    "name": "codex",
+    "desktopName": "org.codex.CODEX.desktop",
+    "private": true,
+    "version": "0.2.1",
+    "description": "A personal assistant on a locally run language model",
+    "license": "GPL-3.0-or-later",
+    "type": "module",
+    "main": "out/main/index.js",
+    "engines": {
+        "node": ">=24"
+    },
+    "bin": {
+        "codex": "dist/cli/index.js",
+        "codex-daemon": "dist/daemon/index.js"
+    },
+    "scripts": {
+        "dev": "electron-vite dev",
+        "build": "npm run typecheck && tsc -p tsconfig.cli.json && electron-vite build",
+        "start": "electron-vite preview",
+        "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+        "test": "vitest run",
+        "coverage": "vitest run --coverage",
+        "lint": "oxlint",
+        "daemon": "node dist/daemon/index.js",
+        "eval": "node node_modules/@x-tech-laboratories/smartharness/dist/evaluation.js",
+        "recall-benchmark": "node node_modules/@x-tech-laboratories/smartharness/dist/recallBenchmark.js",
+        "cli": "node dist/cli/index.js"
+    },
+    "dependencies": {
+        "@anthropic-ai/sdk": "^1.8.0",
+        "@modelcontextprotocol/sdk": "^1.32.2",
+        "@x-tech-laboratories/halon": "^0.32.1",
+        "@x-tech-laboratories/robobuddy": "github:x-tech-laboratories/RoboBuddy#0ce6c01ed4116609ac78653fa9c5233906012a6c",
+        "@x-tech-laboratories/smartharness": "github:x-tech-laboratories/SmartHarness#a4f380b605d1f631409dde29548a009846b47a7b",
+        "@x-tech-laboratories/x-libs": "^0.72.0",
+        "force-graph": "^1.52.0",
+        "node-llama-cpp": "^3.22.3",
+        "openai": "^7.56.0",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+        "sqlite-vec": "^0.1.9",
+        "yaml": "^2.9.1"
+    },
+    "devDependencies": {
+        "@testing-library/dom": "^10.4.2",
+        "@testing-library/react": "^16.3.3",
+        "@types/node": "^24.19.2",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "@vitejs/plugin-react": "^6.3.0",
+        "@vitest/coverage-v8": "^5.1.1",
+        "electron": "^45.4.1",
+        "electron-vite": "^6.0.0",
+        "jsdom": "^31.0.1",
+        "oxlint": "^1.94.0",
+        "typescript": "^7.0.2",
+        "vite": "^8.3.5",
+        "vitest": "^5.1.0"
+    }
+}

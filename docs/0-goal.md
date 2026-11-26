@@ -17,7 +17,7 @@ CODEX is a personable personal assistant that runs on the user's own computer. I
 ## The docs
 
 - `0-goal.md`: this file.
-- `1-architecture.md`: what the assistant adds to the harness, how it works, and why.
+- `1-architecture.md`: how the app is put together since X-Context's code became its skeleton; the pre-merge assistant's design is in `done/done-assistant-architecture.md`.
 - `2-open-questions-and-approaches.md`: the assistant's open questions, and the unbuilt approaches that answer them.
 - `3-roadmap.md`: order, status, and how to measure each step.
 - `4-merge-with-x-context.md`: the plan to merge X-Context in and make CODEX a knowledge base as well as an assistant; newer than docs 0–3 where they disagree.

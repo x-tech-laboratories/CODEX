@@ -1,14 +1,20 @@
-# Models
+# Models the legacy assistant loaded
 models/
 
-# Electron / TypeScript build state
+# Build state
 node_modules
 dist/
+out/
 coverage/
+*.tsbuildinfo
 
 # Nix build links
 result
 result-*
+
+# Dev data and the dev server's accounts file
+dev-data/
+password.hash
 
 # Claude Code local state
 .claude/
@@ -17,7 +23,3 @@ result-*
 .venv/
 __pycache__/
 .pytest_cache/
-
-# electron-vite build
-out/
-*.tsbuildinfo

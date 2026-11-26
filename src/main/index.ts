@@ -1,373 +1,259 @@
-// The Electron main process: opens the window and the tray icon, connects them to the daemon, and passes requests and events on.
-import '../assistant/identity.js';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, nativeTheme, screen, shell, Tray } from 'electron';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { bring_to_front, hold_single_instance } from '@x-tech-laboratories/x-libs/electron/app';
-import { is_app_page, is_external_link } from '@x-tech-laboratories/x-libs/electron/window';
+// The desktop app's window: Electron's main process, which shows CODEX, keeps its tray icon and its login entry, and
+// leaves the work to the daemon in src/daemon, reached over a Unix socket.
 
-import trayIconPath from '../../resources/tray-icon.png?asset';
+// ── Imports ──────────────────────────────────────────────────────────────────
 
-import * as autostart from './autostart.js';
-import { DISCONNECTED_EVENT, type DaemonClient } from './daemonBridge.js';
-import { connectToDaemon } from './daemonLifecycle.js';
-import { freshActions, notificationBody, summarizeActions } from './inbox.js';
-import { codex_bridge } from '../shared/ipc.js';
-import { AUTOSTART_CHANGED_EVENT, forwardEvent, ipcAnswers, SHOW_INBOX_EVENT } from './ipc.js';
-import { launchOptions } from './paths.js';
-import { menuTemplate, TRAY_HOST_POLL_SECONDS, TRAY_WAIT_SECONDS, trayHostRunning, trayItems, trayTooltip } from './tray.js';
+import { join } from "node:path";
 
-const here = import.meta.dirname;
-const rendererPage = path.join(here, '../renderer/index.html');
-// electron-vite serves the page from its dev server while developing, and emits the preload as an ES module.
-const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL;
-const preloadScript = path.join(here, '../preload/index.mjs');
-const options = launchOptions(process.argv);
-// Without codex-gui on the PATH or named by the package, launch at login runs this same Electron on this same script.
-const autostartOptions = { fallback: [process.execPath, fileURLToPath(import.meta.url)] };
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
+import { launch_command, set_autostart } from "@x-tech-laboratories/x-libs/autostart";
+import { bring_to_front, first_argument, hold_single_instance } from "@x-tech-laboratories/x-libs/electron/app";
+import type { Implementation, IpcMainEventLike } from "@x-tech-laboratories/x-libs/electron/bridge";
+import { create_app_tray } from "@x-tech-laboratories/x-libs/electron/tray";
+import { create_window, is_app_page } from "@x-tech-laboratories/x-libs/electron/window";
+import { call_daemon, daemon_log_path, daemon_socket_path, follow_daemon_events, start_daemon } from "@x-tech-laboratories/x-libs/local_daemon";
+import { certificate_method_names } from "@x-tech-laboratories/x-libs/certificate_protocol";
+import { local_mcp_method_names } from "@x-tech-laboratories/x-libs/local_mcp_protocol";
 
-let mainWindow: BrowserWindow | null = null;
-let client: DaemonClient | null = null;
-let connection: Promise<{ socket_path: string; started: boolean }> | null = null;
-let tray: Tray | null = null;
-// True while a tray host shows the icon, so closing the window can hide it there instead of quitting.
-let trayRegistered = false;
-let quitting = false;
-// What the tray menu shows of the daemon, kept up to date from its status and events.
-let suspended = false;
-let researching = false;
-// Proposed actions waiting, and the newest one already announced, so only later ones raise a notification.
-let inboxCount = 0;
-let announcedUpTo = 0;
-let inboxRead = false;
-// True from asking the daemon to stop until it has gone, so its departure starts a fresh one.
-let restarting = false;
+import { certificate_bridge, desktop_bridge, device_bridge, context_bridge, context_events, local_mcp_bridge } from "../shared/bridge.ts";
+import { starts_hidden, type DesktopMethods, type DesktopSettings } from "../shared/desktop.ts";
+import { route_of_link } from "../shared/links.ts";
+import { device_method_names, is_read_only } from "../shared/page_api.ts";
+import type { ContextSummary } from "../shared/contexts/model.ts";
+import { method_names } from "../shared/store.ts";
+import { tray_view, type TrayState } from "./tray_menu.ts";
 
-// ============================================================================
-// Daemon connection
-// ============================================================================
+// ── Profile ──────────────────────────────────────────────────────────────────
 
-// Connects once per connection, and again after the daemon goes away; a daemon this starts exits by itself once no interface uses it.
-function connectOnce(): Promise<{ socket_path: string; started: boolean }> {
-    if (connection === null) {
-        connection = connectToDaemon(options.socketPath, {
-            settingsPath: options.settingsPath,
-            onEvent: (event, data) => {
-                forwardEvent(mainWindow, event, data);
-                if (event === DISCONNECTED_EVENT) {
-                    client = null;
-                    connection = null;
-                    if (restarting) {
-                        restarting = false;
-                        void connectOnce().catch(() => undefined);
-                    }
-                } else if (event === 'settings.changed') {
-                    researching = Boolean((data.settings as Record<string, unknown> | undefined)?.background_research_enabled);
-                    refreshTray();
-                } else if (event === 'suspended.changed') {
-                    suspended = Boolean(data.suspended);
-                    refreshTray();
-                } else if (event === 'actions.changed' && client !== null) {
-                    void readInbox(client);
-                }
-            },
-        }).then((result) => {
-            client = result.client;
-            void readDaemonState(result.client);
-            void readInbox(result.client);
-            return { socket_path: options.socketPath, started: result.started };
-        });
-        connection.catch(() => {
-            connection = null;
-        });
-    }
-    return connection;
+// Dev runs set this so they never touch the installed app's data.
+const is_own_profile = process.env.CODEX_USER_DATA === undefined;
+if (!is_own_profile) app.setPath("userData", join(process.cwd(), process.env.CODEX_USER_DATA!));
+
+const profile = app.getPath("userData");
+const database_path = join(profile, "codex.db");
+
+// Any other profile gets a daemon, socket and log of its own, so a dev or test run never reaches the user's daemon.
+const socket_path = daemon_socket_path({ app: "codex", data_file: is_own_profile ? null : database_path });
+const log_file = is_own_profile ? daemon_log_path("codex") : join(profile, "daemon.log");
+
+// The built app sits in out/main, and resources/ beside out/ both in the source tree and in the package.
+const icon_path = join(import.meta.dirname, "../../resources/icon.png");
+
+// The command that starts this app again, which the login entry runs.
+const own_command = (args: string[]): string[] =>
+  launch_command({ launcher: process.env.CODEX_LAUNCHER, is_packaged: app.isPackaged, app_path: app.getAppPath(), args });
+
+// ── Daemon ───────────────────────────────────────────────────────────────────
+
+function ensure_daemon(): Promise<unknown> {
+  return start_daemon({
+    socket_path,
+    script: join(import.meta.dirname, "daemon.js"),
+    env: { CODEX_DB: database_path, CODEX_SOCKET: socket_path, CODEX_VERSION: app.getVersion(), CODEX_ICON: icon_path },
+    log_file,
+  });
 }
 
-// Asks the daemon to stop and starts a fresh one once it has gone; with no daemon connected it only starts one.
-function restartDaemon(): void {
-    if (client === null) {
-        void connectOnce().catch(() => undefined);
-        return;
-    }
-    restarting = true;
-    void client.call('shutdown').catch(() => undefined);
+// Given by the daemon when this process connects, so the window is not told about its own changes.
+let client_id = "";
+
+// One call to the daemon, as the page made it; a change also shows in the tray at once.
+async function call(path: string, args: unknown[]): Promise<unknown> {
+  const result = await call_daemon(socket_path, `/api/${path}`, args, { "x-client-id": client_id });
+  if (!is_read_only(path.slice(path.lastIndexOf("/") + 1))) void tray.refresh();
+  return result;
 }
 
-async function readDaemonState(connected: DaemonClient): Promise<void> {
-    try {
-        const status = await connected.call<{ settings: Record<string, unknown>; suspended?: boolean }>('status');
-        researching = Boolean(status.settings.background_research_enabled);
-        suspended = Boolean(status.suspended);
-        refreshTray();
-    } catch {
-        // The tray keeps its last state until the next event.
-    }
+// Every call in a table, passed on to the daemon under a path of its own.
+function forwarded(names: readonly string[], prefix: string): Record<string, (...args: unknown[]) => Promise<unknown>> {
+  return Object.fromEntries(names.map((name) => [name, (...args: unknown[]) => call(`${prefix}/${name}`, args)]));
 }
 
-// Counts the proposed actions for the tray and announces the ones that arrived since the last look.
-async function readInbox(connected: DaemonClient): Promise<void> {
-    try {
-        const actions = summarizeActions(await connected.call('actions', { status: 'proposed', limit: 100 }));
-        inboxCount = actions.length;
-        // The first look only sets the mark, so actions already waiting at startup are not announced.
-        const { fresh, seenUpTo } = freshActions(inboxRead ? announcedUpTo : Math.max(0, ...actions.map((action) => action.id)), actions);
-        announcedUpTo = seenUpTo;
-        inboxRead = true;
-        const body = notificationBody(fresh);
-        if (body !== null && Notification.isSupported() && !(mainWindow?.isVisible() && mainWindow.isFocused())) {
-            const notification = new Notification({ title: 'CODEX', body });
-            notification.on('click', showInbox);
-            notification.show();
-        }
-        refreshTray();
-    } catch {
-        // The tray keeps its last count until the next event.
-    }
+function get_desktop_settings(): Promise<DesktopSettings> {
+  return call("daemon/get_desktop_settings", []) as Promise<DesktopSettings>;
 }
 
-// ============================================================================
-// Window
-// ============================================================================
-
-function createWindow(showWhenReady = true): BrowserWindow {
-    const area = screen.getPrimaryDisplay().workAreaSize;
-    const window = new BrowserWindow({
-        title: 'CODEX',
-        width: Math.min(1280, area.width),
-        height: Math.min(800, area.height),
-        minWidth: 900,
-        minHeight: 560,
-        show: false,
-        backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b1220' : '#f1f5f9',
-        webPreferences: {
-            preload: preloadScript,
-            contextIsolation: true,
-            nodeIntegration: false,
-            // The preload imports the shared bridge as an ES module, which needs the sandbox off.
-            sandbox: false,
-            spellcheck: true,
-        },
-    });
-    if (showWhenReady) {
-        window.once('ready-to-show', () => window.show());
-    }
-    // While the tray holds the icon, closing hides the window there and keeps its link to the daemon alive.
-    window.on('close', (event) => {
-        if (!quitting && trayRegistered) {
-            event.preventDefault();
-            window.hide();
-        }
-    });
-    window.on('show', refreshTray);
-    window.on('hide', refreshTray);
-    // Links open in the system browser, and the window never leaves its own page.
-    window.webContents.setWindowOpenHandler(({ url }) => {
-        if (is_external_link(url)) {
-            void shell.openExternal(url);
-        }
-        return { action: 'deny' };
-    });
-    window.webContents.on('will-navigate', (event, url) => {
-        if (!is_app_page(url, { dev_url: devUrl, file: rendererPage })) {
-            event.preventDefault();
-            if (is_external_link(url)) {
-                void shell.openExternal(url);
-            }
-        }
-    });
-    window.on('closed', () => {
-        if (mainWindow === window) {
-            mainWindow = null;
-        }
-        refreshTray();
-    });
-    if (devUrl) {
-        void window.loadURL(devUrl);
-    } else {
-        void window.loadFile(rendererPage);
-    }
-    return window;
+// Settings the window itself acts on: the tray and starting at login.
+async function apply_window_settings(): Promise<void> {
+  const settings = await get_desktop_settings();
+  tray.set_shown(settings.show_tray_icon);
+  apply_autostart(settings);
 }
 
-function applicationMenu(): Menu {
-    return Menu.buildFromTemplate([
-        {
-            label: 'CODEX',
-            submenu: [
-                { role: 'copy' },
-                { role: 'paste' },
-                { role: 'selectAll' },
-                { type: 'separator' },
-                { role: 'zoomIn' },
-                { role: 'zoomOut' },
-                { role: 'resetZoom' },
-                { role: 'toggleDevTools' },
-                { type: 'separator' },
-                { label: 'Restart daemon', click: restartDaemon },
-                { role: 'quit' },
-            ],
-        },
-    ]);
+// Only the user's own profile starts at login; a dev run never writes the login entry.
+function apply_autostart(settings: DesktopSettings): void {
+  if (!is_own_profile) return;
+  set_autostart(
+    { id: "codex-daemon", name: "CODEX in the background", comment: "Sync and backups for CODEX", icon: icon_path, command: own_command(["--daemon"]) },
+    settings.start_at_login && settings.keep_running_in_background,
+  );
 }
 
-function showWindow(): void {
-    if (mainWindow === null) {
-        mainWindow = createWindow();
-        return;
-    }
-    mainWindow.show();
-    bring_to_front(mainWindow);
-}
+// Every window hears of the daemon's changes, and comes back to a daemon that stopped, such as one quit from the tray.
+let is_quitting = false;
+let stop_following = (): void => {};
 
-// Shows the window on its Inbox page, waiting for a new window to load before it is told.
-function showInbox(): void {
-    const created = mainWindow === null;
-    showWindow();
-    if (created) {
-        mainWindow?.webContents.once('did-finish-load', () => forwardEvent(mainWindow, SHOW_INBOX_EVENT, {}));
-    } else {
-        forwardEvent(mainWindow, SHOW_INBOX_EVENT, {});
-    }
-}
-
-// ============================================================================
-// Tray
-// ============================================================================
-
-function toggleWindow(): void {
-    if (mainWindow !== null && mainWindow.isVisible() && mainWindow.isFocused()) {
-        mainWindow.hide();
-    } else {
-        showWindow();
-    }
-    refreshTray();
-}
-
-function toggleResearch(): void {
-    void client?.call('set_background_enabled', { enabled: !researching }).catch(() => undefined);
-}
-
-function setLaunchAtLogin(enabled: boolean): void {
-    if (enabled) {
-        autostart.enable(autostartOptions);
-    } else {
-        autostart.disable(autostartOptions);
-    }
-    forwardEvent(mainWindow, AUTOSTART_CHANGED_EVENT, { enabled: autostart.isEnabled(autostartOptions) });
-    refreshTray();
-}
-
-function quitFromTray(): void {
-    quitting = true;
-    app.quit();
-}
-
-function refreshTray(): void {
-    if (tray === null || tray.isDestroyed()) {
-        return;
-    }
-    const items = trayItems(
-        {
-            showing: mainWindow !== null && mainWindow.isVisible(),
-            suspended,
-            researching,
-            launchAtLogin: autostart.isEnabled(autostartOptions),
-            inbox: inboxCount,
-        },
-        {
-            toggleWindow,
-            showInbox,
-            toggleResearch,
-            toggleAutostart: () => setLaunchAtLogin(!autostart.isEnabled(autostartOptions)),
-            restartDaemon,
-            quit: quitFromTray,
-        },
-    );
-    tray.setContextMenu(Menu.buildFromTemplate(menuTemplate(items)));
-    tray.setToolTip(trayTooltip(suspended, inboxCount));
-}
-
-// Notes whether a tray host holds the icon; losing it brings a hidden window back, so the app is never unreachable.
-function setTrayRegistered(registered: boolean): void {
-    trayRegistered = registered;
-    if (!registered && mainWindow !== null && !mainWindow.isVisible()) {
-        showWindow();
-    }
-}
-
-function startTray(): void {
-    try {
-        tray = new Tray(nativeImage.createFromPath(trayIconPath));
-    } catch {
-        // Without a tray the window closes the app as usual.
-        tray = null;
-        return;
-    }
-    tray.on('click', toggleWindow);
-    refreshTray();
-    const checkHost = (): void => {
-        void trayHostRunning().then((running) => {
-            if (running !== trayRegistered) setTrayRegistered(running);
-        });
-    };
-    checkHost();
-    setInterval(checkHost, TRAY_HOST_POLL_SECONDS * 1000).unref();
-}
-
-// ============================================================================
-// App lifecycle
-// ============================================================================
-
-nativeTheme.themeSource = 'system';
-
-// Only the app's own page may call the bridge; every reply travels in an envelope the preload opens.
-codex_bridge.handle(ipcMain, ipcAnswers({
-    window: () => mainWindow,
-    caller: () => client,
-    connection: connectOnce,
-    showOpenDialog: (window, dialogOptions) => dialog.showOpenDialog(window, dialogOptions),
-    showSaveDialog: (window, dialogOptions) => dialog.showSaveDialog(window, dialogOptions),
-    writeClipboard: (text) => clipboard.writeText(text),
-    autostart: {
-        isEnabled: () => autostart.isEnabled(autostartOptions),
-        setEnabled: setLaunchAtLogin,
+function follow_daemon(): void {
+  stop_following = follow_daemon_events(
+    socket_path,
+    "/api/events",
+    (event, data) => {
+      if (event === "hello") client_id = data;
+      if (event === "changed") announce_change();
+      if (event === "sync_status") context_events.emit(BrowserWindow.getAllWindows(), "sync_status", JSON.parse(data));
     },
-    restartDaemon,
-}), { trusted: (event) => is_app_page(event.senderFrame?.url ?? '', { dev_url: devUrl, file: rendererPage }), envelopes: true });
-
-if (hold_single_instance(app, showWindow)) {
-    void app.whenReady().then(() => {
-        Menu.setApplicationMenu(applicationMenu());
-        autostart.refresh(autostartOptions);
-        mainWindow = createWindow(!options.startInTray);
-        startTray();
-        if (options.startInTray) {
-            // A start in the tray shows the window after all when no tray host turns up to hold the icon.
-            setTimeout(() => {
-                if (!trayRegistered && mainWindow !== null && !mainWindow.isVisible()) showWindow();
-            }, TRAY_WAIT_SECONDS * 1000);
-        }
-        void connectOnce().catch(() => undefined);
-        app.on('activate', () => {
-            if (BrowserWindow.getAllWindows().length === 0) {
-                mainWindow = createWindow();
-            }
-        });
-    });
+    {
+      // A reconnect may have missed changes, so the windows fetch again.
+      on_connect: announce_change,
+      on_disconnect: () => {
+        if (!is_quitting) void ensure_daemon().catch((error: unknown) => console.error(error));
+      },
+    },
+  );
 }
 
-app.on('window-all-closed', () => {
-    app.quit();
+function announce_change(): void {
+  context_events.emit(BrowserWindow.getAllWindows(), "changed", null);
+  void apply_window_settings().catch(() => undefined);
+  void tray.refresh();
+}
+
+// ── Window ───────────────────────────────────────────────────────────────────
+
+const page = {
+  dev_url: app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL,
+  file: join(import.meta.dirname, "../renderer/index.html"),
+};
+
+function open_window(): BrowserWindow {
+  return create_window(BrowserWindow, {
+    ...page,
+    title: "CODEX",
+    icon: icon_path,
+    // electron-vite emits an ESM preload as .mjs; loading .js here silently yields no bridge.
+    preload: join(import.meta.dirname, "../preload/index.mjs"),
+    default_size: { width: 1100, height: 760 },
+    min_size: { width: 360, height: 480 },
+    native_theme: nativeTheme,
+    shell,
+    screen,
+    state_file: join(profile, "window.json"),
+  });
+}
+
+// Brings the window forward, making one if it was closed, and hands it the route once its page listens.
+function show_window(route?: string): void {
+  const existing = BrowserWindow.getAllWindows()[0];
+  const window = existing ?? open_window();
+  bring_to_front(window);
+  if (!route) return;
+  if (existing) context_events.emit([window], "open", route);
+  else window.webContents.once("did-finish-load", () => context_events.emit([window], "open", route));
+}
+
+// Stops the daemon as well, so nothing runs until the app is opened again.
+async function quit_completely(): Promise<void> {
+  is_quitting = true;
+  await call("daemon/stop_daemon", []).catch(() => undefined);
+  app.quit();
+}
+
+// ── Tray icon ────────────────────────────────────────────────────────────────
+
+async function read_tray_state(): Promise<TrayState> {
+  return { contexts: (await call("call/list_contexts", [])) as ContextSummary[] };
+}
+
+// The tray brings the window forward, making one again if it was closed, and opens the page where a row points.
+// Its own calls go with this process's client id, and the page hears of them as a change from elsewhere.
+const tray = create_app_tray({
+  electron: { Tray, Menu, nativeImage },
+  icon_path,
+  on_click: () => show_window(),
+  on_error: (error) => console.error(error),
+  read: async () =>
+    tray_view(await read_tray_state(), {
+      open_route: (route) => show_window(route),
+      show: () => show_window(),
+      quit: () => {
+        is_quitting = true;
+        app.quit();
+      },
+      quit_completely: () => void quit_completely(),
+    }),
 });
 
-// Only the connection closes; the daemon keeps serving other interfaces, and one this window started exits when unused.
-app.on('before-quit', () => {
-    quitting = true;
-    tray?.destroy();
-    tray = null;
-    if (client !== null) {
-        client.onEvent = null;
-        client.close();
+// ── Bridges ──────────────────────────────────────────────────────────────────
+
+// Only the app's own page may call in, never a site a link led to.
+function trusted(event: IpcMainEventLike): boolean {
+  return is_app_page(event.senderFrame?.url ?? "", page);
+}
+
+// The page's calls go to the daemon, but for quitting and the settings the window acts on.
+function register_bridges(): void {
+  const options = { trusted, envelopes: true };
+  context_bridge.handle(ipcMain, forwarded(method_names, "call") as never, options);
+  device_bridge.handle(ipcMain, forwarded(device_method_names, "device") as never, options);
+  certificate_bridge.handle(ipcMain, forwarded(certificate_method_names, "certificates") as never, options);
+  local_mcp_bridge.handle(ipcMain, forwarded(local_mcp_method_names, "local_mcp") as never, options);
+  const desktop: Implementation<DesktopMethods> = {
+    get_desktop_settings,
+    set_desktop_setting: async (key, value) => {
+      await call("daemon/set_desktop_setting", [key, value]);
+      await apply_window_settings();
+    },
+    quit_completely,
+  };
+  desktop_bridge.handle(ipcMain, desktop, options);
+}
+
+// ── Start ────────────────────────────────────────────────────────────────────
+
+function start_app(): void {
+  void app.whenReady().then(async () => {
+    try {
+      await ensure_daemon();
+    } catch (error) {
+      dialog.showErrorBox("CODEX could not start", `${error instanceof Error ? error.message : String(error)}\n\nSee ${log_file}.`);
+      app.exit(1);
+      return;
     }
-});
+    register_bridges();
+    follow_daemon();
+    await apply_window_settings().catch(() => undefined);
+    // A link the app was opened with, such as codex://context/<id>, opens the window on its page.
+    if (!starts_hidden(process.argv, tray.is_shown())) show_window(first_argument(process.argv, route_of_link) ?? undefined);
+  });
+
+  app.on("will-quit", () => {
+    is_quitting = true;
+    stop_following();
+    tray.stop();
+  });
+
+  // Closing the window ends only the window, or leaves the app in the tray; the daemon runs on either way.
+  app.on("window-all-closed", () => {
+    if (!tray.is_shown()) app.quit();
+  });
+}
+
+// `codex-desktop --daemon`, as the login entry runs it, starts only the daemon.
+async function start_daemon_alone(): Promise<void> {
+  try {
+    await ensure_daemon();
+    app.exit(0);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    app.exit(1);
+  }
+}
+
+// A second launch brings the window forward on the page its link names, but one that only starts the daemon or starts
+// hidden leaves the window be.
+function open_from_second_launch(argv: string[]): void {
+  if (!argv.includes("--daemon") && !argv.includes("--hidden")) show_window(first_argument(argv, route_of_link) ?? undefined);
+}
+
+if (process.argv.includes("--daemon")) void start_daemon_alone();
+else if (hold_single_instance(app, open_from_second_launch)) start_app();

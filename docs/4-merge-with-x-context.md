@@ -27,7 +27,7 @@ The plan to make CODEX one application: a personal knowledge base, a knowledge m
 6. **Sources are other apps' MCP servers,** chosen during setup, each marked for whether its content may be sent to a hosted engine. The X-apps follow one shared convention for this (proposed for the Application Standard), so one collector reads them all.
 7. **It runs on the desktop,** on the machine with the GPU. Embeddings stay local whichever engine answers, so changing engine never forces a re-embed.
 8. **Recurring work is split.** The user's recurring tasks live in X-Tasks. The assistant's recurring jobs are CODEX's own, and the engine may create and delete them during a conversation.
-9. **Mail leaves.** Mail belongs in an application of its own with an MCP server; CODEX reads it like any other source. The mail code here (`src/assistant/mail*.ts`, `imap.ts`, `triage.ts`, `draftReply.ts`) is frozen and seeds that application; it is not ported.
+9. **Mail leaves.** Mail belongs in an application of its own with an MCP server; CODEX reads it like any other source. The mail code here (`legacy/src/assistant/mail*.ts`, `imap.ts`, `triage.ts`, `draftReply.ts`) is frozen and seeds that application; it is not ported.
 
 ## Action policy
 
@@ -73,8 +73,8 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 
 ## Order of work
 
-1. **Engine interface:** replace the interim one (`src/engine/engine.ts`, which has the task tree's signature) with conversation in, CODEX's tools in, events out. The hosted model adapters and the direct loop carry over.
-2. **Skeleton and conversation:** X-Context's code moves in; conversations per context; the right pane with the mascot; engines as plugins. Needs a three-pane shell in X-Libs.
+1. **Engine interface:** replace the interim one (`legacy/src/engine/engine.ts`, which has the task tree's signature) with conversation in, CODEX's tools in, events out. The hosted model adapters (`legacy/src/assistant/*Model.ts`, `models.ts`) and the direct loop carry over.
+2. **Skeleton and conversation:** X-Context's code moves in (done 2026-11-26: it is `src/`, under CODEX's name, and the old code is in `legacy/`); conversations per context; the right pane with the mascot; engines as plugins. Needs a three-pane shell in X-Libs.
 3. **Inbox and background queue** ported onto the new store, with the action policy.
 4. **Index and graph:** content extraction, embeddings, fused search, entities, links, proposals, the graph view.
 5. **Workspace:** an editor per kind of item, writing back through collectors.

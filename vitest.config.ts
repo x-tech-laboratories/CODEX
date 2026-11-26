@@ -1,23 +1,27 @@
-import { defineConfig } from 'vitest/config';
+import react from "@vitejs/plugin-react";
+import { configDefaults, defineConfig } from "vitest/config";
+
+// Tests read local dates, so every run uses the same time zone.
+process.env.TZ = "UTC";
 
 export default defineConfig({
-    test: {
-        environment: 'node',
-        setupFiles: ['src/assistant/identity.ts'],
-        // Tests mock harness modules, which only reaches the package's own imports when vitest transforms it.
-        server: { deps: { inline: ['@x-tech-laboratories/smartharness'] } },
-        include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'src/**/*.test.ts'],
-        coverage: {
-            provider: 'v8',
-            include: ['src/**/*.{ts,tsx}'],
-            exclude: ['src/**/*.test.{ts,tsx}', 'src/**/*.d.ts'],
-            thresholds: {
-                autoUpdate: (newThreshold: number) => Math.floor(newThreshold),
-                lines: 68,
-                statements: 67,
-                functions: 65,
-                branches: 66,
-            },
-        },
+  plugins: [react()],
+  test: {
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
+    // The pre-merge assistant in legacy/ is kept for porting and is never run.
+    exclude: [...configDefaults.exclude, "legacy/**"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}", "thunderbird/**/*.{ts,tsx}"],
+      exclude: ["legacy/**"],
+      thresholds: {
+        // A point under the measure, so run-to-run noise cannot fail a run, and never below the floor already set.
+        autoUpdate: (new_threshold, previous_threshold) => Math.max(previous_threshold, Math.floor(new_threshold) - 1),
+        lines: 73,
+        statements: 72,
+        functions: 68,
+        branches: 68,
+      },
     },
+  },
 });
