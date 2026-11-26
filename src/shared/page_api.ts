@@ -71,7 +71,8 @@ export function is_read_only(method: string): boolean {
 
 // Calls that keep the user in charge of the assistant, approving and undoing its changes, the graph's proposals and
 // proposed blueprints, bringing a blueprint back or widening where it applies, turning a job on, running one now and
-// choosing the device that runs them, the tool plugins' marks, which of their tools are offered and at what level,
+// choosing the device that runs them, the tool plugins' marks, which of their tools are offered and at what level, the
+// MCP servers added, changed, refreshed or removed (a local one's command runs on this machine),
 // setting how freely it may make them and what each source's items may reach, and which apps are read with which token,
 // answered only for the user at the page: a signed-in browser, or the desktop window. Their specs are marked page-only
 // with X-Libs `api_spec`, so a token, MCP and any engine are refused them and nothing a program does can approve a
@@ -96,15 +97,19 @@ export const page_only_methods: ReadonlySet<string> = new Set([
   "set_tool_plugin_mark",
   "set_plugin_tool_offer",
   "set_plugin_tool_level",
+  "add_mcp_server",
+  "change_mcp_server",
+  "refresh_mcp_server",
+  "remove_mcp_server",
 ]);
 
 // Settings that keep the user in charge, written only by the user at the page: the action policy, the source marks,
 // which engine answers and which embedder the index uses, how long the hosted log is kept, and every plugin's on or
 // off and settings, which hold each engine's and embedder's endpoint and key command, the apps read through the
 // item calls with their tokens, whether background work runs at all and how much a day, and the tool plugins' marks
-// and which of their tools are offered. They are read like any other,
+// and which of their tools are offered, and the MCP servers with their addresses, tokens and commands. They are read like any other,
 // and only the user's own devices may sync a change to them.
-export const user_only_settings: ReadonlySet<string> = new Set(["action_policy", "source_marks", "engine", "embedder", "hosted_log.keep_days", "plugins", "item_sources", "background.enabled", "background.daily_runs", "background.daily_tokens", "tool_plugins"]);
+export const user_only_settings: ReadonlySet<string> = new Set(["action_policy", "source_marks", "engine", "embedder", "hosted_log.keep_days", "plugins", "item_sources", "background.enabled", "background.daily_runs", "background.daily_tokens", "tool_plugins", "mcp_servers"]);
 
 // Whether this call with these arguments, in order, writes a setting only the user may change; X-Libs adds the marked calls.
 export function is_user_only_setting_write(method: string, args: readonly unknown[]): boolean {
