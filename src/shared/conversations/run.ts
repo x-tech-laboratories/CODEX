@@ -319,11 +319,11 @@ export function turns_of(database: SqlDatabase, conversation_id: string, screen:
 }
 
 // The conversation a message goes to: the one named, a new one for null, or, left out, the context's most recently
-// used one, or a new one when it has none; undefined for one still to be made.
+// used one that is not a job's, or a new one when it has none; undefined for one still to be made.
 function conversation_for(database: SqlDatabase, context_id: string | null, conversation_id: string | null | undefined): string | undefined {
   if (typeof conversation_id === "string" && conversation_id) return conversation_row(database, conversation_id).id;
   if (conversation_id === null) return undefined;
-  return summaries_of(database, conversation_ids_in(database, context_id))[0]?.id;
+  return summaries_of(database, conversation_ids_in(database, context_id)).find((summary) => summary.job === null)?.id;
 }
 
 // Keeps the user's message, in a new conversation in the open context when asked or when there is none, and starts the

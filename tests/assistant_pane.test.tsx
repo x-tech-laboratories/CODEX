@@ -418,6 +418,43 @@ describe("the assistant's pane", () => {
     expect(fixture.calls.list_conversations(kitchen).map((each) => each.title).sort()).toEqual(["Floor tiles", "Oven"]);
   });
 
+  it("opens on the most recent conversation that is not a job's, listing the jobs' under a heading of their own", async () => {
+    const fixture = open_page();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const { conversation_id: talk } = await fixture.calls.send_message(kitchen, "Tiles");
+    await wait_for_runs();
+    // A job's conversation, used after the user's.
+    const job = fixture.calls.add_job({ title: "Tidy the kitchen", instruction: "Tidy.", context_id: kitchen, schedule: { kind: "every", every: 1, unit: "hours" }, only_when_changed: false, limits: { max_rounds: 4, max_tokens: 10_000, max_runs_per_day: 6 } });
+    const { conversation_id: job_talk } = await fixture.calls.send_message(kitchen, "Tidy.", null);
+    await wait_for_runs();
+    fixture.database.prepare("UPDATE jobs SET conversation_id = ? WHERE id = ?").run(job_talk, job);
+    expect(fixture.calls.list_conversations(kitchen).map((each) => [each.id, each.job])).toEqual([
+      [job_talk, { title: "Tidy the kitchen" }],
+      [talk, null],
+    ]);
+
+    render(
+      <>
+        <AssistantPane context_id={kitchen} />
+        <ContextMenus />
+      </>,
+    );
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Conversations" }).textContent).toContain("Tiles"));
+    fireEvent.click(screen.getByRole("button", { name: "Conversations" }));
+    const menu = await screen.findByRole("menu");
+    const rows = [...menu.querySelectorAll(".menu-item")].map((row) => (row.textContent ?? "").replace(/\d+s ago$/, "").trim());
+    expect(rows).toEqual(["Tiles", "New conversation", "Background jobs", "Tidy."]);
+    expect(within(menu).getByRole("menuitem", { name: "Background jobs" }).getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(within(menu).getByRole("menuitemradio", { name: /Tidy\./ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Conversations" }).textContent).toContain("Tidy."));
+
+    // A message sent to the context with no conversation named goes to the user's, not the job's.
+    const { conversation_id } = await fixture.calls.send_message(kitchen, "And the grout?");
+    await wait_for_runs();
+    expect(conversation_id).toBe(talk);
+  });
+
   it("shows a conversation asked for by an item or a link once it is open on that context", async () => {
     const fixture = open_page();
     const kitchen = fixture.calls.add_context("Kitchen");

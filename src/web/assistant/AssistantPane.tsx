@@ -322,15 +322,19 @@ function when_used(conversation: ConversationSummary): string {
 }
 
 // The conversation shown, a menu of the others in this context (or in none) with when each was used and which are
-// being written, and what can be done to the one shown.
+// being written, the background jobs' under a heading of their own, and what can be done to the one shown.
 function Switcher({ context_id, list, shown, on_pick }: { context_id: string | null; list: ConversationSummary[]; shown: ConversationSummary | null; on_pick: (id: string | null) => void }) {
   const running_elsewhere = list.filter((each) => each.is_running && each.id !== shown?.id).length;
   const holders = shown?.contexts.map((each) => each.id) ?? [];
   const open_list = (event: MouseEvent<HTMLButtonElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
+    const entry = (each: ConversationSummary): MenuItem => ({ label: each.title, hint: when_used(each), radio: true, checked: each.id === shown?.id, run: () => on_pick(each.id) });
+    const talks = list.filter((each) => each.job === null);
+    const jobs = list.filter((each) => each.job !== null);
     open_context_menu({ clientX: box.left, clientY: box.bottom, preventDefault: () => undefined }, [
-      ...list.map((each) => ({ label: each.title, hint: when_used(each), radio: true, checked: each.id === shown?.id, run: () => on_pick(each.id) })),
-      { label: "New conversation", separator_before: list.length > 0, run: () => on_pick(null) },
+      ...talks.map(entry),
+      { label: "New conversation", separator_before: talks.length > 0, run: () => on_pick(null) },
+      ...(jobs.length > 0 ? [{ label: "Background jobs", disabled: true, separator_before: true, run: () => undefined }, ...jobs.map(entry)] : []),
     ]);
   };
   const more: MenuItem[] = shown
@@ -418,8 +422,8 @@ function use_moment(ended: { error: string; key: number } | null): { mood: Masco
   return moment;
 }
 
-// Which conversation the pane shows on this context: the one picked or asked for, else the most recently used; null
-// for a new one not yet sent to.
+// Which conversation the pane shows on this context: the one picked or asked for, else the most recently used that is
+// not a background job's; null for a new one not yet sent to.
 function use_shown(context_id: string | null, list: ConversationSummary[] | null | undefined): [string | null, (id: string | null) => void, () => void] {
   const [choice, set_choice] = useState<{ context_id: string | null; id: string | null } | null>(null);
   const asked = use_watch(wanted_watch);
@@ -428,7 +432,7 @@ function use_shown(context_id: string | null, list: ConversationSummary[] | null
     if (id) set_choice({ context_id, id });
   }, [asked, context_id]);
   const picked = choice && choice.context_id === context_id ? choice.id : undefined;
-  const shown = picked === undefined ? (list?.[0]?.id ?? null) : picked;
+  const shown = picked === undefined ? (list?.find((each) => each.job === null)?.id ?? null) : picked;
   return [shown, (id) => set_choice({ context_id, id }), () => set_choice(null)];
 }
 

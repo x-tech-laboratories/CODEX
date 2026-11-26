@@ -115,6 +115,8 @@ export interface ConversationSummary {
   contexts: { id: string; name: string }[];
   // Where it opens, such as codex://conversation/<id>.
   link: string;
+  // The background job whose runs it keeps, by the job's title; null for one the user talks in.
+  job: { title: string } | null;
 }
 
 export interface Conversation extends ConversationSummary {
