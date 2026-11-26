@@ -1,4 +1,4 @@
-// The failures a user meets when an engine cannot answer, put in plain words that say what happened and what to do,
+// The failures a user meets when an engine or embedder cannot answer, put in plain words that say what happened and what to do,
 // with the raw detail kept for a Details disclosure. No message names a key, and the endpoint is named by host and port.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
@@ -103,6 +103,26 @@ export function explain_failure(error: unknown, where: EngineWhere): PlainError 
   if (status === 404) return plain(`The engine at ${host} has no chat completions at that address. Check the endpoint under ${settings}; it usually ends in /v1.`);
   if (status === 429) return plain(`The engine at ${host} is limiting how often it is asked. Wait a minute and send again, or check the account's quota.`);
   return plain(`The engine at ${host} could not answer.`);
+}
+
+// A failure reaching or asking an embedder in plain words, with the raw text as its detail; a failure already in plain
+// words, such as a model not set, is kept as it is.
+export function explain_embedder_failure(error: unknown, endpoint: string, default_endpoint: string, model: string): PlainError {
+  const host = host_of(endpoint, default_endpoint);
+  const settings = "Settings → Index";
+  const status = status_of(error);
+  const raw = hide_keys(message_of(error));
+  const codes = codes_of(error).filter((code) => !raw.includes(code));
+  const detail = codes.length > 0 ? `${raw} (${codes.join(", ")})` : raw;
+  const plain = (message: string): PlainError => ({ message, detail });
+  if (is_timeout(error)) return plain(`The embedder at ${host} did not answer in time. Check that its server is running and not overloaded.`);
+  if (status === null && is_unreachable(error)) return plain(`The embedder at ${host} cannot be reached. Check that its server is running and that its endpoint under ${settings} is right.`);
+  if (status === 401 || status === 403) return plain(`The embedder at ${host} refused the API key. Check its API key command under ${settings}.`);
+  if (status === 404 && /model/i.test(raw)) return plain(`The embedder at ${host} does not know the model “${model}”. Check the model's name under ${settings}.`);
+  if (status === 404) return plain(`The embedder at ${host} has no embeddings at that address. Check its endpoint under ${settings}; it usually ends in /v1.`);
+  if (status === 429) return plain(`The embedder at ${host} is limiting how often it is asked. Indexing tries again later.`);
+  if (status !== null) return plain(`The embedder at ${host} could not answer.`);
+  return { message: raw };
 }
 
 // A key command that failed, said without anything it printed.

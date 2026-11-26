@@ -15,6 +15,7 @@ import { plugins_setting } from "../collectors/collector.ts";
 import { open_plugin_host } from "../collectors/host.ts";
 import { is_replying } from "../conversations/activity.ts";
 import { embedder_setting, type Embedder } from "../embedders/embedder.ts";
+import { PlainFailure } from "../engines/direct.ts";
 import { is_hosted } from "../engines/engine.ts";
 import { may_send, open_screen } from "../privacy/screen.ts";
 import { settings_feature } from "../settings.ts";
@@ -308,6 +309,7 @@ export async function index_state(database: SqlDatabase, index: SqlDatabase): Pr
     is_working: working,
     last_indexed_at: meta_of(index, "last_indexed_at"),
     last_error: meta_of(index, "last_error"),
+    last_error_detail: meta_of(index, "last_error_detail"),
   };
 }
 
@@ -326,7 +328,7 @@ function embedder_settings(database: SqlDatabase): string {
 }
 
 // Indexes what changed and embeds what waits, once; a call while one runs makes it go round once more. An error is
-// shown until a later attempt gets past where it failed, then cleared at once.
+// shown until a later attempt gets past where it failed or the embedder's settings change, then cleared at once.
 export function index_now(): Promise<void> {
   if (working) {
     again = true;
@@ -342,23 +344,32 @@ export function index_now(): Promise<void> {
         pass_settings = embedder_settings(host.database());
         const signal = AbortSignal.any([stopping.signal, pass_stop.signal]);
         const problems: string[] = [];
-        const clear_if_clean = () => {
-          if (problems.length === 0 && meta_of(host.index(), "last_error")) set_meta(host.index(), "last_error", "");
+        const details: string[] = [];
+        const record = () => {
+          set_meta(host.index(), "last_error", problems.join(" "));
+          set_meta(host.index(), "last_error_detail", details.join("\n"));
+        };
+        // A batch embedded shows the embedder answers again, so only this pass's own problems stay.
+        const embedded_batch = () => {
+          if (meta_of(host.index(), "last_error") !== problems.join(" ")) record();
         };
         try {
           const synced = await sync_documents(host.database(), host.index(), problems);
           const embedded = new Set<string>();
-          await embed_pending(host.database(), host.index(), signal, 250, embedded, clear_if_clean);
+          await embed_pending(host.database(), host.index(), signal, 250, embedded, embedded_batch);
           const { found } = await find_embedder(host.database());
           const pass = { written: synced.written_keys, all: synced.was_empty, embedded: [...embedded], embedder: found ? { id: found.id, model: found.embedder.model() } : null };
           if (await after_pass(host.database(), host.index(), pass)) host.on_change?.();
         } catch (error) {
           // A pass ended because the embedder's settings changed says nothing of the new settings.
-          if (!pass_stop.signal.aborted) problems.push((error as Error).message);
+          if (!pass_stop.signal.aborted) {
+            problems.push((error as Error).message);
+            if (error instanceof PlainFailure && error.detail) details.push(error.detail);
+          }
         }
         if (pass_stop.signal.aborted && !stopping.signal.aborted) again = true;
         set_meta(host.index(), "last_indexed_at", new Date().toISOString());
-        if (!pass_stop.signal.aborted || problems.length > 0) set_meta(host.index(), "last_error", problems.join(" "));
+        if (!pass_stop.signal.aborted || problems.length > 0) record();
       } while (again && !stopping.signal.aborted);
     } finally {
       working = false;
@@ -372,16 +383,23 @@ export function clear_and_reindex(): void {
   const { index } = index_host();
   for (const table of ["docs", "docs_text", "chunks", "vectors"]) index().exec(`DELETE FROM ${table}`);
   set_meta(index(), "last_error", "");
+  set_meta(index(), "last_error_detail", "");
   void index_now();
 }
 
 let poke_timer: ReturnType<typeof setTimeout> | undefined;
 
 // Asks for an index pass soon, after a write; several close together make one. A change to the embedder's settings
-// ends the embedding in hand, so the next pass tries the new settings.
+// ends the embedding in hand, so the next pass tries the new settings, and clears the last problem, which was the old ones'.
 export function poke_index(delay_ms = 1500): void {
   if (!current) return;
-  if (working && embedder_settings(current.database()) !== pass_settings) pass_stop.abort();
+  const settings = embedder_settings(current.database());
+  if (settings !== pass_settings) {
+    if (working) pass_stop.abort();
+    else pass_settings = settings;
+    set_meta(current.index(), "last_error", "");
+    set_meta(current.index(), "last_error_detail", "");
+  }
   clearTimeout(poke_timer);
   poke_timer = setTimeout(() => void index_now().catch((error: unknown) => console.warn("index:", error)), delay_ms);
 }
