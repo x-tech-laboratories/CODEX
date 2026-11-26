@@ -7,7 +7,8 @@ import type { BackupClient } from "@x-tech-laboratories/x-libs/backup_protocol";
 import type { Client } from "@x-tech-laboratories/x-libs/electron/bridge";
 import { LoginNeeded } from "@x-tech-laboratories/x-libs/web/states";
 
-import type { PageApi } from "../../shared/page_api.ts";
+import type { ConversationEvent } from "../../shared/conversations/model.ts";
+import { conversation_event, type PageApi } from "../../shared/page_api.ts";
 import type { ContextMethods } from "../../shared/store.ts";
 
 // ── Server calls ─────────────────────────────────────────────────────────────
@@ -38,8 +39,9 @@ async function call_server(method: string, args: unknown[], path = call_path): P
 
 const reconnect_delay_ms = 5000;
 
-// A greeting after the first means the stream reconnected and may have missed changes, so the page reloads too.
-function follow_changes(on_change: () => void): void {
+// A greeting after the first means the stream reconnected and may have missed changes, so the page reloads too. A
+// reply's progress comes on the same stream.
+function follow_changes(on_change: () => void, on_conversation: (event: ConversationEvent) => void): void {
   let has_connected = false;
   const connect = (): void => {
     const events = new EventSource(events_path);
@@ -49,6 +51,7 @@ function follow_changes(on_change: () => void): void {
       has_connected = true;
     });
     events.addEventListener("changed", on_change);
+    events.addEventListener(conversation_event, (event) => on_conversation(JSON.parse((event as MessageEvent<string>).data) as ConversationEvent));
     // The browser retries a dropped stream by itself but gives up on a refused one, so the page tries again later.
     events.addEventListener("error", () => {
       if (events.readyState === EventSource.CLOSED) setTimeout(connect, reconnect_delay_ms);
@@ -75,9 +78,15 @@ function server_backups(): BackupClient {
 
 export function web_api(): PageApi {
   const listeners = new Set<() => void>();
-  follow_changes(() => {
-    for (const listener of listeners) listener();
-  });
+  const conversation_listeners = new Set<(event: ConversationEvent) => void>();
+  follow_changes(
+    () => {
+      for (const listener of listeners) listener();
+    },
+    (event) => {
+      for (const listener of conversation_listeners) listener(event);
+    },
+  );
   return {
     host: "web",
     calls: server_calls(),
@@ -86,6 +95,10 @@ export function web_api(): PageApi {
     on_change: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    on_conversation: (listener) => {
+      conversation_listeners.add(listener);
+      return () => conversation_listeners.delete(listener);
     },
   };
 }

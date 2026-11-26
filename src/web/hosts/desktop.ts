@@ -34,5 +34,6 @@ export function desktop_api(): PageApi {
     local_mcp: desktop[local_mcp_api_name] as LocalMcpClient,
     desktop: desktop[desktop_api_name] as Client<DesktopMethods>,
     on_change: (listener) => events.on("changed", listener),
+    on_conversation: (listener) => events.on("conversation", listener),
   };
 }

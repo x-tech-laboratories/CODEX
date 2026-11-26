@@ -18,7 +18,7 @@ import { local_mcp_method_names } from "@x-tech-laboratories/x-libs/local_mcp_pr
 import { certificate_bridge, desktop_bridge, device_bridge, context_bridge, context_events, local_mcp_bridge } from "../shared/bridge.ts";
 import { starts_hidden, type DesktopMethods, type DesktopSettings } from "../shared/desktop.ts";
 import { route_of_link } from "../shared/links.ts";
-import { device_method_names, is_read_only } from "../shared/page_api.ts";
+import { conversation_event, device_method_names, is_read_only } from "../shared/page_api.ts";
 import type { ContextSummary } from "../shared/contexts/model.ts";
 import { method_names } from "../shared/store.ts";
 import { tray_view, type TrayState } from "./tray_menu.ts";
@@ -101,6 +101,7 @@ function follow_daemon(): void {
       if (event === "hello") client_id = data;
       if (event === "changed") announce_change();
       if (event === "sync_status") context_events.emit(BrowserWindow.getAllWindows(), "sync_status", JSON.parse(data));
+      if (event === conversation_event) context_events.emit(BrowserWindow.getAllWindows(), "conversation", JSON.parse(data));
     },
     {
       // A reconnect may have missed changes, so the windows fetch again.
