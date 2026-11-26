@@ -126,6 +126,12 @@ function plugin_description(tool: OpenedTool, most: number): string {
   return [`From the ${tool.label} plugin. ${described}`, ...facts].join(" ");
 }
 
+// A plugin tool's call in plain words for the user deciding on it, such as: Use the Web plugin's web_fetch with url “…”.
+export function plugin_tool_summary(tool: Pick<OpenedTool, "label" | "tool">, given: Record<string, unknown>): string {
+  const parts = Object.entries(given).map(([key, value]) => `${key} ${typeof value === "string" ? `“${clipped(value, 160)}”` : clipped(JSON.stringify(value) ?? "", 160)}`);
+  return `Use the ${tool.label} plugin's ${tool.tool.name}${parts.length > 0 ? ` with ${parts.join(", ")}` : ""}.`;
+}
+
 // The plugin tools offered, as a line for the instructions: what they are, and what never to send through them.
 export function plugin_tools_part(tools: OpenedTool[]): string {
   if (tools.length === 0) return "";
@@ -226,7 +232,7 @@ export function engine_tools(context: ToolContext): EngineTools {
         name,
         { outcome: "refused" },
         {
-          result: `Not run: ${name} sends what it is given outside this computer, and this conversation has had content in front of it from a source the user has not marked “May be sent to a hosted engine”, so ${tool.label}'s tools that send outside are not used for the rest of this reply. Tell the user; they can allow it with the mark “May be used after reading private sources” on ${tool.label} under Settings → Plugins.`,
+          result: `Not run: ${name} sends what it is given outside this computer, and this conversation has had content in front of it from a source the user has not marked “May be sent to a hosted engine”, so the ${tool.label} plugin's tools that send outside are not used for the rest of this reply. Tell the user; they can allow it with the mark “May be used after reading private sources” on ${tool.label} under Settings → Plugins.`,
           is_error: true,
         },
       );
@@ -240,7 +246,7 @@ export function engine_tools(context: ToolContext): EngineTools {
       const database = context.database();
       const decision = decide(level_of(database, name), context.presence, context.has_outside_content);
       if (decision.action === "refuse") return decided(name, { outcome: "refused" }, { result: `The user does not permit ${name}, so it was not run.`, is_error: true });
-      const summary = `Use ${tool.label}'s tool ${tool.tool.name} with ${clipped(JSON.stringify(given), 300)}.`;
+      const summary = plugin_tool_summary(tool, given);
       if (decision.action === "propose") {
         const sources = read_sources(screen);
         const seen = [...new Set([...(context.instruction_sources ?? []), ...reads.flatMap((read) => read.sources)])].sort();
