@@ -12,7 +12,8 @@ import { wait_for_runs } from "../src/shared/conversations/run.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { data_watch, set_page_api } from "../src/web/api.ts";
 import { AssistantPane } from "../src/web/assistant/AssistantPane.tsx";
-import { lasting_mood, moment_after } from "../src/web/assistant/mascot.ts";
+import { Mascot } from "../src/web/assistant/Mascot.tsx";
+import { lasting_mood, moment_after, screen_placement } from "../src/web/assistant/mascot.ts";
 import { next_run } from "../src/web/assistant/use_conversation.ts";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
 
@@ -214,6 +215,20 @@ describe("the mascot's mood", () => {
     expect(lasting_mood({ has_engine: true, is_reachable: true, is_running: true })).toBe("thinking");
     expect(lasting_mood({ has_engine: true, is_reachable: true, is_running: false })).toBe("default");
     expect([moment_after(""), moment_after("Broken"), moment_after("Stopped.")]).toEqual(["happy", "sad", null]);
+  });
+});
+
+describe("the mascot's face", () => {
+  it("lays the canvas over the head's screen at its real size rather than inside the drawing", () => {
+    const placement = screen_placement();
+    expect(Object.fromEntries(Object.entries(placement).map(([key, value]) => [key, Number(parseFloat(value).toFixed(2))]))).toEqual({ left: 14.86, top: 37.7, width: 70.27, height: 59.02 });
+
+    const { container } = render(<Mascot mood="default" moment={null} />);
+    const canvas = container.querySelector("canvas")!;
+    expect(canvas.closest("svg")).toBeNull();
+    expect(parseFloat(canvas.style.left)).toBeCloseTo(parseFloat(placement.left));
+    expect(parseFloat(canvas.style.height)).toBeCloseTo(parseFloat(placement.height));
+    expect(screen.getByRole("img", { name: "CODEX, default" })).toBeTruthy();
   });
 });
 
