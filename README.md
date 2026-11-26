@@ -75,15 +75,17 @@ no other context holds.
 
 Its face sleeps until an engine is set up, thinks while it writes, and smiles or frowns for a moment when a reply ends.
 Enter sends, Shift+Enter starts a new line, and **Stop** ends a reply early. Each tool call it made folds open to show
-its arguments and what came back.
+its arguments and what came back. While a reasoning model thinks, a folded **Thinking…** row opens to show its thinking
+as it streams; the answer replaces it, and the thinking is never kept. When a reply fails, the pane says what happened
+and what to do in plain words, with the raw message folded under **Details**.
 
 **Setting up an engine,** under **Settings → Assistant → Engine**: pick the engine under **Answering**, then open its row
 and fill in its settings.
 
 | Engine | Settings |
 | ------ | -------- |
-| Anthropic | the model (`claude-opus-5-5` unless changed), the context size, and an API key command |
-| OpenAI-compatible | the endpoint, ending in `/v1` (empty for OpenAI's own), the model's name there, the context size, and an API key command |
+| Anthropic | the model (`claude-opus-5-5` unless changed), the context size, the tools offered, and an API key command |
+| OpenAI-compatible | the endpoint, ending in `/v1` (empty for OpenAI's own), the model's name there, the context size, the tools offered, and an API key command |
 
 Embedders, which give the search index its sense of meaning, are plugins too; see [Search](#search).
 
@@ -96,6 +98,18 @@ bare `PATH`, so give the command by its full path.
 `ollama pull qwen3`) or llama.cpp's `llama-server -m model.gguf --port 8080 --jinja`, choose **OpenAI-compatible**, and
 give its endpoint (`http://localhost:11434/v1` for Ollama, `http://localhost:8080/v1` for llama-server), the model's
 name and its context size. The model has to support tool calls to read or change your contexts.
+
+**Running a small local model.** Give the engine the context size the server really has (llama-server's `-c`, Ollama's
+`num_ctx`); CODEX fits every request into it. It counts its instructions, the tools as sent and a reply, estimates
+tokens cautiously at first and more closely once the server has reported what a request cost, and when the
+conversation is too long it leaves out the oldest messages, then shortens the middle of your newest one for that
+request alone, saying so in the pane. Below 16,384 tokens of context it offers the model a core set of eleven tools
+(the reads and the most-used changes, briefly described) instead of all of them, which keeps the prompt to about a
+quarter; **Tools offered** in the engine's settings chooses **Automatic**, **Core set** or **All tools**. Expect a
+4B model on a CPU at 8,192 tokens to spend a minute or more reading the prompt before its first word, longer on a
+cold start, and a reasoning model to think for a while first, which the pane shows as it goes. If the context is too
+small for the instructions, the tools and a reply, nothing is sent and the pane says to raise the context size or
+start a new conversation.
 
 **What it can do:** read and change contexts and their items, search the collectors and follow feeds, through the same
 calls the API and MCP serve; never your settings, plugins, accounts, sync, backups or History. Each kind of change has

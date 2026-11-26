@@ -319,7 +319,7 @@ describe("the bundled engines", () => {
       throw new Error("The API key command print-key failed with exit code 1.");
     });
     expect(await collect(failing.run({ instructions: "", conversation: [], tools: no_tools }, new AbortController().signal))).toEqual([
-      { type: "error", message: "The API key command print-key failed with exit code 1." },
+      { type: "error", message: "The API key command failed, so no key could be read. Run it in a terminal to see why, then send again.", detail: "The API key command print-key failed with exit code 1." },
     ]);
     expect(make).not.toHaveBeenCalled();
   });

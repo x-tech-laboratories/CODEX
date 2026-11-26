@@ -9,8 +9,8 @@ import type { Proposal } from "../policy/model.ts";
 
 // ── Messages ─────────────────────────────────────────────────────────────────
 
-// What became of a tool call: run, left for the user's approval, refused by the policy, or failed.
-export type ToolCallOutcome = "pending" | "ran" | "proposed" | "refused" | "failed";
+// What became of a tool call: run, left for the user's approval, refused by the policy, rejected by the user, or failed.
+export type ToolCallOutcome = "pending" | "ran" | "proposed" | "refused" | "rejected" | "failed";
 
 // What made a change that was applied: the engine at the auto level, or the user approving a proposal.
 export type AppliedBy = "engine_auto" | "user_approval";
@@ -39,7 +39,12 @@ export interface ConversationMessage {
   engine: string;
   model: string;
   tool_calls: ToolCallRecord[];
+  // Why the answer stopped short, in plain words; empty when it finished.
   error: string;
+  // The raw failure behind the error, for a Details disclosure; empty when there is none.
+  error_detail: string;
+  // What the user should know about how the answer was written, such as their message shortened to fit the model.
+  notices: string[];
   // The sources whose content the run that wrote it had read, by collector id; "*" when not recorded.
   sources: string[];
   input_tokens: number;
@@ -56,7 +61,10 @@ export interface RunState {
   model: string;
   started_at: string;
   text: string;
+  // What a reasoning model thought so far, shown while it writes; never kept with the answer or sent back to it.
+  reasoning: string;
   tool_calls: ToolCallRecord[];
+  notices: string[];
 }
 
 // ── Conversations ────────────────────────────────────────────────────────────
@@ -90,9 +98,11 @@ export interface Conversation extends ConversationSummary {
 export type ConversationEvent = { conversation_id: string; run_id: string } & (
   | { type: "started"; engine: string; model: string }
   | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "notice"; text: string }
   | { type: "tool_call"; call: ToolCallRecord }
   | { type: "tool_result"; call: ToolCallRecord }
-  | { type: "finished"; error: string }
+  | { type: "finished"; error: string; error_detail?: string }
 );
 
 // ── Engines ──────────────────────────────────────────────────────────────────

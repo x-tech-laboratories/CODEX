@@ -33,10 +33,14 @@ const outcome_words: Record<ToolCallRecord["outcome"], string> = {
   ran: "done",
   proposed: "waits for you",
   refused: "not permitted",
+  rejected: "rejected by you",
   failed: "failed",
 };
 
-const outcome_tones: Record<ToolCallRecord["outcome"], string> = { pending: "none", ran: "good", proposed: "warn", refused: "bad", failed: "bad" };
+const outcome_tones: Record<ToolCallRecord["outcome"], string> = { pending: "none", ran: "good", proposed: "warn", refused: "bad", rejected: "none", failed: "bad" };
+
+// How a proposed call's row reads once the user decided it.
+const decided_words: Partial<Record<Proposal["status"], [words: string, tone: string]>> = { approved: ["approved by you", "good"], rejected: ["rejected by you", "none"], failed: ["failed", "bad"] };
 
 function pretty(text: string): string {
   try {
@@ -46,16 +50,18 @@ function pretty(text: string): string {
   }
 }
 
-// One call the engine made, folded to its name and outcome; open, its arguments and what came back.
-export function ToolCallRow({ call }: { call: ToolCallRecord }) {
+// One call the engine made, folded to its name and outcome; open, its arguments and what came back. A proposed call
+// reads as the user decided it, when they have.
+export function ToolCallRow({ call, decided }: { call: ToolCallRecord; decided?: Proposal["status"] | undefined }) {
   const made_by = call.applied_by === "user_approval" ? "approved by you" : call.applied_by === "engine_auto" ? "made by the assistant" : "";
+  const [words, tone] = (call.outcome === "proposed" && decided && decided_words[decided]) || [outcome_words[call.outcome], outcome_tones[call.outcome]];
   return (
     <FormGroup
       class_name="tool-call"
       summary={
         <span className="tool-call-summary">
           <code>{call.name}</code>
-          <span className={`badge tone-${outcome_tones[call.outcome]}`}>{outcome_words[call.outcome]}</span>
+          <span className={`badge tone-${tone}`}>{words}</span>
           {made_by && <span className="muted small">{made_by}</span>}
         </span>
       }
@@ -74,7 +80,39 @@ export function ToolCallRow({ call }: { call: ToolCallRecord }) {
 
 // ── Messages ─────────────────────────────────────────────────────────────────
 
-function Message({ message }: { message: ConversationMessage }) {
+// What the user should know about how a reply was written, such as their message shortened to fit the model.
+function Notices({ notices }: { notices: string[] }) {
+  return notices.map((notice) => (
+    <p key={notice} className="banner tone-fill-warn" role="note">
+      {notice}
+    </p>
+  ));
+}
+
+// Why a reply stopped short, in plain words, with the raw failure folded behind Details.
+export function ReplyError({ error, detail }: { error: string; detail: string }) {
+  return (
+    <div className="reply-error">
+      <p className={error === "Stopped." ? "muted small" : "tone-bad"}>{error}</p>
+      {detail && (
+        <FormGroup class_name="reply-error-detail" summary={<span className="muted small">Details</span>}>
+          <pre className="output">{detail}</pre>
+        </FormGroup>
+      )}
+    </div>
+  );
+}
+
+// What a reasoning model is thinking, folded under a Thinking row that opens to show it streaming.
+function Thinking({ text }: { text: string }) {
+  return (
+    <FormGroup class_name="reply-thinking" summary={<span className="muted small">Thinking…</span>}>
+      <p className="muted small reply-thinking-text">{text}</p>
+    </FormGroup>
+  );
+}
+
+function Message({ message, decided }: { message: ConversationMessage; decided: Map<string, Proposal["status"]> }) {
   if (message.role === "user") {
     return (
       <div className="chat-message from-user card">
@@ -87,18 +125,20 @@ function Message({ message }: { message: ConversationMessage }) {
       <div className="chat-message chat-event">
         <p className="muted small">{message.text}</p>
         {message.tool_calls.map((call) => (
-          <ToolCallRow key={call.id} call={call} />
+          // A refusal in an event is the user rejecting the proposal, as events kept before "rejected" said.
+          <ToolCallRow key={call.id} call={call.outcome === "refused" ? { ...call, outcome: "rejected" } : call} />
         ))}
       </div>
     );
   }
   return (
     <div className="chat-message from-assistant">
+      <Notices notices={message.notices} />
       {message.tool_calls.map((call) => (
-        <ToolCallRow key={call.id} call={call} />
+        <ToolCallRow key={call.id} call={call} decided={call.proposal_id ? decided.get(call.proposal_id) : undefined} />
       ))}
       {message.text && <Markdown text={message.text} />}
-      {message.error && <p className={message.error === "Stopped." ? "muted small" : "tone-bad"}>{message.error}</p>}
+      {message.error && <ReplyError error={message.error} detail={message.error_detail} />}
       {message.engine && <p className="muted small">{[message.engine, message.model].filter(Boolean).join(" · ")}</p>}
     </div>
   );
@@ -107,10 +147,12 @@ function Message({ message }: { message: ConversationMessage }) {
 function Reply({ run }: { run: LiveRun }) {
   return (
     <div className="chat-message from-assistant" aria-live="polite" aria-busy={!run.finished}>
+      <Notices notices={run.notices} />
       {run.tool_calls.map((call) => (
         <ToolCallRow key={call.id} call={call} />
       ))}
-      {run.text ? <Markdown text={run.text} follow /> : <p className="muted small">Thinking…</p>}
+      {run.text && <Markdown text={run.text} follow />}
+      {run.reasoning ? <Thinking text={run.reasoning} /> : !run.text && <p className="muted small">Thinking…</p>}
     </div>
   );
 }
@@ -325,6 +367,7 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
   const data = shown_id ? conversation.data : null;
   const shown = list.data?.find((each) => each.id === shown_id) ?? data ?? null;
   const waiting = data?.proposals.filter((proposal) => proposal.status === "waiting") ?? [];
+  const decided = new Map((data?.proposals ?? []).map((proposal) => [proposal.id, proposal.status]));
   const count = (data?.messages.length ?? 0) + waiting.length + (run ? 1 : 0);
 
   // In braces, since a browser's scrollIntoView may give back a promise, which React would take for a cleanup.
@@ -353,7 +396,7 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
               <p className="muted small">{context_id ? "A new conversation about this context: ask about it, or ask CODEX to change it." : "No context is open, so this conversation will be in no context."}</p>
             )}
             {data?.messages.map((message) => (
-              <Message key={message.id} message={message} />
+              <Message key={message.id} message={message} decided={decided} />
             ))}
             {run && <Reply run={run} />}
             {waiting.map((proposal) => (

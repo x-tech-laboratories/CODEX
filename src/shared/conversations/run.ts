@@ -4,7 +4,7 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { input_schema, positional_args } from "@x-tech-laboratories/x-libs/api_spec";
+import { input_schema, positional_args, type JsonSchema } from "@x-tech-laboratories/x-libs/api_spec";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { open_plugin_host } from "../collectors/host.ts";
@@ -13,7 +13,7 @@ import { untrusted_block } from "../engines/untrusted.ts";
 
 import { new_id } from "../feature.ts";
 import { is_read_only } from "../page_api.ts";
-import { brings_outside_content, decide, is_offered, level_of, offered_api, proposing_calls, type Presence } from "../policy/policy.ts";
+import { brings_outside_content, core_tools, decide, is_offered, level_of, offered_api, proposing_calls, type Presence } from "../policy/policy.ts";
 import { add_proposal } from "../policy/proposals.ts";
 import { sources_named, summarize_call } from "../policy/summaries.ts";
 import { screen_result } from "../privacy/results.ts";
@@ -73,9 +73,25 @@ export function read_sources(screen: Screen): string[] {
   return [...screen.included.keys()].sort();
 }
 
+// A schema without its fields' descriptions, for the core set's brief definitions.
+function brief_schema(schema: JsonSchema): JsonSchema {
+  const brief: JsonSchema = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === "description") continue;
+    if (key === "properties" && value && typeof value === "object") brief[key] = Object.fromEntries(Object.entries(value as Record<string, JsonSchema>).map(([name, field]) => [name, brief_schema(field)]));
+    else if (key === "items" && value && typeof value === "object" && !Array.isArray(value)) brief[key] = brief_schema(value as JsonSchema);
+    else brief[key] = value;
+  }
+  return brief;
+}
+
 // CODEX's offered calls as tools, each call through the policy: reads run, changes run, wait or are refused by level.
+// The core set is the same calls, fewer and briefly described, for a model with a small context.
 export function engine_tools(context: ToolContext): EngineTools {
   const definitions = Object.entries(offered_api).map(([name, spec]) => ({ name, description: spec.description, parameters: input_schema(spec) }));
+  const core = Object.entries(core_tools)
+    .filter(([name]) => is_offered(name))
+    .map(([name, description]) => ({ name, description, parameters: brief_schema(input_schema(offered_api[name]!)) }));
   const decided = (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id">, outcome: ToolOutcome): ToolOutcome => {
     context.on_decided?.(name, record);
     return outcome;
@@ -95,6 +111,7 @@ export function engine_tools(context: ToolContext): EngineTools {
   };
   return {
     definitions,
+    core,
     call: async (name, given) => {
       if (!is_offered(name)) return decided(name, { outcome: "refused" }, { result: `There is no tool named ${name}.`, is_error: true });
       let args: unknown[];
@@ -234,7 +251,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   const conversation_id = chosen ?? add_conversation_record(database, context_id);
   const instructions = screened_instructions(database, context_id, conversation_id, new Date().toISOString().slice(0, 10), screen);
   add_message(database, { conversation_id, role: "user", text: text.trim(), sources: [] });
-  const state: RunState = { run_id: new_id(), engine: found.engine.label, model: found.engine.model, started_at: new Date().toISOString(), text: "", tool_calls: [] };
+  const state: RunState = { run_id: new_id(), engine: found.engine.label, model: found.engine.model, started_at: new Date().toISOString(), text: "", reasoning: "", tool_calls: [], notices: [] };
   const run: Run = { conversation_id, screen, abort: new AbortController(), state, done: Promise.resolve() };
   runs.set(conversation_id, run);
   reply_started();
@@ -268,6 +285,7 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
   const base = { conversation_id, run_id: state.run_id };
   let final_text: string | null = null;
   let error = "";
+  let error_detail = "";
   let input_tokens = 0;
   let output_tokens = 0;
   try {
@@ -275,7 +293,15 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
       if (run.abort.signal.aborted) break;
       if (event.type === "text") {
         state.text += event.text;
+        state.reasoning = "";
         host.emit({ ...base, type: "text", text: event.text });
+      } else if (event.type === "reasoning") {
+        // Shown to open pages while it streams, and dropped with the run.
+        state.reasoning += event.text;
+        host.emit({ ...base, type: "reasoning", text: event.text });
+      } else if (event.type === "notice") {
+        state.notices.push(event.text);
+        host.emit({ ...base, type: "notice", text: event.text });
       } else if (event.type === "tool_call") {
         const call: ToolCallRecord = { id: event.id, name: event.name, arguments: event.arguments, result: "", is_error: false, outcome: "pending" };
         state.tool_calls.push(call);
@@ -294,13 +320,14 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
         break;
       } else {
         error = event.message;
+        error_detail = event.detail ?? "";
         break;
       }
     }
   } catch (thrown) {
     error = thrown instanceof Error ? thrown.message : String(thrown);
   }
-  if (run.abort.signal.aborted) error = "Stopped.";
+  if (run.abort.signal.aborted) [error, error_detail] = ["Stopped.", ""];
   else if (final_text === null && !error) error = "The engine stopped without an answer.";
   for (const call of state.tool_calls) if (call.outcome === "pending") call.outcome = "failed";
   // Gone before the pages hear of the end, so a page loading the conversation then finds the message and no run.
@@ -325,12 +352,14 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
       model: state.model,
       tool_calls: state.tool_calls,
       error,
+      error_detail,
+      notices: state.notices,
       input_tokens,
       output_tokens,
       sources: read_sources(run.screen),
     });
   } finally {
-    host.emit({ ...base, type: "finished", error });
+    host.emit({ ...base, type: "finished", error, ...(error_detail ? { error_detail } : {}) });
     host.announce();
   }
 }

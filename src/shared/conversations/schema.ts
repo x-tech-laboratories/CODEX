@@ -33,6 +33,10 @@ export const conversation_messages = sqliteTable(
     tool_calls: text().notNull().default("[]"),
     // Why the answer stopped short, such as a refusal or the user stopping it; empty when it finished.
     error: text().notNull().default(""),
+    // The raw failure behind the error, for the page's Details; empty when there is none.
+    error_detail: text().notNull().default(""),
+    // What the user should know about how the answer was written, as a JSON list of plain sentences.
+    notices: text().notNull().default("[]"),
     // The sources whose content the run that wrote it had read, as a JSON list of collector ids; ["*"] when not
     // recorded, as on every message kept before 2026-11-26. The user's own messages are theirs whatever it says.
     sources: text().notNull().default('["*"]'),
