@@ -7,7 +7,7 @@ The plan to make CODEX one application: a personal knowledge base, a knowledge m
 - **Gathers:** an engine reads notes, tasks, bookmarks, files, contacts and mail from the apps that hold them, through MCP, plugins and APIs.
 - **Relates:** it links related items and groups them into contexts, guided by the user.
 - **Learns:** a knowledge graph of its own, with embeddings and retrieval, holds what it has learned about the user's world.
-- **Works with the user:** each context has a conversation; the assistant has a face and a mood.
+- **Works with the user:** each context has a conversation stream of its own, and there is a general one for when no context is open; the assistant has a face and a mood.
 - **Keeps itself up:** in idle time it re-reads the graph, researches, and proposes new links.
 - **Remembers how:** schedules for its own recurring jobs, and blueprints for workflows the user has taught it.
 
@@ -19,7 +19,11 @@ The plan to make CODEX one application: a personal knowledge base, a knowledge m
 2. **Items stay where they live.** X-Context's rule holds: CODEX keeps a pointer to an item, never its content. What CODEX stores is derived (search index, embeddings, entities, links) and can be rebuilt, plus the assistant's own records (conversations, memories, blueprints). The workspace edits an item through its source app.
 3. **One application, named CODEX.** X-Context's code is the skeleton: one SQLite store built from features, sync, History, backups, and every call served over REST and MCP. CODEX's daemon socket protocol is retired in the port.
 4. **Engines are plugins.** An engine plugin takes the conversation so far and the tools CODEX offers, and streams events back. Planned: the Anthropic API, OpenAI-compatible endpoints, a Claude subscription through its command-line client, and SmartHarness's task tree. An engine may run its own tool loop.
-5. **Tools belong to CODEX.** Every engine reaches CODEX's data through CODEX's own calls, the same ones served over MCP. Approval, the action policy and the rule that a run which read outside content cannot change anything are enforced there, once, for every engine.
+5. **Tools belong to CODEX.** Every engine reaches CODEX's data through CODEX's own calls, the same ones served over MCP. Approval, the action policy and the rule that a run which read outside content cannot change anything are enforced there, once, for every engine. Tools come from four places, all under the same policy:
+   - **CODEX's own calls** (contexts, items, links, jobs, blueprints).
+   - **The sources' MCP servers.**
+   - **Tool plugins:** prebuilt tools installed like any other plugin, beside collector and engine plugins.
+   - **Tools the engine writes:** a script saved by proposal, read by the user before its first use, and run in a sandbox where it can call only CODEX's tools.
 6. **Sources are other apps' MCP servers,** chosen during setup, each marked for whether its content may be sent to a hosted engine. The X-apps follow one shared convention for this (proposed for the Application Standard), so one collector reads them all.
 7. **It runs on the desktop,** on the machine with the GPU. Embeddings stay local whichever engine answers, so changing engine never forces a re-embed.
 8. **Recurring work is split.** The user's recurring tasks live in X-Tasks. The assistant's recurring jobs are CODEX's own, and the engine may create and delete them during a conversation.
