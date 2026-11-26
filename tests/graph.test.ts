@@ -9,7 +9,7 @@ import { engine_tools, wait_for_runs, type ToolContext } from "../src/shared/con
 import { run_direct, type ChatModel } from "../src/shared/engines/direct.ts";
 import { node_key, parse_node_key } from "../src/shared/graph/model.ts";
 import { addresses_in, normal_address, rule_link_id } from "../src/shared/graph/rules.ts";
-import { most_similar_per_item, propose_similar, similarity_link_id } from "../src/shared/graph/similarity.ts";
+import { most_similar_per_item, propose_similar, similarity_link_id, standing_out } from "../src/shared/graph/similarity.ts";
 import { proposals_note, suggest_links_message, suggest_rounds, suggest_tools } from "../src/shared/graph/store.ts";
 import { changing_calls, offered_api } from "../src/shared/policy/policy.ts";
 import { open_screen } from "../src/shared/privacy/screen.ts";
@@ -547,32 +547,72 @@ describe("similarity", () => {
     for (const [id, vector] of Object.entries(vectors)) insert.run(`item:${id}`, to_blob(unit(vector)));
   }
 
-  it("proposes an item's nearest above the threshold, a few per item, never twice or between items already linked", async () => {
-    const fixture = start_fixture();
-    const garden = fixture.calls.add_context("Garden");
-    const ids = ["a", "b", "c", "d", "e", "f"].map((name) => fixture.calls.add_item([garden], "links", { source_id: `https://example.org/${name}`, kind: "link", title: name.toUpperCase() }));
-    const [a, b, c, d, e, f] = ids as [string, string, string, string, string, string];
-    fixture.calls.add_graph_link(a, f, "about");
-    const index = index_of(fixture);
-    await index_pass(fixture, index);
-    embed(index, { [a]: [1, 0, 0], [b]: [0.98, 0.2, 0], [c]: [0.95, 0.3, 0], [d]: [0.9, 0.4, 0.1], [e]: [0.92, 0.35, 0.05], [f]: [1, 0.01, 0] });
-    embed(index, {});
-    const pass = { written: [], all: false, embedded: [`item:${a}`], embedder: { id: "fake", model: "m1" } };
-    expect(propose_similar(fixture.database, index, pass)).toBe(true);
+  // A vector of 40 numbers whose cosine with the first axis is the score given, each on an axis of its own besides.
+  const scored = (score: number, own_axis: number) => {
+    const vector = Array.from({ length: 40 }, () => 0);
+    vector[0] = score;
+    vector[own_axis] = Math.sqrt(1 - score * score);
+    return vector;
+  };
+  // Scores spread evenly from low to high, for the items unrelated to the one compared.
+  const spread = (count: number, low: number, high: number) => Array.from({ length: count }, (_, at) => low + ((high - low) * at) / (count - 1));
 
-    const proposed = fixture.calls.list_graph_proposals().links;
-    expect(proposed).toHaveLength(most_similar_per_item);
-    expect(proposed.map((link) => [link.made_by, link.engine, link.model, link.type, link.label])).toEqual(Array.from({ length: 3 }, () => ["similarity", "fake", "m1", "related_to", "similar"]));
-    expect(proposed.map((link) => (link.from === `item:${a}` ? link.to : link.from)).sort()).toEqual([`item:${b}`, `item:${c}`, `item:${e}`].sort());
-    expect(proposed[0]!.id).toBe(similarity_link_id(proposed[0]!.from, proposed[0]!.to));
-    expect(propose_similar(fixture.database, index, pass)).toBe(false);
+  // Two embedders' scales: one whose right matches score 0.65 to 0.75 over unrelated text at 0.3 to 0.5, one whose
+  // right matches score near 0.86 over unrelated text at 0.6 to 0.75.
+  const scales = {
+    "low-scoring": { related: [0.74, 0.72, 0.7, 0.68], linked: 0.73, unrelated: spread(30, 0.3, 0.5) },
+    "high-scoring": { related: [0.89, 0.875, 0.86, 0.85], linked: 0.88, unrelated: spread(30, 0.6, 0.75) },
+  };
 
-    fixture.calls.reject_graph_proposals([similarity_link_id(`item:${a}`, `item:${b}`)]);
-    expect(propose_similar(fixture.database, index, pass)).toBe(true);
-    expect(fixture.calls.list_graph_proposals().links.some((link) => link.id === similarity_link_id(`item:${a}`, `item:${b}`))).toBe(false);
-    expect(fixture.calls.list_graph_proposals().links.some((link) => link.id === similarity_link_id(`item:${a}`, `item:${d}`))).toBe(true);
-    expect(propose_similar(fixture.database, index, { ...pass, embedder: null })).toBe(false);
-    expect(propose_similar(fixture.database, index, { ...pass, embedded: [] })).toBe(false);
+  for (const [name, scale] of Object.entries(scales)) {
+    it(`proposes an item's nearest standing clearly above the rest with a ${name} embedder, a few per item, never twice, between items linked or once rejected`, async () => {
+      const fixture = start_fixture();
+      const garden = fixture.calls.add_context("Garden");
+      const add = (title: string) => fixture.calls.add_item([garden], "links", { source_id: `https://example.org/${title}`, kind: "link", title });
+      const a = add("a");
+      const [b, c, e, d] = scale.related.map((_, at) => add(`related-${at}`)) as [string, string, string, string];
+      const f = add("linked");
+      const others = scale.unrelated.map((_, at) => add(`unrelated-${at}`));
+      fixture.calls.add_graph_link(a, f, "about");
+      const index = index_of(fixture);
+      await index_pass(fixture, index);
+      let axis = 1;
+      embed(index, {
+        [a]: scored(1, 1),
+        ...Object.fromEntries([b, c, e, d].map((id, at) => [id, scored(scale.related[at]!, ++axis)])),
+        [f]: scored(scale.linked, ++axis),
+        ...Object.fromEntries(others.map((id, at) => [id, scored(scale.unrelated[at]!, ++axis)])),
+      });
+      const pass = { written: [], all: false, embedded: [`item:${a}`], embedder: { id: "fake", model: "m1" } };
+      expect(propose_similar(fixture.database, index, pass)).toBe(true);
+
+      const proposed = fixture.calls.list_graph_proposals().links;
+      expect(proposed).toHaveLength(most_similar_per_item);
+      expect(proposed.map((link) => [link.made_by, link.engine, link.model, link.type, link.label])).toEqual(Array.from({ length: 3 }, () => ["similarity", "fake", "m1", "related_to", "similar"]));
+      expect(proposed.map((link) => (link.from === `item:${a}` ? link.to : link.from)).sort()).toEqual([`item:${b}`, `item:${c}`, `item:${e}`].sort());
+      expect(proposed[0]!.id).toBe(similarity_link_id(proposed[0]!.from, proposed[0]!.to));
+      expect(propose_similar(fixture.database, index, pass)).toBe(false);
+
+      fixture.calls.reject_graph_proposals([similarity_link_id(`item:${a}`, `item:${b}`)]);
+      expect(propose_similar(fixture.database, index, pass)).toBe(true);
+      const after = fixture.calls.list_graph_proposals().links;
+      expect(after.some((link) => link.id === similarity_link_id(`item:${a}`, `item:${b}`))).toBe(false);
+      expect(after.some((link) => link.id === similarity_link_id(`item:${a}`, `item:${d}`))).toBe(true);
+      expect(after.some((link) => link.id === similarity_link_id(`item:${a}`, `item:${f}`))).toBe(false);
+      expect(after.some((link) => others.some((other) => link.id === similarity_link_id(`item:${a}`, `item:${other}`)))).toBe(false);
+      expect(propose_similar(fixture.database, index, { ...pass, embedder: null })).toBe(false);
+      expect(propose_similar(fixture.database, index, { ...pass, embedded: [] })).toBe(false);
+    });
+  }
+
+  it("proposes nothing for an item when nothing stands out from what it scores against the rest", () => {
+    const flat = spread(30, 0.3, 0.5).map((score, at) => ({ other: `o${at}`, score }));
+    expect(standing_out(flat)).toEqual([]);
+    expect(standing_out([{ other: "only", score: 0.9 }])).toEqual([]);
+    for (const scale of Object.values(scales)) {
+      const items = [...scale.related, ...scale.unrelated].map((score, at) => ({ other: `o${at}`, score }));
+      expect(standing_out(items).map((each) => each.score)).toEqual(scale.related);
+    }
   });
 });
 
