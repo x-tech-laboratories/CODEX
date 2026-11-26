@@ -174,7 +174,9 @@ describe("proposals", () => {
     await tools.call("rename_context", { id: kitchen, name: "Cooking" });
     await tools.call("remove_context", { id: kitchen });
     await tools.call("rename_context", { id: kitchen, name: "Baking" });
-    const [rename, remove, again] = fixture.calls.list_proposals("general");
+    const listed = fixture.calls.list_proposals("general");
+    expect(listed.map((proposal) => proposal.method)).toEqual(["rename_context", "remove_context", "rename_context"]);
+    const [rename, remove, again] = listed;
 
     expect(await fixture.calls.resolve_proposal(rename!.id, "reject")).toMatchObject({ status: "rejected" });
     await fixture.calls.resolve_proposal(remove!.id, "approve");
