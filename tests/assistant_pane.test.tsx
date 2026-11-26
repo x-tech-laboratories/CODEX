@@ -118,6 +118,11 @@ describe("the assistant's pane", () => {
     expect(call.open).toBe(false);
     expect(within(call).getByText("done")).toBeTruthy();
     expect(within(call).getByText(/"name": "Kitchen"/)).toBeTruthy();
+    // The call shows where it was made: after the text written before it, before the text after it.
+    const before_call = screen.getByText("Kitchen", { selector: ".from-assistant strong" });
+    const after_call = screen.getByText(/it is empty/);
+    expect(before_call.compareDocumentPosition(call) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(call.compareDocumentPosition(after_call) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Send" })).toBeTruthy();
     await waitFor(() => expect(moods).toContain("happy"));
   });

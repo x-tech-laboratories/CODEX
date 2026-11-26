@@ -27,6 +27,14 @@ export const openai_embeddings_manifest: PluginManifest = {
     { key: "model", label: "Model", hint: "The embedding model's name on that endpoint.", type: "text", default: "nomic-embed-text", placeholder: "nomic-embed-text" },
     { key: "dimensions", label: "Dimensions", hint: "How many numbers each vector the model gives holds, such as 768 for nomic-embed-text.", type: "number", default: 768, min: 8, max: 8192 },
     {
+      key: "query_prefix",
+      label: "Query prefix",
+      hint: "Text put before every search, never before what is searched, for a model that asks for an instruction there, such as Qwen3-Embedding's \"Instruct: Given a search query, retrieve relevant notes and tasks\\nQuery: \". Empty for none; changing it embeds nothing again.",
+      type: "text",
+      default: "",
+      placeholder: "none",
+    },
+    {
       key: "api_key_command",
       label: "API key command",
       hint: "A command that prints the API key; it runs each time text is embedded, and the key is never stored. Empty sends no key, as a local server needs none.",

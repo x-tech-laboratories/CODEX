@@ -22,6 +22,15 @@ export function read_desktop_settings(saved: unknown): DesktopSettings {
   return { show_tray_icon: flag("show_tray_icon"), keep_running_in_background: flag("keep_running_in_background"), start_at_login: flag("start_at_login") };
 }
 
+// ── Window ───────────────────────────────────────────────────────────────────
+
+// The size a first window opens at: most of the screen's free area, room for the sidebar, a page and the Assistant
+// pane side by side on a large screen, never past the screen; once moved or resized, the window keeps where it was left.
+export function first_window_size(work_area: { width: number; height: number }): { width: number; height: number } {
+  const within = (share: number, total: number, least: number, most: number) => Math.min(total, Math.max(least, Math.min(most, Math.round(total * share))));
+  return { width: within(0.85, work_area.width, 960, 1800), height: within(0.88, work_area.height, 640, 1200) };
+}
+
 // ── Launch ───────────────────────────────────────────────────────────────────
 
 // `--hidden`, as a login entry may pass it, starts in the tray without the window, unless there is no tray to open it from.
