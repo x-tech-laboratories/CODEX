@@ -67,5 +67,7 @@ export interface IndexState {
   // Whether it is indexing or embedding now.
   is_working: boolean;
   last_indexed_at: string;
+  // What went wrong last, in plain words, and the raw text behind it; both empty when nothing did.
   last_error: string;
+  last_error_detail: string;
 }

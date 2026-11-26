@@ -11,6 +11,7 @@ import { in_transaction, type SqlDatabase } from "@x-tech-laboratories/x-libs/sq
 import type { FoundItem } from "../collectors/collector.ts";
 import { context_items, contexts, items } from "../contexts/schema.ts";
 import { drizzle_of, new_id } from "../feature.ts";
+import { job_runs, jobs } from "../jobs/schema.ts";
 import { proposals } from "../policy/schema.ts";
 import { conversation_collector, conversation_item_id, conversation_kind, conversation_link, untitled_conversation, type ConversationSummary } from "./model.ts";
 import { conversation_messages, conversations } from "./schema.ts";
@@ -96,12 +97,22 @@ function holders_of(database: SqlDatabase, ids: string[]): Map<string, { id: str
   return holders;
 }
 
+// The title of the job whose runs each of these conversations keeps, by conversation id; a job since removed is known by its runs.
+function job_titles_of(database: SqlDatabase, ids: string[]): Map<string, string> {
+  const db = drizzle_of(database);
+  const titles = new Map<string, string>();
+  for (const row of db.select({ conversation_id: job_runs.conversation_id, title: job_runs.title }).from(job_runs).where(inArray(job_runs.conversation_id, ids)).all()) titles.set(row.conversation_id, row.title);
+  for (const row of db.select({ conversation_id: jobs.conversation_id, title: jobs.title }).from(jobs).where(inArray(jobs.conversation_id, ids)).all()) titles.set(row.conversation_id, row.title);
+  return titles;
+}
+
 // The conversations with these ids, most recently used first; running says which have a reply being written.
 export function summaries_of(database: SqlDatabase, ids: string[], running: (id: string) => boolean = () => false): ConversationSummary[] {
   if (ids.length === 0) return [];
   const rows = drizzle_of(database).select().from(conversations).where(inArray(conversations.id, ids)).all();
   const facts = facts_of(database, ids);
   const holders = holders_of(database, ids);
+  const job_titles = job_titles_of(database, ids);
   return rows
     .map((row) => {
       const fact = facts.get(row.id);
@@ -115,6 +126,7 @@ export function summaries_of(database: SqlDatabase, ids: string[], running: (id:
         is_running: running(row.id),
         contexts: holders.get(row.id) ?? [],
         link: conversation_link(row.id),
+        job: job_titles.has(row.id) ? { title: job_titles.get(row.id)! } : null,
       };
     })
     .sort((first, second) => second.last_used_at.localeCompare(first.last_used_at) || first.id.localeCompare(second.id));

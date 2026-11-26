@@ -11,6 +11,7 @@ import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
 
 import type { IndexState } from "../../shared/search/model.ts";
 import { calls, set_setting, succeeds, use_data } from "../api.ts";
+import { ReplyError } from "../assistant/AssistantPane.tsx";
 import { EmbedderRows } from "../plugins.tsx";
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ export function embedding_words(state: IndexState): string {
   return `${parts.join("; ")}.`;
 }
 
-function StateRows({ state }: { state: IndexState }) {
+export function StateRows({ state }: { state: IndexState }) {
   return (
     <>
       <SettingRow label="Indexed" hint={state.is_working ? "Indexing now…" : state.last_indexed_at ? `Last brought up to date ${new Date(state.last_indexed_at).toLocaleString()}.` : "Not indexed yet."}>
@@ -45,8 +46,8 @@ function StateRows({ state }: { state: IndexState }) {
         <span className="small">{embedding_words(state)}</span>
       </SettingRow>
       {state.last_error && (
-        <SettingRow label="Last problem" hint="Indexing carries on; this is what went wrong last time.">
-          <span className="badge tone-bad">{state.last_error}</span>
+        <SettingRow class_name="index-problem" label="Last problem" hint="Indexing carries on; this is what went wrong last time.">
+          <ReplyError error={state.last_error} detail={state.last_error_detail} />
         </SettingRow>
       )}
     </>

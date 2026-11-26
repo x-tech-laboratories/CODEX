@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { create_plugin_host } from "@x-tech-laboratories/x-libs/plugins";
 
 import { embedder_plugins, openai_embedder } from "../src/server/embedders/openai.ts";
+import { explain_embedder_failure } from "../src/server/engines/errors.ts";
 import { app_info } from "../src/shared/collectors/collector.ts";
 import type { ContextPluginApi } from "../src/shared/collectors/host.ts";
 import { openai_embedder_id } from "../src/shared/embedders/manifests.ts";
@@ -83,8 +84,20 @@ describe("the OpenAI-compatible embedder", () => {
     answer = () => ({ body: { data: [{ index: 0, embedding: ["x"] }] } });
     await expect(embedder.embed(["a"])).rejects.toThrow("something other than a list of numbers");
     answer = () => ({ status: 503, body: {} });
-    await expect(embedder.embed(["a"])).rejects.toThrow("answered 503");
+    await expect(embedder.embed(["a"])).rejects.toMatchObject({ message: expect.stringMatching(/^The embedder at 127\.0\.0\.1:\d+ could not answer\.$/), detail: expect.stringContaining("answered 503") });
     await expect(openai_embedder(() => ({ ...settings, model: " " })).embed(["a"])).rejects.toThrow("Set the embedding model");
+  });
+
+  it("falls back to its defaults when nothing is set, and passes a stop on as it is rather than as a failure", async () => {
+    const bare = openai_embedder(() => ({}));
+    expect([bare.model(), bare.dimensions()]).toEqual(["", 768]);
+    await expect(bare.embed_query!("anything")).rejects.toThrow("Set the embedding model");
+
+    const fake = await start_endpoint((input) => ({ body: vectors_of(input) }));
+    const stopped = new AbortController();
+    stopped.abort();
+    const embedder = openai_embedder(() => ({ endpoint: fake.endpoint, model: "m", dimensions: 3 }));
+    await expect(embedder.embed(["a"], stopped.signal)).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("is local on Ollama's address by default and hosted elsewhere, and is provided as a plugin", async () => {
@@ -95,5 +108,32 @@ describe("the OpenAI-compatible embedder", () => {
     await host.start();
     const [provided] = host.providers("embedder");
     expect([provided!.id, provided!.value.model(), provided!.value.dimensions()]).toEqual([openai_embedder_id, "nomic-embed-text", 768]);
+  });
+});
+
+describe("an embedder's failures in plain words", () => {
+  const explain = (error: unknown) => explain_embedder_failure(error, "http://10.0.0.5:8081/v1", "http://localhost:11434/v1", "small");
+  const answered = (status: number, text = `answered ${status}`) => Object.assign(new Error(text), { status });
+
+  it("names the endpoint by host and port, says what to do, and keeps the raw text as detail", () => {
+    const refused = Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect"), { code: "ECONNREFUSED" }) });
+    expect(explain(refused)).toEqual({ message: "The embedder at 10.0.0.5:8081 cannot be reached. Check that its server is running and that its endpoint under Settings → Index is right.", detail: "fetch failed (ECONNREFUSED)" });
+    expect(explain(Object.assign(new Error("slow"), { code: "ETIMEDOUT" })).message).toBe("The embedder at 10.0.0.5:8081 did not answer in time. Check that its server is running and not overloaded.");
+    expect(explain(answered(401)).message).toBe("The embedder at 10.0.0.5:8081 refused the API key. Check its API key command under Settings → Index.");
+    expect(explain(answered(404, "answered 404: model not found")).message).toBe("The embedder at 10.0.0.5:8081 does not know the model “small”. Check the model's name under Settings → Index.");
+    expect(explain(answered(404)).message).toBe("The embedder at 10.0.0.5:8081 has no embeddings at that address. Check its endpoint under Settings → Index; it usually ends in /v1.");
+    expect(explain(answered(429)).message).toBe("The embedder at 10.0.0.5:8081 is limiting how often it is asked. Indexing tries again later.");
+    expect(explain(answered(500))).toEqual({ message: "The embedder at 10.0.0.5:8081 could not answer.", detail: "answered 500" });
+  });
+
+  it("names an endpoint's port from its scheme when the address gives none", () => {
+    expect(explain_embedder_failure(new TypeError("fetch failed"), "https://embed.example.org/v1", "", "m").message).toMatch(/^The embedder at embed\.example\.org:443 /);
+    expect(explain_embedder_failure(new TypeError("fetch failed"), "http://embed.example.org/v1", "", "m").message).toMatch(/^The embedder at embed\.example\.org:80 /);
+    expect(explain_embedder_failure(new TypeError("fetch failed"), "not an address", "", "m").message).toMatch(/^The embedder at the address in its settings /);
+  });
+
+  it("keeps a failure already in plain words as it is, and names the default endpoint when none is set", () => {
+    expect(explain(new Error("Set the embedding model under Settings → Index."))).toEqual({ message: "Set the embedding model under Settings → Index." });
+    expect(explain_embedder_failure(new TypeError("fetch failed"), "", "http://localhost:11434/v1", "m").message).toMatch(/^The embedder at localhost:11434 cannot be reached/);
   });
 });

@@ -1,13 +1,17 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 
+import { openai_embedder_plugin } from "../src/server/embedders/openai.ts";
 import type { FoundItem } from "../src/shared/collectors/collector.ts";
 import type { ContextPlugin, ContextPluginApi } from "../src/shared/collectors/host.ts";
 import { reply_ended, reply_started } from "../src/shared/conversations/activity.ts";
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
+import { openai_embeddings_manifest, openai_embedder_id } from "../src/shared/embedders/manifests.ts";
 import { add_message } from "../src/shared/conversations/messages.ts";
 import { engine_tools, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
 import { embed_pending, open_index, settle_index, sync_documents, use_search_index, index_now, keep_indexing, poke_index } from "../src/shared/search/indexer.ts";
@@ -301,6 +305,72 @@ describe("indexing", () => {
     expect(seen.length).toBeGreaterThan(1);
     expect(seen.slice(0, 2)).toEqual(["the model is away", ""]);
     expect((await setup.fixture.calls.get_index_state())).toMatchObject({ last_error: "", pending: 0 });
+  });
+
+  it("says in plain words which embedder endpoint cannot be reached, and clears it when the endpoint is corrected during a pass", async () => {
+    // A real embeddings endpoint on a random port, and the address of one where nothing listens.
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        const { input } = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { input: string[] };
+        response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ data: input.map((text, index) => ({ index, embedding: [text.length, 1, 2, 3, 4, 5, 6, 7] })) }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const working_endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
+    const closed = createServer();
+    await new Promise<void>((resolve) => closed.listen(0, "127.0.0.1", resolve));
+    const closed_port = (closed.address() as AddressInfo).port;
+    await new Promise<void>((resolve) => closed.close(() => resolve()));
+    try {
+      const notes = fake_notes();
+      let hold: Promise<void> | null = null;
+      const slow_notes = define_plugin<ContextPluginApi>({
+        id: "tests.slow-notes",
+        name: "Slow notes",
+        version: "1.0.0",
+        start: (context) =>
+          context.provide("collector", "slow", {
+            label: "Slow notes",
+            kinds: ["note"],
+            content: async (ids) => {
+              await hold;
+              return Object.fromEntries(ids.map((id) => [id, `The text of ${id}.`]));
+            },
+          }),
+      });
+      const fixture = start_fixture({ plugins: [notes.plugin, slow_notes, openai_embedder_plugin()] });
+      const index = new DatabaseSync(":memory:");
+      open_index(index);
+      use_search_index({ database: () => fixture.database, index: () => index });
+      const home = fixture.calls.add_context("Home");
+      fixture.calls.add_item([home], "slow", { source_id: "s1", kind: "note", title: "First note" });
+      const plugins = (endpoint: string) => ({ [openai_embeddings_manifest.id]: { enabled: true, settings: { endpoint, model: "small", dimensions: 8 } } });
+
+      // Chosen while still pointing where nothing answers.
+      fixture.calls.set_setting("plugins", plugins(`http://127.0.0.1:${closed_port}/v1`));
+      fixture.calls.set_setting("embedder", openai_embedder_id);
+      await index_now();
+      const failed = await fixture.calls.get_index_state();
+      expect(failed.last_error).toBe(`The embedder at 127.0.0.1:${closed_port} cannot be reached. Check that its server is running and that its endpoint under Settings → Index is right.`);
+      expect(failed.last_error_detail).toMatch(/^fetch failed.*ECONNREFUSED/);
+
+      // A pass is under way, held reading a source, when the endpoint is corrected.
+      let release = () => {};
+      hold = new Promise<void>((resolve) => (release = resolve));
+      fixture.calls.add_item([home], "slow", { source_id: "s2", kind: "note", title: "Second note" });
+      const pass = index_now();
+      fixture.calls.set_setting("plugins", plugins(working_endpoint));
+      expect(await fixture.calls.get_index_state()).toMatchObject({ last_error: "", last_error_detail: "" });
+
+      release();
+      await pass;
+      await settle_index();
+      expect(await fixture.calls.get_index_state()).toMatchObject({ last_error: "", last_error_detail: "", pending: 0 });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it("ends the embedding in hand when the embedder's settings change, and goes round again with the new ones", async () => {

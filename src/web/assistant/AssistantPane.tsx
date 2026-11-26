@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from
 import type { MenuItem } from "@x-tech-laboratories/x-libs/web/menus";
 import { age } from "@x-tech-laboratories/x-libs/web/format";
 import { AddIcon, ChevronDownIcon, EditIcon, Icon, UndoIcon } from "@x-tech-laboratories/x-libs/web/react/icons";
+import { use_follow_tail } from "@x-tech-laboratories/x-libs/web/react/following";
 import { FormGroup } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Markdown } from "@x-tech-laboratories/x-libs/web/react/markdown";
 import { MenuButton } from "@x-tech-laboratories/x-libs/web/react/menu_button";
@@ -131,11 +132,15 @@ export function ReplyError({ error, detail }: { error: string; detail: string })
   );
 }
 
-// What a reasoning model is thinking, folded under a Thinking row that opens to show it streaming.
-function Thinking({ text }: { text: string }) {
+// What a reasoning model is thinking, folded under a Thinking row that opens to about ten lines, following the newest
+// text as it streams unless the reader has scrolled up.
+export function Thinking({ text, active = true }: { text: string; active?: boolean }) {
+  const tail = use_follow_tail<HTMLParagraphElement>(text, active);
   return (
     <FormGroup class_name="reply-thinking" summary={<span className="muted small">Thinking…</span>}>
-      <p className="muted small reply-thinking-text">{text}</p>
+      <p ref={tail.ref} className="muted small reply-thinking-text" onScroll={tail.on_scroll}>
+        {text}
+      </p>
     </FormGroup>
   );
 }
@@ -185,7 +190,7 @@ function Reply({ run }: { run: LiveRun }) {
       {reply_parts(run.text, run.tool_calls).map((part, at, parts) =>
         "call" in part ? <ToolCallRow key={part.call.id} call={part.call} /> : <Markdown key={`text-${at}`} text={part.text} follow={at === parts.length - 1} />,
       )}
-      {run.reasoning ? <Thinking text={run.reasoning} /> : !run.text && <p className="muted small">Thinking…</p>}
+      {run.reasoning ? <Thinking text={run.reasoning} active={!run.finished} /> : !run.text && <p className="muted small">Thinking…</p>}
     </div>
   );
 }
@@ -200,11 +205,12 @@ function brief_arguments(args: Record<string, unknown>): string {
   return text.length > 120 ? `${text.slice(0, 119)}…` : text;
 }
 
-// What a proposal came from: the message that asked for it, what the run read before proposing, and the sources.
+// What a proposal came from: the message that asked for it, what the run read before proposing, and the sources whose
+// content it had in front of it, in its instructions or through a read.
 export function Evidence({ proposal, asked, label_of }: { proposal: Proposal; asked: string | null; label_of: (source: string) => string }) {
   const { evidence } = proposal;
   if (!evidence.asked_by && evidence.reads.length === 0) return <p className="muted small">No evidence was kept for this proposal.</p>;
-  const sources = proposal.sources.filter((source) => source !== "*");
+  const sources = (evidence.seen ?? []).filter((source) => source !== "*");
   return (
     <div className="proposal-evidence">
       {asked !== null && (
@@ -316,15 +322,19 @@ function when_used(conversation: ConversationSummary): string {
 }
 
 // The conversation shown, a menu of the others in this context (or in none) with when each was used and which are
-// being written, and what can be done to the one shown.
+// being written, the background jobs' under a heading of their own, and what can be done to the one shown.
 function Switcher({ context_id, list, shown, on_pick }: { context_id: string | null; list: ConversationSummary[]; shown: ConversationSummary | null; on_pick: (id: string | null) => void }) {
   const running_elsewhere = list.filter((each) => each.is_running && each.id !== shown?.id).length;
   const holders = shown?.contexts.map((each) => each.id) ?? [];
   const open_list = (event: MouseEvent<HTMLButtonElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
+    const entry = (each: ConversationSummary): MenuItem => ({ label: each.title, hint: when_used(each), radio: true, checked: each.id === shown?.id, run: () => on_pick(each.id) });
+    const talks = list.filter((each) => each.job === null);
+    const jobs = list.filter((each) => each.job !== null);
     open_context_menu({ clientX: box.left, clientY: box.bottom, preventDefault: () => undefined }, [
-      ...list.map((each) => ({ label: each.title, hint: when_used(each), radio: true, checked: each.id === shown?.id, run: () => on_pick(each.id) })),
-      { label: "New conversation", separator_before: list.length > 0, run: () => on_pick(null) },
+      ...talks.map(entry),
+      { label: "New conversation", separator_before: talks.length > 0, run: () => on_pick(null) },
+      ...(jobs.length > 0 ? [{ label: "Background jobs", disabled: true, separator_before: true, run: () => undefined }, ...jobs.map(entry)] : []),
     ]);
   };
   const more: MenuItem[] = shown
@@ -412,8 +422,8 @@ function use_moment(ended: { error: string; key: number } | null): { mood: Masco
   return moment;
 }
 
-// Which conversation the pane shows on this context: the one picked or asked for, else the most recently used; null
-// for a new one not yet sent to.
+// Which conversation the pane shows on this context: the one picked or asked for, else the most recently used that is
+// not a background job's; null for a new one not yet sent to.
 function use_shown(context_id: string | null, list: ConversationSummary[] | null | undefined): [string | null, (id: string | null) => void, () => void] {
   const [choice, set_choice] = useState<{ context_id: string | null; id: string | null } | null>(null);
   const asked = use_watch(wanted_watch);
@@ -422,7 +432,7 @@ function use_shown(context_id: string | null, list: ConversationSummary[] | null
     if (id) set_choice({ context_id, id });
   }, [asked, context_id]);
   const picked = choice && choice.context_id === context_id ? choice.id : undefined;
-  const shown = picked === undefined ? (list?.[0]?.id ?? null) : picked;
+  const shown = picked === undefined ? (list?.find((each) => each.job === null)?.id ?? null) : picked;
   return [shown, (id) => set_choice({ context_id, id }), () => set_choice(null)];
 }
 

@@ -12,7 +12,7 @@ import type { ConversationEvent } from "../src/shared/conversations/model.ts";
 import { wait_for_runs } from "../src/shared/conversations/run.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { data_watch, set_page_api } from "../src/web/api.ts";
-import { AssistantPane, ProposalCard } from "../src/web/assistant/AssistantPane.tsx";
+import { AssistantPane, ProposalCard, Thinking } from "../src/web/assistant/AssistantPane.tsx";
 import { Mascot } from "../src/web/assistant/Mascot.tsx";
 import { lasting_mood, moment_after, screen_placement } from "../src/web/assistant/mascot.ts";
 import { want_conversation } from "../src/web/assistant/selection.ts";
@@ -156,6 +156,30 @@ describe("the assistant's pane", () => {
     expect(screen.queryByText(/a greeting/)).toBeNull();
   });
 
+  it("keeps the opened thinking at its newest text as it streams, until the reader scrolls up", () => {
+    // jsdom lays nothing out, so the box reports a fixed height and a content height that grows with the text.
+    const sized = (element: HTMLElement) => {
+      Object.defineProperty(element, "clientHeight", { configurable: true, get: () => 100 });
+      Object.defineProperty(element, "scrollHeight", { configurable: true, get: () => element.textContent!.length * 10 });
+    };
+    const { rerender, container } = render(<Thinking text={"a".repeat(30)} />);
+    const box = container.querySelector<HTMLElement>(".reply-thinking-text")!;
+    sized(box);
+
+    rerender(<Thinking text={"a".repeat(60)} />);
+    expect(box.scrollTop).toBe(600);
+
+    box.scrollTop = 100;
+    fireEvent.scroll(box);
+    rerender(<Thinking text={"a".repeat(90)} />);
+    expect(box.scrollTop).toBe(100);
+
+    box.scrollTop = 800;
+    fireEvent.scroll(box);
+    rerender(<Thinking text={"a".repeat(120)} />);
+    expect(box.scrollTop).toBe(1200);
+  });
+
   it("puts a failure in plain words with its raw detail behind Details, and shows what was left out to fit", async () => {
     const fixture = open_page();
     fixture.set_script(async function* () {
@@ -266,6 +290,7 @@ describe("the assistant's pane", () => {
           { call_id: "t1", name: "list_contexts", arguments: {}, sources: [], excerpt: "Kitchen, Garden" },
           { call_id: "t2", name: "get_item", arguments: { id: "links:tiles" }, sources: ["links"], excerpt: "" },
         ],
+        seen: ["links"],
       },
     };
     render(<ProposalCard proposal={proposal} asked="Name it after the tiles" label_of={(source) => (source === "links" ? "Web links" : source)} />);
@@ -274,6 +299,11 @@ describe("the assistant's pane", () => {
     expect(screen.getByText(/“Kitchen, Garden”/)).toBeTruthy();
     expect(screen.getByText(/not quoted, as Web links may not leave this computer/)).toBeTruthy();
     expect(screen.getByText("From: Web links")).toBeTruthy();
+    cleanup();
+    // A run that had no other app's content in front of it names no source, whatever the proposal itself names.
+    render(<ProposalCard proposal={{ ...proposal, sources: ["links", "x-tasks"], evidence: { asked_by: "m1", run_id: "r1", reads: [], seen: [] } }} />);
+    expect(screen.getByText("It read nothing before proposing.")).toBeTruthy();
+    expect(screen.queryByText(/^From:/)).toBeNull();
     cleanup();
     render(<ProposalCard proposal={{ ...proposal, evidence: { asked_by: "", run_id: "", reads: [] } }} />);
     expect(screen.getByText("No evidence was kept for this proposal.")).toBeTruthy();
@@ -386,6 +416,43 @@ describe("the assistant's pane", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Conversations" }).textContent).toContain("Floor tiles"));
     expect(fixture.calls.list_conversations(kitchen).map((each) => each.title).sort()).toEqual(["Floor tiles", "Oven"]);
+  });
+
+  it("opens on the most recent conversation that is not a job's, listing the jobs' under a heading of their own", async () => {
+    const fixture = open_page();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const { conversation_id: talk } = await fixture.calls.send_message(kitchen, "Tiles");
+    await wait_for_runs();
+    // A job's conversation, used after the user's.
+    const job = fixture.calls.add_job({ title: "Tidy the kitchen", instruction: "Tidy.", context_id: kitchen, schedule: { kind: "every", every: 1, unit: "hours" }, only_when_changed: false, limits: { max_rounds: 4, max_tokens: 10_000, max_runs_per_day: 6 } });
+    const { conversation_id: job_talk } = await fixture.calls.send_message(kitchen, "Tidy.", null);
+    await wait_for_runs();
+    fixture.database.prepare("UPDATE jobs SET conversation_id = ? WHERE id = ?").run(job_talk, job);
+    expect(fixture.calls.list_conversations(kitchen).map((each) => [each.id, each.job])).toEqual([
+      [job_talk, { title: "Tidy the kitchen" }],
+      [talk, null],
+    ]);
+
+    render(
+      <>
+        <AssistantPane context_id={kitchen} />
+        <ContextMenus />
+      </>,
+    );
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Conversations" }).textContent).toContain("Tiles"));
+    fireEvent.click(screen.getByRole("button", { name: "Conversations" }));
+    const menu = await screen.findByRole("menu");
+    const rows = [...menu.querySelectorAll(".menu-item")].map((row) => (row.textContent ?? "").replace(/\d+s ago$/, "").trim());
+    expect(rows).toEqual(["Tiles", "New conversation", "Background jobs", "Tidy."]);
+    expect(within(menu).getByRole("menuitem", { name: "Background jobs" }).getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(within(menu).getByRole("menuitemradio", { name: /Tidy\./ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Conversations" }).textContent).toContain("Tidy."));
+
+    // A message sent to the context with no conversation named goes to the user's, not the job's.
+    const { conversation_id } = await fixture.calls.send_message(kitchen, "And the grout?");
+    await wait_for_runs();
+    expect(conversation_id).toBe(talk);
   });
 
   it("shows a conversation asked for by an item or a link once it is open on that context", async () => {

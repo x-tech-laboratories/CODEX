@@ -22,7 +22,7 @@ import { add_proposal } from "../policy/proposals.ts";
 import { mark_before_change, undo_of_change } from "../policy/undo.ts";
 import { sources_named, summarize_call } from "../policy/summaries.ts";
 import { screen_result } from "../privacy/results.ts";
-import { counts_of, local_screen, may_send, note_source, open_screen, taints, withheld_line, type Screen } from "../privacy/screen.ts";
+import { counts_of, local_screen, may_send, note_source, open_screen, taints, withheld_line, type Screen, type Screened } from "../privacy/screen.ts";
 import { record_hosted_send } from "../privacy/store.ts";
 import { default_hits } from "../search/search.ts";
 import { settings_feature } from "../settings.ts";
@@ -75,6 +75,10 @@ export interface ToolContext {
   run_id?: string;
   // What the run has read so far, each read by its tool call, which a proposal carries as evidence.
   reads?: ProposalRead[];
+  // The sources whose items its instructions listed, which a proposal names as what it came from.
+  instruction_sources?: string[];
+  // The only calls this run is offered, for a task that needs few; every offered call when left out.
+  only?: ReadonlySet<string>;
   // Hears what the policy made of each call, in order, so it can be kept with the call; gives back the call's id.
   on_decided?: (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id" | "undo">) => string | void;
 }
@@ -99,10 +103,17 @@ function brief_schema(schema: JsonSchema): JsonSchema {
 // CODEX's offered calls as tools, each call through the policy: reads run, changes run, wait or are refused by level.
 // The core set is the same calls, fewer and briefly described, for a model with a small context.
 export function engine_tools(context: ToolContext): EngineTools {
-  const definitions = Object.entries(offered_api).map(([name, spec]) => ({ name, description: spec.description, parameters: input_schema(spec) }));
-  const core = Object.entries(core_tools)
-    .filter(([name]) => is_offered(name))
-    .map(([name, description]) => ({ name, description, parameters: brief_schema(input_schema(offered_api[name]!)) }));
+  const { only } = context;
+  const offered = (name: string) => is_offered(name) && (!only || only.has(name));
+  const definitions = Object.entries(offered_api)
+    .filter(([name]) => !only || only.has(name))
+    .map(([name, spec]) => ({ name, description: spec.description, parameters: input_schema(spec) }));
+  // A run offered few calls gets them fully described, which the core set would not shorten much.
+  const core = only
+    ? undefined
+    : Object.entries(core_tools)
+        .filter(([name]) => is_offered(name))
+        .map(([name, description]) => ({ name, description, parameters: brief_schema(input_schema(offered_api[name]!)) }));
   const reads = (context.reads ??= []);
   const decided = (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id" | "undo">, outcome: ToolOutcome): ToolOutcome => {
     const call_id = context.on_decided?.(name, record);
@@ -134,9 +145,9 @@ export function engine_tools(context: ToolContext): EngineTools {
   };
   return {
     definitions,
-    core,
+    ...(core ? { core } : {}),
     call: async (name, given) => {
-      if (!is_offered(name)) return decided(name, { outcome: "refused" }, { result: `There is no tool named ${name}.`, is_error: true });
+      if (!offered(name)) return decided(name, { outcome: "refused" }, { result: `There is no tool named ${name}.`, is_error: true });
       let args: unknown[];
       try {
         args = positional_args(offered_api[name]!, given);
@@ -160,7 +171,8 @@ export function engine_tools(context: ToolContext): EngineTools {
         if (decision.action === "refuse") return decided(name, { outcome: "refused" }, { result: `The user does not permit ${name}, so it was not run.`, is_error: true });
         if (decision.action === "propose") {
           const sources = [...new Set([...read_sources(screen), ...sources_named(database, given)])].sort();
-          const evidence = { asked_by: context.asked_by ?? "", run_id: context.run_id ?? "", reads: structuredClone(reads) };
+          const seen = [...new Set([...(context.instruction_sources ?? []), ...reads.flatMap((read) => read.sources)])].sort();
+          const evidence = { asked_by: context.asked_by ?? "", run_id: context.run_id ?? "", reads: structuredClone(reads), seen };
           const proposal = add_proposal(database, { conversation_id: context.conversation_id, method: name, arguments: given, summary: summarize_call(database, name, given), reason: decision.reason, sources, evidence });
           const why = decision.reason === "outside content" ? " because this conversation has read text from other apps" : "";
           return decided(
@@ -183,10 +195,16 @@ export function engine_tools(context: ToolContext): EngineTools {
 
 // ── Runs ─────────────────────────────────────────────────────────────────────
 
-// What a background job's run is given beyond a conversation's: nobody is present, and it stops at its limits.
+// What a background job's run, or a task such as Suggest links, is given beyond a conversation's: who is present, the
+// limits it stops at, the only tools it is offered, more instructions, and a note said when it ends.
 export interface RunOptions {
   presence?: Presence;
-  limits?: { max_rounds: number; max_tokens: number };
+  limits?: { max_rounds: number; max_tokens?: number };
+  tools?: readonly string[];
+  // More instructions put after the open context's, screened like them for the engine answering.
+  instructions?: (screen: Screen) => Screened<string>;
+  // A plain note on what the run did, shown with its answer.
+  closing_note?: (calls: ToolCallRecord[]) => string;
   // Hears how the run ended, once it has been kept.
   on_end?: (end: RunEnd) => void;
 }
@@ -301,11 +319,11 @@ export function turns_of(database: SqlDatabase, conversation_id: string, screen:
 }
 
 // The conversation a message goes to: the one named, a new one for null, or, left out, the context's most recently
-// used one, or a new one when it has none; undefined for one still to be made.
+// used one that is not a job's, or a new one when it has none; undefined for one still to be made.
 function conversation_for(database: SqlDatabase, context_id: string | null, conversation_id: string | null | undefined): string | undefined {
   if (typeof conversation_id === "string" && conversation_id) return conversation_row(database, conversation_id).id;
   if (conversation_id === null) return undefined;
-  return summaries_of(database, conversation_ids_in(database, context_id))[0]?.id;
+  return summaries_of(database, conversation_ids_in(database, context_id)).find((summary) => summary.job === null)?.id;
 }
 
 // Keeps the user's message, in a new conversation in the open context when asked or when there is none, and starts the
@@ -330,6 +348,11 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   if (chosen !== undefined && (runs.has(chosen) || !has_conversation(database, chosen))) throw new Error(runs.has(chosen) ? "A reply is still being written here; stop it or wait for it first." : `There is no conversation ${chosen}.`);
   const conversation_id = chosen ?? add_conversation_record(database, context_id);
   const instructions = screened_instructions(database, context_id, conversation_id, new Date().toISOString().slice(0, 10), screen);
+  const extra = options.instructions?.(screen);
+  if (extra) {
+    instructions.value = `${instructions.value}\n\n${extra.value}`;
+    for (const source of extra.sources) instructions.sources.add(source);
+  }
   // The user's own approved blueprints that match the message, put in by CODEX itself; not fenced, and tainting nothing.
   const recalled = await recall_blueprints(database, context_id, text);
   if (recalled.length > 0) instructions.value = `${instructions.value}\n\n${recalled_part(recalled)}`;
@@ -352,6 +375,8 @@ export async function start_run(database: SqlDatabase, context_id: string | null
     presence,
     has_outside_content: taints(screen, [...instructions.sources, ...replayed.sources]),
     screen,
+    instruction_sources: [...instructions.sources],
+    ...(options.tools ? { only: new Set(options.tools) } : {}),
     maker: { engine: found.engine.id, model: found.engine.model },
     asked_by: question.id,
     run_id: state.run_id,
@@ -422,7 +447,7 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
         output_tokens += event.output_tokens;
         rounds += 1;
         // A background job stops at its limits, whatever the engine would do next.
-        if (limits && input_tokens + output_tokens >= limits.max_tokens) run.stopped_by = "tokens";
+        if (limits?.max_tokens !== undefined && input_tokens + output_tokens >= limits.max_tokens) run.stopped_by = "tokens";
         // The engine is asked to stop at the round limit; one that goes past it anyway is stopped here.
         else if (limits && rounds > limits.max_rounds) run.stopped_by = "rounds";
         if (run.stopped_by) {
@@ -445,7 +470,7 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
   if (limits && !run.stopped_by && error && rounds >= limits.max_rounds) run.stopped_by = "rounds";
   const stops: Record<RunEnd["stopped_by"], string> = {
     "": "Stopped.",
-    tokens: `Stopped: it reached its limit of ${limits?.max_tokens.toLocaleString("en") ?? 0} tokens for one run.`,
+    tokens: `Stopped: it reached its limit of ${(limits?.max_tokens ?? 0).toLocaleString("en")} tokens for one run.`,
     rounds: `Stopped: it reached its limit of ${limits?.max_rounds ?? 0} rounds for one run.`,
     gave_way: "Stopped to give way to a conversation; it runs again at its next turn.",
   };
@@ -466,6 +491,11 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
   try {
     // A conversation deleted while its reply was written, on its own or with its last context, keeps nothing.
     if (!has_conversation(host.database(), conversation_id)) return;
+    const closing = run.options.closing_note?.(state.tool_calls);
+    if (closing) {
+      state.notices.push(closing);
+      host.emit({ ...base, type: "notice", text: closing });
+    }
     const text = (final_text ?? state.text).trim();
     add_message(host.database(), {
       conversation_id,

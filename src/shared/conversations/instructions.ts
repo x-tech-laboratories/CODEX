@@ -23,6 +23,8 @@ export const listing_caps = {
   items: { most: 30, chars: 3000 },
   children: { most: 20, chars: 1000 },
   conversations: { most: 10, chars: 600 },
+  entities: { most: 30, chars: 1500 },
+  links: { most: 30, chars: 2500 },
 };
 
 const longest_snippet = 120;
@@ -37,7 +39,7 @@ const identity = [
   "When the user has just taught you rules or the order of steps for a task, offer to save them as a blueprint (propose_blueprint), or to amend the blueprint you followed (propose_blueprint_change); the user accepts it first.",
 ].join("\n");
 
-function shortened(text: string): string {
+export function shortened(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > longest_snippet ? `${flat.slice(0, longest_snippet - 1)}…` : flat;
 }
@@ -48,7 +50,7 @@ function item_line(item: ContextItem): string {
 }
 
 // The first entries whose text fits in the characters, at most `most` of them, and always the first.
-function capped<Entry>(entries: Entry[], text_of: (entry: Entry) => string, cap: { most: number; chars: number }): Entry[] {
+export function capped<Entry>(entries: Entry[], text_of: (entry: Entry) => string, cap: { most: number; chars: number }): Entry[] {
   const kept: Entry[] = [];
   let chars = 0;
   for (const entry of entries.slice(0, cap.most)) {

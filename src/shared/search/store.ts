@@ -48,7 +48,7 @@ export const search_feature = define_feature({
     },
     get_index_state: {
       description:
-        "Says how far the local search index has come: how many items, contexts and messages it holds, how many pieces of text have a vector from the embedder in use and how many wait, the embedder in use, and the last error.",
+        "Says how far the local search index has come: how many items, contexts and messages it holds, how many pieces of text have a vector from the embedder in use and how many wait, the embedder in use, and the last problem in plain words with its raw text.",
       params: [],
     },
     rebuild_index: {

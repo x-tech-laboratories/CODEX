@@ -6,10 +6,11 @@ import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { add_message } from "../src/shared/conversations/messages.ts";
 import { add_conversation_record } from "../src/shared/conversations/records.ts";
 import { engine_tools, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
+import { run_direct, type ChatModel } from "../src/shared/engines/direct.ts";
 import { node_key, parse_node_key } from "../src/shared/graph/model.ts";
 import { addresses_in, normal_address, rule_link_id } from "../src/shared/graph/rules.ts";
-import { most_similar_per_item, propose_similar, similarity_link_id } from "../src/shared/graph/similarity.ts";
-import { suggest_links_message } from "../src/shared/graph/store.ts";
+import { most_similar_per_item, propose_similar, similarity_link_id, standing_out } from "../src/shared/graph/similarity.ts";
+import { proposals_note, suggest_links_message, suggest_rounds, suggest_tools } from "../src/shared/graph/store.ts";
 import { changing_calls, offered_api } from "../src/shared/policy/policy.ts";
 import { open_screen } from "../src/shared/privacy/screen.ts";
 import { after_pass, index_now, open_index, settle_index, sync_documents, use_search_index, type IndexPass } from "../src/shared/search/indexer.ts";
@@ -335,18 +336,114 @@ describe("proposals", () => {
     expect(fixture.calls.list_graph_decision_counts()).toMatchObject([{ accepted: 1, rejected: 1 }]);
   });
 
-  it("start from Suggest links, an ordinary conversation in the context asking the engine to propose", async () => {
+  it("start from Suggest links, a conversation in the context with what it needs in its instructions, few tools and few rounds", async () => {
     const fixture = start_fixture();
-    const { garden } = garden_of(fixture);
+    const { garden, seeds, shop } = garden_of(fixture);
+    const ada = fixture.calls.add_entity("person", "Ada");
+    fixture.calls.add_graph_link(seeds, `entity:${ada}`, "mentions");
     const started = await fixture.calls.suggest_links(garden);
     await wait_for_runs();
     const conversation = fixture.calls.get_conversation(started.conversation_id);
     expect(conversation.contexts.map((each) => each.id)).toEqual([garden]);
     expect(conversation.title).toBe("Suggest links");
     expect(conversation.messages[0]).toMatchObject({ role: "user", text: suggest_links_message });
-    const names = fixture.requests[0]!.tools.definitions.map((tool) => tool.name);
-    expect(names).toEqual(expect.arrayContaining(["get_node_links", "propose_entity", "propose_link"]));
-    expect(fixture.requests[0]!.instructions).toContain("propose_link only propose");
+
+    const request = fixture.requests[0]!;
+    // Only the proposals and two reads, fully described, and fewer rounds than a conversation.
+    expect(request.tools.definitions.map((tool) => tool.name).sort()).toEqual([...suggest_tools].sort());
+    expect(request.tools.core).toBeUndefined();
+    expect(request.limits).toEqual({ max_rounds: suggest_rounds });
+    // The items with kind, title and snippet, and the entities and links it has.
+    expect(request.instructions).toContain(`[link] Seed shop; id: ${shop}; snippet: For x-tasks://task/t1.`);
+    expect(request.instructions).toContain(`[task] Order seeds; id: ${seeds}`);
+    expect(request.instructions).toContain(`"Ada" (person, id entity:${ada}, accepted)`);
+    expect(request.instructions).toContain(`"Order seeds" (item:${seeds}) mentions "Ada" (entity:${ada}), accepted`);
+    expect(suggest_links_message).toContain("at most three items");
+    expect(conversation.messages[1]!.notices).toEqual(["Suggest links proposed nothing this time."]);
+  });
+
+  it("from Suggest links, cap the entities and links listed, saying how many more there are", async () => {
+    const fixture = start_fixture();
+    const { garden, seeds } = garden_of(fixture);
+    for (let at = 0; at < 40; at += 1) fixture.calls.add_graph_link(seeds, `entity:${fixture.calls.add_entity("topic", `Topic number ${at}`)}`, "about");
+
+    await fixture.calls.suggest_links(garden);
+    await wait_for_runs();
+
+    const { instructions } = fixture.requests[0]!;
+    // Each listing is capped by its count and its characters, and says how many it left out.
+    expect(instructions.match(/\n\d+ more are not listed here\./g)).toHaveLength(2);
+    expect(instructions.match(/ about "Topic number/g)!.length).toBeLessThan(40);
+  });
+
+  it("from Suggest links, refuse a tool it is not offered and end with how many proposals it made", async () => {
+    const fixture = start_fixture();
+    const { garden, seeds, shop } = garden_of(fixture);
+    const results: string[] = [];
+    fixture.set_script(async function* (request) {
+      for (const [name, args] of [
+        ["get_context", { id: garden }],
+        ["get_item", { id: shop }],
+        ["propose_entity", { kind: "organisation", name: "Seed Co" }],
+        ["propose_link", { from: seeds, to: shop, type: "related_to" }],
+        ["propose_link", { from: seeds, to: shop, type: "related_to" }],
+      ] as const) {
+        yield { type: "tool_call", id: `${name}-${results.length}`, name, arguments: args };
+        const outcome = await request.tools.call(name, args);
+        results.push(outcome.result);
+        yield { type: "tool_result", id: `${name}-${results.length - 1}`, ...outcome };
+      }
+      yield { type: "done", text: "Proposed Seed Co and a link." };
+    });
+
+    const started = await fixture.calls.suggest_links(garden);
+    await wait_for_runs();
+
+    expect(results[0]).toBe("There is no tool named get_context.");
+    expect(results[1]).toContain("Seed shop");
+    expect(fixture.calls.get_conversation(started.conversation_id).messages[1]!.notices).toEqual(["Suggest links proposed 1 entity and 1 link; they wait for you under Proposed links."]);
+    expect(proposals_note([])).toBe("Suggest links proposed nothing this time.");
+    expect(proposals_note([{ id: "a", name: "propose_link", arguments: {}, result: "not json", is_error: false, outcome: "ran" }])).toBe("Suggest links proposed nothing this time.");
+  });
+
+  it("from Suggest links on a small model that keeps reading, stop offering tools after its few rounds so it answers", async () => {
+    const fixture = start_fixture();
+    const { garden, shop } = garden_of(fixture);
+    const offered: number[] = [];
+    // A model that reads whenever it is offered a tool, and answers only when it is not.
+    const model: ChatModel = {
+      complete: async (request) => {
+        offered.push(request.tools?.length ?? 0);
+        if (request.tools) return { content: "", tool_calls: [{ id: `r${offered.length}`, name: "get_item", arguments: JSON.stringify({ id: shop }) }], finish_reason: "tool_calls" };
+        request.on_text?.("Nothing to propose.");
+        return { content: "Nothing to propose.", tool_calls: [], finish_reason: "stop" };
+      },
+    };
+    fixture.set_script((request, signal) => run_direct(model, request, signal, { context_size: 8192, max_tokens: 1024, max_rounds: 20 }));
+
+    const started = await fixture.calls.suggest_links(garden);
+    await wait_for_runs();
+
+    expect(offered).toEqual([4, 4, 4, 4, 4, 0]);
+    const answer = fixture.calls.get_conversation(started.conversation_id).messages[1]!;
+    expect(answer).toMatchObject({ text: "Nothing to propose.", error: "" });
+    expect(answer.notices).toEqual(["Suggest links proposed nothing this time."]);
+  });
+
+  it("from Suggest links with a hosted engine, leave out of its instructions the entities and links of sources not marked for one", async () => {
+    const fixture = start_fixture({ hosted: true });
+    const { garden, seeds } = garden_of(fixture);
+    fixture.calls.set_source_mark("codex.links", "send_to_hosted", true);
+    const ada = fixture.calls.add_entity("person", "Ada");
+    fixture.calls.add_graph_link(seeds, `entity:${ada}`, "mentions");
+
+    await fixture.calls.suggest_links(garden);
+    await wait_for_runs();
+
+    const { instructions } = fixture.requests[0]!;
+    expect(instructions).not.toContain("Order seeds");
+    expect(instructions).toContain("It has no links yet.");
+    expect(instructions).toMatch(/\[Withheld: [^\]]*1 link/);
   });
 
   it("from a hosted engine's run, see a node's links screened by source", async () => {
@@ -464,32 +561,72 @@ describe("similarity", () => {
     for (const [id, vector] of Object.entries(vectors)) insert.run(`item:${id}`, to_blob(unit(vector)));
   }
 
-  it("proposes an item's nearest above the threshold, a few per item, never twice or between items already linked", async () => {
-    const fixture = start_fixture();
-    const garden = fixture.calls.add_context("Garden");
-    const ids = ["a", "b", "c", "d", "e", "f"].map((name) => fixture.calls.add_item([garden], "links", { source_id: `https://example.org/${name}`, kind: "link", title: name.toUpperCase() }));
-    const [a, b, c, d, e, f] = ids as [string, string, string, string, string, string];
-    fixture.calls.add_graph_link(a, f, "about");
-    const index = index_of(fixture);
-    await index_pass(fixture, index);
-    embed(index, { [a]: [1, 0, 0], [b]: [0.98, 0.2, 0], [c]: [0.95, 0.3, 0], [d]: [0.9, 0.4, 0.1], [e]: [0.92, 0.35, 0.05], [f]: [1, 0.01, 0] });
-    embed(index, {});
-    const pass = { written: [], all: false, embedded: [`item:${a}`], embedder: { id: "fake", model: "m1" } };
-    expect(propose_similar(fixture.database, index, pass)).toBe(true);
+  // A vector of 40 numbers whose cosine with the first axis is the score given, each on an axis of its own besides.
+  const scored = (score: number, own_axis: number) => {
+    const vector = Array.from({ length: 40 }, () => 0);
+    vector[0] = score;
+    vector[own_axis] = Math.sqrt(1 - score * score);
+    return vector;
+  };
+  // Scores spread evenly from low to high, for the items unrelated to the one compared.
+  const spread = (count: number, low: number, high: number) => Array.from({ length: count }, (_, at) => low + ((high - low) * at) / (count - 1));
 
-    const proposed = fixture.calls.list_graph_proposals().links;
-    expect(proposed).toHaveLength(most_similar_per_item);
-    expect(proposed.map((link) => [link.made_by, link.engine, link.model, link.type, link.label])).toEqual(Array.from({ length: 3 }, () => ["similarity", "fake", "m1", "related_to", "similar"]));
-    expect(proposed.map((link) => (link.from === `item:${a}` ? link.to : link.from)).sort()).toEqual([`item:${b}`, `item:${c}`, `item:${e}`].sort());
-    expect(proposed[0]!.id).toBe(similarity_link_id(proposed[0]!.from, proposed[0]!.to));
-    expect(propose_similar(fixture.database, index, pass)).toBe(false);
+  // Two embedders' scales: one whose right matches score 0.65 to 0.75 over unrelated text at 0.3 to 0.5, one whose
+  // right matches score near 0.86 over unrelated text at 0.6 to 0.75.
+  const scales = {
+    "low-scoring": { related: [0.74, 0.72, 0.7, 0.68], linked: 0.73, unrelated: spread(30, 0.3, 0.5) },
+    "high-scoring": { related: [0.89, 0.875, 0.86, 0.85], linked: 0.88, unrelated: spread(30, 0.6, 0.75) },
+  };
 
-    fixture.calls.reject_graph_proposals([similarity_link_id(`item:${a}`, `item:${b}`)]);
-    expect(propose_similar(fixture.database, index, pass)).toBe(true);
-    expect(fixture.calls.list_graph_proposals().links.some((link) => link.id === similarity_link_id(`item:${a}`, `item:${b}`))).toBe(false);
-    expect(fixture.calls.list_graph_proposals().links.some((link) => link.id === similarity_link_id(`item:${a}`, `item:${d}`))).toBe(true);
-    expect(propose_similar(fixture.database, index, { ...pass, embedder: null })).toBe(false);
-    expect(propose_similar(fixture.database, index, { ...pass, embedded: [] })).toBe(false);
+  for (const [name, scale] of Object.entries(scales)) {
+    it(`proposes an item's nearest standing clearly above the rest with a ${name} embedder, a few per item, never twice, between items linked or once rejected`, async () => {
+      const fixture = start_fixture();
+      const garden = fixture.calls.add_context("Garden");
+      const add = (title: string) => fixture.calls.add_item([garden], "links", { source_id: `https://example.org/${title}`, kind: "link", title });
+      const a = add("a");
+      const [b, c, e, d] = scale.related.map((_, at) => add(`related-${at}`)) as [string, string, string, string];
+      const f = add("linked");
+      const others = scale.unrelated.map((_, at) => add(`unrelated-${at}`));
+      fixture.calls.add_graph_link(a, f, "about");
+      const index = index_of(fixture);
+      await index_pass(fixture, index);
+      let axis = 1;
+      embed(index, {
+        [a]: scored(1, 1),
+        ...Object.fromEntries([b, c, e, d].map((id, at) => [id, scored(scale.related[at]!, ++axis)])),
+        [f]: scored(scale.linked, ++axis),
+        ...Object.fromEntries(others.map((id, at) => [id, scored(scale.unrelated[at]!, ++axis)])),
+      });
+      const pass = { written: [], all: false, embedded: [`item:${a}`], embedder: { id: "fake", model: "m1" } };
+      expect(propose_similar(fixture.database, index, pass)).toBe(true);
+
+      const proposed = fixture.calls.list_graph_proposals().links;
+      expect(proposed).toHaveLength(most_similar_per_item);
+      expect(proposed.map((link) => [link.made_by, link.engine, link.model, link.type, link.label])).toEqual(Array.from({ length: 3 }, () => ["similarity", "fake", "m1", "related_to", "similar"]));
+      expect(proposed.map((link) => (link.from === `item:${a}` ? link.to : link.from)).sort()).toEqual([`item:${b}`, `item:${c}`, `item:${e}`].sort());
+      expect(proposed[0]!.id).toBe(similarity_link_id(proposed[0]!.from, proposed[0]!.to));
+      expect(propose_similar(fixture.database, index, pass)).toBe(false);
+
+      fixture.calls.reject_graph_proposals([similarity_link_id(`item:${a}`, `item:${b}`)]);
+      expect(propose_similar(fixture.database, index, pass)).toBe(true);
+      const after = fixture.calls.list_graph_proposals().links;
+      expect(after.some((link) => link.id === similarity_link_id(`item:${a}`, `item:${b}`))).toBe(false);
+      expect(after.some((link) => link.id === similarity_link_id(`item:${a}`, `item:${d}`))).toBe(true);
+      expect(after.some((link) => link.id === similarity_link_id(`item:${a}`, `item:${f}`))).toBe(false);
+      expect(after.some((link) => others.some((other) => link.id === similarity_link_id(`item:${a}`, `item:${other}`)))).toBe(false);
+      expect(propose_similar(fixture.database, index, { ...pass, embedder: null })).toBe(false);
+      expect(propose_similar(fixture.database, index, { ...pass, embedded: [] })).toBe(false);
+    });
+  }
+
+  it("proposes nothing for an item when nothing stands out from what it scores against the rest", () => {
+    const flat = spread(30, 0.3, 0.5).map((score, at) => ({ other: `o${at}`, score }));
+    expect(standing_out(flat)).toEqual([]);
+    expect(standing_out([{ other: "only", score: 0.9 }])).toEqual([]);
+    for (const scale of Object.values(scales)) {
+      const items = [...scale.related, ...scale.unrelated].map((score, at) => ({ other: `o${at}`, score }));
+      expect(standing_out(items).map((each) => each.score)).toEqual(scale.related);
+    }
   });
 });
 

@@ -18,7 +18,7 @@ import { set_page_api } from "../src/web/api.ts";
 import { group_hits, HomeView } from "../src/web/contexts/HomeView.tsx";
 import { row_icon } from "../src/web/contexts/kinds.tsx";
 import { forget_page_plugins } from "../src/web/plugins.tsx";
-import { embedding_words, held_words } from "../src/web/search/IndexSettings.tsx";
+import { embedding_words, held_words, StateRows } from "../src/web/search/IndexSettings.tsx";
 import { SettingsView } from "../src/web/settings/SettingsView.tsx";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
 
@@ -127,10 +127,26 @@ describe("Settings → Index", () => {
       is_working: false,
       last_indexed_at: "",
       last_error: "",
+      last_error_detail: "",
     };
     expect(held_words(state)).toBe("1 item, 2 contexts and 3 messages.");
     expect(embedding_words(state)).toBe("4 of 7 pieces of text embedded; 3 waiting; 3 never sent, since the embedder is hosted and their sources are not marked for hosted engines.");
     expect(embedding_words({ ...state, embedder: null, embedder_problem: "The x embedder is not running." })).toBe("The x embedder is not running.");
+
+    // The last problem in plain words, its raw text folded behind Details.
+    const { container } = render(<StateRows state={{ ...state, last_error: "The embedder at 127.0.0.1:9 cannot be reached.", last_error_detail: "fetch failed (ECONNREFUSED)" }} />);
+    expect(screen.getByText("Last problem")).toBeTruthy();
+    expect(screen.getByText("The embedder at 127.0.0.1:9 cannot be reached.")).toBeTruthy();
+    const details = container.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(within(details).getByText("Details")).toBeTruthy();
+    expect(within(details).getByText("fetch failed (ECONNREFUSED)")).toBeTruthy();
+    cleanup();
+    render(<StateRows state={{ ...state, is_working: true, pending: 0, withheld: 0, embedder: { ...state.embedder!, is_local: true } }} />);
+    expect(screen.queryByText("Last problem")).toBeNull();
+    expect(screen.getByText("Indexing now…")).toBeTruthy();
+    expect(screen.getByText("E, m, local.")).toBeTruthy();
+    expect(screen.getByText("4 of 10 pieces of text embedded.")).toBeTruthy();
   });
 });
 

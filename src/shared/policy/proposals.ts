@@ -24,7 +24,8 @@ function parsed_object(text: string): Record<string, unknown> {
 function parsed_evidence(text: string): ProposalEvidence {
   const value = parsed_object(text);
   const reads = Array.isArray(value.reads) ? (value.reads as ProposalRead[]) : [];
-  return { asked_by: String(value.asked_by ?? ""), run_id: String(value.run_id ?? ""), reads };
+  const seen = Array.isArray(value.seen) ? { seen: value.seen.map(String) } : {};
+  return { asked_by: String(value.asked_by ?? ""), run_id: String(value.run_id ?? ""), reads, ...seen };
 }
 
 function as_proposal(row: typeof proposals.$inferSelect): Proposal {

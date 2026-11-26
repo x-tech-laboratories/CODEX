@@ -1,6 +1,6 @@
 // Links proposed by nearness of meaning, with no model call: once embeddings are on, an item given new vectors is
-// compared with every other item, and its nearest above a clear threshold become proposed related_to links, a few per
-// item, never between two items already linked in any way or once rejected.
+// compared with every other item, and those standing clearly above what it scores against the rest become proposed
+// related_to links, a few per item, never between two items already linked in any way or once rejected.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -10,6 +10,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { conversation_collector } from "../conversations/model.ts";
 import { drizzle_of } from "../feature.ts";
 import type { IndexPass } from "../search/indexer.ts";
+import { meaning_floor } from "../search/search.ts";
 import { dot, from_blob } from "../search/text.ts";
 import { node_key } from "./model.ts";
 import { is_open, links_touching, now } from "./records.ts";
@@ -17,9 +18,6 @@ import { graph_links } from "./schema.ts";
 import { insert_link } from "./writing.ts";
 
 // ── Nearness ─────────────────────────────────────────────────────────────────
-
-// The cosine two items' meanings must reach to be proposed: well above what loosely related texts reach.
-export const similarity_threshold = 0.8;
 
 // The most proposals of this kind waiting on one item at a time.
 export const most_similar_per_item = 3;
@@ -48,6 +46,14 @@ function item_vectors(index: SqlDatabase, embedder: { id: string; model: string 
   return sums;
 }
 
+// The other items that stand clearly above what one item scores against everything else, nearest first, judged as
+// search judges a query's hits, so the same rule holds whatever scale an embedder's scores have.
+export function standing_out<Other>(scored: { other: Other; score: number }[]): { other: Other; score: number }[] {
+  const floor = meaning_floor(scored.map((each) => each.score));
+  if (floor === null) return [];
+  return scored.filter((each) => each.score >= floor).sort((first, second) => second.score - first.score);
+}
+
 // Proposes the nearest items of each item that was given new vectors; true when any was proposed.
 export function propose_similar(database: SqlDatabase, index: SqlDatabase, pass: IndexPass): boolean {
   if (!pass.embedder) return false;
@@ -64,11 +70,9 @@ export function propose_similar(database: SqlDatabase, index: SqlDatabase, pass:
     const touching = links_touching(database, [key]);
     const linked = new Set(touching.flatMap((row) => [`${row.from_kind}:${row.from_id}`, `${row.to_kind}:${row.to_id}`]));
     let waiting = touching.filter((row) => row.made_by === "similarity" && row.status === "proposed" && is_open(row, at)).length;
-    const nearest = [...vectors]
-      .filter(([other]) => other !== id)
-      .map(([other, vector]) => ({ other, score: dot(own, vector) }))
-      .filter((each) => each.score >= similarity_threshold)
-      .sort((first, second) => second.score - first.score);
+    const nearest = standing_out(
+      [...vectors].filter(([other]) => other !== id).map(([other, vector]) => ({ other, score: dot(own, vector) })),
+    );
     for (const { other } of nearest) {
       if (waiting >= most_similar_per_item) break;
       const other_key = node_key("item", other);

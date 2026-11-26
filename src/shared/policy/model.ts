@@ -47,6 +47,9 @@ export interface ProposalEvidence {
   asked_by: string;
   run_id: string;
   reads: ProposalRead[];
+  // The sources whose content the run had in front of it, in its instructions or through a read, by collector id;
+  // left out for a proposal kept before it was recorded.
+  seen?: string[];
 }
 
 export const no_evidence: ProposalEvidence = { asked_by: "", run_id: "", reads: [] };

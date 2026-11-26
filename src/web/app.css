@@ -260,6 +260,15 @@
   gap: var(--space-2);
 }
 
+/* The index's last problem goes under its label, as wide as the row, since it is a sentence or two. */
+.index-problem {
+  flex-wrap: wrap;
+}
+
+.index-problem > .reply-error {
+  flex-basis: 100%;
+}
+
 /* A reply's wide tables and code scroll sideways on their own rather than squeezing into the pane. */
 .chat-message table {
   display: block;
@@ -283,8 +292,15 @@
   margin: 0;
 }
 
+/* Opened, the thinking shows about ten lines and scrolls; nothing in the messages is squeezed shorter than its content. */
+.assistant-messages > *,
+.chat-message > * {
+  flex-shrink: 0;
+}
+
 .reply-thinking-text {
-  max-height: 16rem;
+  max-height: 10lh;
+  margin: 0;
   overflow-y: auto;
   white-space: pre-wrap;
 }

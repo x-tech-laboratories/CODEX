@@ -9,6 +9,8 @@ import type { ContextPlugin, ContextPluginApi } from "../../shared/collectors/ho
 import type { Embedder } from "../../shared/embedders/embedder.ts";
 import { openai_embedder_id, openai_embeddings_manifest } from "../../shared/embedders/manifests.ts";
 import { is_local_endpoint } from "../../shared/engines/hosting.ts";
+import { PlainFailure } from "../../shared/engines/direct.ts";
+import { explain_embedder_failure } from "../engines/errors.ts";
 import { key_from, read_secret, type SecretReader } from "../engines/secret_command.ts";
 
 // ── Embedder ─────────────────────────────────────────────────────────────────
@@ -33,13 +35,27 @@ export function openai_embedder(settings: () => SettingValues, read: SecretReade
       if (texts.length === 0) return [];
       if (!model()) throw new Error("Set the embedding model under Settings → Index.");
       const api_key = await key_from(String(settings().api_key_command ?? ""), read);
-      const response = await fetch(`${endpoint_of(settings())}/embeddings`, {
-        method: "POST",
-        headers: { "content-type": "application/json", ...(api_key ? { authorization: `Bearer ${api_key}` } : {}) },
-        body: JSON.stringify({ model: model(), input: texts }),
-        signal: signal ?? null,
-      });
-      if (!response.ok) throw new Error(`The embeddings endpoint answered ${response.status} ${response.statusText}.`);
+      const endpoint = endpoint_of(settings());
+      const failure = (error: unknown) => {
+        const { message, detail } = explain_embedder_failure(error, endpoint, default_endpoint, model());
+        return new PlainFailure(message, detail);
+      };
+      let response: Response;
+      try {
+        response = await fetch(`${endpoint}/embeddings`, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...(api_key ? { authorization: `Bearer ${api_key}` } : {}) },
+          body: JSON.stringify({ model: model(), input: texts }),
+          signal: signal ?? null,
+        });
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        throw failure(error);
+      }
+      if (!response.ok) {
+        const said = await response.text().catch(() => "");
+        throw failure(Object.assign(new Error(`The embeddings endpoint answered ${response.status} ${response.statusText}.${said ? ` ${said.slice(0, 500)}` : ""}`), { status: response.status }));
+      }
       const answer = (await response.json()) as { data?: { index?: number; embedding?: unknown }[] };
       const rows = [...(answer.data ?? [])].sort((first, second) => (first.index ?? 0) - (second.index ?? 0));
       if (rows.length !== texts.length) throw new Error(`The embeddings endpoint gave ${rows.length} vectors for ${texts.length} texts.`);

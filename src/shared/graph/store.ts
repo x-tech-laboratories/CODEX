@@ -13,10 +13,14 @@ import { id_of, text } from "../api_schemas.ts";
 import { current_caller } from "../caller.ts";
 import { assistant_host } from "../conversations/host.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
-import { may_send, open_screen } from "../privacy/screen.ts";
+import { capped, listing_caps, shortened } from "../conversations/instructions.ts";
+import type { ToolCallRecord } from "../conversations/model.ts";
+import { start_run } from "../conversations/run.ts";
+import { untrusted_block } from "../engines/untrusted.ts";
+import { may_send, merge_withheld, open_screen, screen_sourced, withheld_line, type Screen, type Screened } from "../privacy/screen.ts";
 import { when_indexed } from "../search/indexer.ts";
 import { migrations } from "./migrations/index.ts";
-import { entity_kinds, graph_statuses, link_types, node_key, parse_node_key, type DecisionCount, type DecisionReport, type EntityKind, type EvidenceInput, type LinkChanges, type LinkType, type MadeBy } from "./model.ts";
+import { entity_kinds, graph_statuses, link_types, node_key, parse_node_key, type DecisionCount, type GraphLink, type GraphNode, type DecisionReport, type EntityKind, type EvidenceInput, type LinkChanges, type LinkType, type MadeBy } from "./model.ts";
 import { default_graph_limit, get_graph, get_node_links, list_graph_proposals, list_link_counts, most_graph_nodes } from "./reading.ts";
 import { canonical, entity_row, from_key, is_open, link_row, links_touching, name_key, now, parse_names, read_joins, resolve_node, to_key, type EntityRow } from "./records.ts";
 import { run_rules } from "./rules.ts";
@@ -340,16 +344,75 @@ async function propose_link(database: SqlDatabase, from: string, to: string, typ
 
 export const suggest_links_message = [
   "Suggest links for this context.",
-  "Read its items with get_context, get_item and search_index, and look at what each is already linked to with get_node_links.",
-  "Then use propose_entity for the people, organisations, topics and places they mention, and propose_link to join items, contexts and entities (mentions, about, related_to, part_of, depends_on, or same_as for two entities that are one), each with the item it came from as evidence and a short excerpt.",
+  "Its items, and the entities and links it already has, are listed in your instructions: propose from those.",
+  "Use propose_entity for the people, organisations, topics and places the items mention, and propose_link to join items, contexts and entities (mentions, about, related_to, part_of, depends_on, or same_as for two entities that are one), each with the item it came from as evidence and a short excerpt.",
+  "Read an item with get_item only when its title and snippet are not enough, and at most three items in all. Do not propose what is already listed as linked.",
   "Everything you propose waits for me to accept or reject it; tell me briefly what you proposed.",
 ].join(" ");
 
-// Starts an ordinary conversation in the context, named Suggest links, asking the engine to read its items and propose
-// entities and links.
-async function suggest_links(_database: SqlDatabase, context_id: string): Promise<{ conversation_id: string; run_id: string }> {
+// The only tools a Suggest links run is offered: the two proposals and two reads for detail.
+export const suggest_tools = ["propose_entity", "propose_link", "get_item", "search_index"] as const;
+
+// Fewer rounds than a conversation, so a small model proposes rather than reads; the last has no tools.
+export const suggest_rounds = 6;
+
+// The context's entities and links as the engine may be sent them, capped like the instructions' other listings.
+export function graph_part(database: SqlDatabase, context_id: string, screen: Screen): Screened<string> {
+  const view = get_graph(database, context_id);
+  const by_key = new Map(view.nodes.map((node) => [node.key, node]));
+  const entities = view.nodes.filter((node) => node.kind === "entity");
+  const entity_text = (node: GraphNode) => `- "${shortened(node.label)}" (${node.type}, id ${node.key}, ${node.status})`;
+  // Every link drawn has both its ends among the nodes drawn.
+  const link_text = (link: GraphLink) => `- "${shortened(by_key.get(link.from)!.label)}" (${link.from}) ${link.type} "${shortened(by_key.get(link.to)!.label)}" (${link.to}), ${link.status}`;
+  const link_sources = (link: GraphLink) => [...new Set([...link.sources, ...by_key.get(link.from)!.sources, ...by_key.get(link.to)!.sources])];
+  const shown_entities = screen_sourced(screen, entities, (node) => node.sources, (node) => node.key, () => "entity");
+  const shown_links = screen_sourced(screen, view.links, link_sources, (link) => link.id, () => "link");
+  const listed_entities = capped(shown_entities.value, entity_text, listing_caps.entities);
+  const listed_links = capped(shown_links.value, link_text, listing_caps.links);
+  const listing = (heading: string, none: string, lines: string[], total: number) => {
+    if (total === 0) return none;
+    const more = total - lines.length;
+    return `${heading}\n${untrusted_block(lines.join("\n"))}${more > 0 ? `\n${more} more are not listed here.` : ""}`;
+  };
+  const merged = merge_withheld([shown_entities, shown_links]);
+  const withheld = withheld_line(screen, merged.withheld, merged.withheld_kinds);
+  const lines = [
+    "For Suggest links, the context's graph so far:",
+    listing("Entities it already has:", "It has no entities yet.", listed_entities.map(entity_text), shown_entities.value.length),
+    listing("Links it already has (do not propose these again):", "It has no links yet.", listed_links.map(link_text), shown_links.value.length),
+    withheld,
+  ].filter(Boolean);
+  return { value: lines.join("\n"), sources: new Set([...shown_entities.sources, ...shown_links.sources]), withheld: merged.withheld, withheld_kinds: merged.withheld_kinds };
+}
+
+// A plain note of how many entities and links a run proposed.
+export function proposals_note(calls: ToolCallRecord[]): string {
+  const made = (name: string) =>
+    calls.filter((call) => {
+      if (call.name !== name || call.is_error) return false;
+      try {
+        return (JSON.parse(call.result) as { outcome?: unknown }).outcome === "proposed";
+      } catch {
+        return false;
+      }
+    }).length;
+  const entities = made("propose_entity");
+  const links = made("propose_link");
+  const count = (total: number, one: string, many: string) => `${total} ${total === 1 ? one : many}`;
+  if (entities + links === 0) return "Suggest links proposed nothing this time.";
+  return `Suggest links proposed ${count(entities, "entity", "entities")} and ${count(links, "link", "links")}; they wait for you under Proposed links.`;
+}
+
+// Starts a conversation in the context, named Suggest links, with the context's items, entities and links in its
+// instructions, only the tools the task needs, and fewer rounds than a conversation.
+async function suggest_links(database: SqlDatabase, context_id: string): Promise<{ conversation_id: string; run_id: string }> {
   const host = assistant_host();
-  const started = (await host.call("send_message", [context_id, suggest_links_message, null])) as { conversation_id: string; run_id: string };
+  const started = await start_run(database, context_id, suggest_links_message, null, {
+    tools: suggest_tools,
+    limits: { max_rounds: suggest_rounds },
+    instructions: (screen) => graph_part(database, context_id, screen),
+    closing_note: proposals_note,
+  });
   await host.call("rename_conversation", [started.conversation_id, "Suggest links"]);
   return started;
 }
@@ -539,7 +602,7 @@ export const graph_feature = define_feature({
       ],
     },
     suggest_links: {
-      description: "Starts a conversation in a context asking the assistant to read its items and propose entities and links; answers at once with the conversation's id and the run's id.",
+      description: "Starts a conversation in a context asking the assistant to propose entities and links from its items and the entities and links it already has, offering it only the proposal tools and two reads for a few rounds; answers at once with the conversation's id and the run's id.",
       params: [{ name: "context_id", schema: id_of("context") }],
     },
   },

@@ -192,7 +192,8 @@ describe("a conversation", () => {
     ]);
     expect(messages[0]!.text).toHaveLength(45_000);
     expect(messages[1]!.notices).toEqual([expect.stringMatching(/^Your message was too long for this model's context/)]);
-    expect(messages[3]!.notices).toEqual(["2 earlier messages were left out of what the model read, to fit its context."]);
+    // The long message is shortened in what the model reads rather than left out.
+    expect(messages[3]!.notices).toEqual([expect.stringMatching(/^1 earlier message was shortened in the middle, [\d,]+ characters in all/)]);
     expect(Math.max(...sizes) / 3).toBeLessThan(8192);
     forget_calibrations();
   });

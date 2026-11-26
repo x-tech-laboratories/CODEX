@@ -11,7 +11,7 @@ import { bring_to_front, first_argument, hold_single_instance } from "@x-tech-la
 import type { Implementation, IpcMainEventLike } from "@x-tech-laboratories/x-libs/electron/bridge";
 import { create_app_tray } from "@x-tech-laboratories/x-libs/electron/tray";
 import { create_window, is_app_page } from "@x-tech-laboratories/x-libs/electron/window";
-import { call_daemon, daemon_log_path, daemon_socket_path, follow_daemon_events, start_daemon } from "@x-tech-laboratories/x-libs/local_daemon";
+import { call_daemon, daemon_log_path, follow_daemon_events, start_daemon } from "@x-tech-laboratories/x-libs/local_daemon";
 import { certificate_method_names } from "@x-tech-laboratories/x-libs/certificate_protocol";
 import { local_mcp_method_names } from "@x-tech-laboratories/x-libs/local_mcp_protocol";
 
@@ -21,19 +21,21 @@ import { route_of_link } from "../shared/links.ts";
 import { conversation_event, device_method_names, is_read_only } from "../shared/page_api.ts";
 import type { ContextSummary } from "../shared/contexts/model.ts";
 import { method_names } from "../shared/store.ts";
+import { chosen_profile, socket_of } from "../daemon/profile.ts";
 import { tray_view, type TrayState } from "./tray_menu.ts";
 
 // ── Profile ──────────────────────────────────────────────────────────────────
 
-// Dev runs set this so they never touch the installed app's data.
-const is_own_profile = process.env.CODEX_USER_DATA === undefined;
-if (!is_own_profile) app.setPath("userData", join(process.cwd(), process.env.CODEX_USER_DATA!));
+// Dev runs set CODEX_USER_DATA so they never touch the installed app's data.
+const chosen = chosen_profile(process.env, process.cwd());
+const is_own_profile = chosen === null;
+if (chosen) app.setPath("userData", chosen);
 
 const profile = app.getPath("userData");
 const database_path = join(profile, "codex.db");
 
 // Any other profile gets a daemon, socket and log of its own, so a dev or test run never reaches the user's daemon.
-const socket_path = daemon_socket_path({ app: "codex", data_file: is_own_profile ? null : database_path });
+const socket_path = socket_of(process.env, database_path, is_own_profile);
 const log_file = is_own_profile ? daemon_log_path("codex") : join(profile, "daemon.log");
 
 // The built app sits in out/main, and resources/ beside out/ both in the source tree and in the package.
