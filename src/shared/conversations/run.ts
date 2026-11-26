@@ -17,6 +17,7 @@ import { new_id } from "../feature.ts";
 import { is_read_only } from "../page_api.ts";
 import { brings_outside_content, core_tools, decide, is_offered, level_of, offered_api, proposing_calls, type Presence } from "../policy/policy.ts";
 import { clip_excerpt } from "../graph/writing.ts";
+import { engine_set_mood, mood_part, set_mood_brief, set_mood_tool, settle_reply_mood } from "../mood/mood.ts";
 import type { ProposalRead } from "../policy/model.ts";
 import { add_proposal } from "../policy/proposals.ts";
 import { mark_before_change, undo_of_change } from "../policy/undo.ts";
@@ -160,6 +161,7 @@ export function engine_tools(context: ToolContext): EngineTools {
     ...Object.entries(offered_api)
       .filter(([name]) => !only || only.has(name))
       .map(([name, spec]) => ({ name, description: spec.description, parameters: input_schema(spec) })),
+    ...(!only || only.has(set_mood_tool.name) ? [{ name: set_mood_tool.name, description: set_mood_tool.description, parameters: set_mood_tool.parameters as JsonSchema }] : []),
     ...[...plugin_tools.values()].map((tool) => ({ name: tool.name, description: plugin_description(tool, longest_tool_description), parameters: tool.tool.parameters })),
   ];
   // A run offered few calls gets them fully described, which the core set would not shorten much.
@@ -169,6 +171,7 @@ export function engine_tools(context: ToolContext): EngineTools {
         ...Object.entries(core_tools)
           .filter(([name]) => is_offered(name))
           .map(([name, description]) => ({ name, description, parameters: brief_schema(input_schema(offered_api[name]!)) })),
+        { name: set_mood_tool.name, description: set_mood_brief, parameters: brief_schema(set_mood_tool.parameters as JsonSchema) },
         ...[...plugin_tools.values()]
           .filter((tool) => tool.small)
           .map((tool) => ({ name: tool.name, description: plugin_description(tool, longest_brief_description), parameters: brief_schema(tool.tool.parameters) })),
@@ -276,6 +279,11 @@ export function engine_tools(context: ToolContext): EngineTools {
     call: async (name, given) => {
       const plugin_tool = plugin_tools.get(name);
       if (plugin_tool) return call_plugin_tool(plugin_tool, given);
+      // The mood changes nothing of the user's, so it is kept at once, with the call recorded in the reply.
+      if (name === set_mood_tool.name && (!only || only.has(name))) {
+        const set = engine_set_mood(context.database(), given && typeof given === "object" ? given : {}, { conversation_id: context.conversation_id, run_id: context.run_id ?? "", sources: read_sources(screen) }, Date.now());
+        return decided(name, { outcome: set.is_error ? "failed" : "ran" }, { result: set.text, is_error: set.is_error });
+      }
       if (!offered(name)) return decided(name, { outcome: "refused" }, { result: `There is no tool named ${name}.`, is_error: true });
       let args: unknown[];
       try {
@@ -489,6 +497,12 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   if (recalled.length > 0) instructions.value = `${instructions.value}\n\n${recalled_part(recalled)}`;
   const plugin_part = plugin_tools_part(plugin_tools);
   if (plugin_part) instructions.value = `${instructions.value}\n\n${plugin_part}`;
+  // The mood colours tone only; its reason carries the sources of the reply that set it.
+  const mood = !options.tools || options.tools.includes(set_mood_tool.name) ? mood_part(database, screen, Date.now()) : null;
+  if (mood?.value) {
+    instructions.value = `${instructions.value}\n\n${mood.value}`;
+    for (const source of mood.sources) instructions.sources.add(source);
+  }
   if (runs.has(conversation_id)) throw new Error("A reply is still being written here; stop it or wait for it first.");
   const question = add_message(database, { conversation_id, role: "user", text: text.trim(), sources: [] });
   const notices = recalled.map(({ row }) => `Recalled the blueprint “${row.title}” for this message.`);
@@ -627,6 +641,7 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
   try {
     // A conversation deleted while its reply was written, on its own or with its last context, keeps nothing.
     if (!has_conversation(host.database(), conversation_id)) return;
+    settle_reply_mood(host.database(), conversation_id, state.run_id, read_sources(run.screen));
     const closing = run.options.closing_note?.(state.tool_calls);
     if (closing) {
       state.notices.push(closing);

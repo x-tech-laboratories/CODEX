@@ -15,6 +15,7 @@ import { conversation_item_id } from "../conversations/model.ts";
 import { add_conversation_record, has_conversation, rename_conversation_record } from "../conversations/records.ts";
 import { has_live_runs, start_run, type RunEnd } from "../conversations/run.ts";
 import { drizzle_of, new_id } from "../feature.ts";
+import { note_event_mood } from "../mood/mood.ts";
 import { proposal_of } from "../policy/proposals.ts";
 import { subtree } from "../search/documents.ts";
 import { text_hash } from "../search/text.ts";
@@ -143,6 +144,8 @@ function run_job(host: JobHost, row: JobRow, mark: string): Promise<JobRun> {
   });
   const ending = done.then((record) => {
     running = null;
+    // A job that failed leaves the assistant mildly concerned, and does nothing else.
+    if (record.outcome === "error") note_event_mood(host.database(), "concerned", `The job “${record.title}” failed.`, host.now());
     host.on_finished?.(record);
     return record;
   });

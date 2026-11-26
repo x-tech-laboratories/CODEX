@@ -10,6 +10,7 @@
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { has_live_runs } from "../conversations/run.ts";
+import { note_event_mood } from "../mood/mood.ts";
 import { background_setting, is_paused, register_device, runs_here } from "../jobs/records.ts";
 import type { BackgroundDevice } from "../jobs/model.ts";
 import { job_work, type Done, type JobContext } from "./jobs.ts";
@@ -93,6 +94,16 @@ function used_up_reason(database: SqlDatabase, key: MaintenanceKey, now: number,
   return "";
 }
 
+// The jobs whose work is finding something new: links, likely duplicates and proposals.
+const finding_jobs: ReadonlySet<MaintenanceKey> = new Set(["rules", "similarity", "tidy", "suggest"]);
+
+// A run that failed leaves the assistant mildly concerned; one that found something new, mildly curious.
+function note_finding_mood(database: SqlDatabase, key: MaintenanceKey, result: Done, now: number): void {
+  const title = maintenance_jobs[key].title;
+  if (result.error) note_event_mood(database, "concerned", `${title} failed.`, now);
+  else if (finding_jobs.has(key) && result.applied.length + result.proposed.length > 0) note_event_mood(database, "curious", `${title} found something new.`, now);
+}
+
 // Looks for one job's work and runs it within its budget; a job turned off, out of budget or with nothing to do only
 // notes why.
 export async function run_maintenance_job(host: MaintenanceHost, key: MaintenanceKey): Promise<JobOutcome> {
@@ -145,6 +156,7 @@ export async function run_maintenance_job(host: MaintenanceHost, key: Maintenanc
       },
       host.now(),
     );
+    note_finding_mood(host.database(), key, result, host.now());
     if (result.changed_store) host.on_change?.();
     // A run that used up the day's budget says so at once, for Settings and the digest.
     const now_used_up = used_up_reason(host.database(), key, host.now(), host.device);
