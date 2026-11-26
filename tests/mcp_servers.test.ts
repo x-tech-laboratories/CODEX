@@ -13,6 +13,9 @@ import { add_conversation_record, has_conversation } from "../src/shared/convers
 import { engine_tools, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
 import { use_mcp_connector, mcp_connector, type McpConnector } from "../src/shared/mcp/connector.ts";
 import { is_loopback_address, sends_outside, type McpServerFields } from "../src/shared/mcp/model.ts";
+import { device_id_of } from "../src/shared/jobs/records.ts";
+import { background_devices } from "../src/shared/jobs/schema.ts";
+import { drizzle_of } from "../src/shared/feature.ts";
 import { page_only_methods, user_only_settings } from "../src/shared/page_api.ts";
 import { local_screen, note_source } from "../src/shared/privacy/screen.ts";
 import { page_only } from "../src/shared/store.ts";
@@ -177,6 +180,97 @@ describe("an MCP server over stdio", () => {
   });
 });
 
+describe("where a local MCP server runs", () => {
+  // The servers as another device's write would sync them: the server given now recorded as run elsewhere.
+  function moved_away(fixture: Fixture, id: string, device: string): void {
+    const stored = fixture.calls.get_settings().mcp_servers as { id: string; device: string }[];
+    fixture.calls.set_setting("mcp_servers", stored.map((each) => (each.id === id ? { ...each, device } : each)));
+  }
+
+  // A connector that counts how often a server is started or reached, beside the real one.
+  function counting(fixture: Fixture) {
+    const started: string[] = [];
+    use_mcp_connector({
+      list_tools: (server) => (started.push(`list ${server.id}`), node_mcp_connector.list_tools(server)),
+      call_tool: (server, name, args, signal) => (started.push(`call ${server.id}`), node_mcp_connector.call_tool(server, name, args, signal)),
+      forget: (id) => node_mcp_connector.forget(id),
+    });
+    return { fixture, started };
+  }
+
+  it("is recorded with the device that added it, and runs there", async () => {
+    const fixture = with_mcp();
+    await fixture.calls.add_mcp_server(stdio("Notes"));
+    const stored = fixture.calls.get_settings().mcp_servers as { device: string }[];
+    expect(stored[0]!.device).toBe(device_id_of(fixture.database));
+    expect(fixture.calls.list_mcp_servers()[0]).toMatchObject({ runs_here: true });
+    const { tools } = await tools_of(fixture);
+    expect(tools.definitions.map((tool) => tool.name)).toContain("mcp_notes__read_note");
+  });
+
+  it("is never started on another device: its tools are not offered, and refreshing or changing its command is refused", async () => {
+    const { fixture, started } = counting(with_mcp());
+    await fixture.calls.add_mcp_server(stdio("Notes"));
+    drizzle_of(fixture.database).insert(background_devices).values({ id: "laptop-id", name: "Laptop", kind: "desktop", started_at: new Date().toISOString() }).run();
+    moved_away(fixture, "notes", "laptop-id");
+    started.length = 0;
+
+    expect(fixture.calls.list_mcp_servers()[0]).toMatchObject({ runs_here: false, device_name: "Laptop", enabled: true });
+    expect((await fixture.calls.list_plugin_tools()).map((entry) => entry.key)).not.toContain("codex.mcp/mcp_notes");
+    const { tools } = await tools_of(fixture);
+    expect(tools.definitions.map((tool) => tool.name).filter((name) => name.startsWith("mcp_"))).toEqual([]);
+    expect((await tools.call("mcp_notes__read_note", { id: "1" })).is_error).toBe(true);
+    await expect(fixture.calls.refresh_mcp_server("notes")).rejects.toThrow("Notes is a command on another device. It runs on Laptop; move it to this device first, after reading its command.");
+    await expect(fixture.calls.change_mcp_server("notes", stdio("Notes", ["--other"]))).rejects.toThrow("It runs on Laptop");
+    // Renaming or turning it off changes nothing about where it runs, and starts nothing.
+    await fixture.calls.change_mcp_server("notes", stdio("Notes kept"));
+    expect(fixture.calls.list_mcp_servers()[0]).toMatchObject({ name: "Notes kept", runs_here: false, device_name: "Laptop" });
+    expect(started).toEqual([]);
+  });
+
+  it("moves to this device only with the command the user was shown, then runs here alone", async () => {
+    const { fixture, started } = counting(with_mcp());
+    await fixture.calls.add_mcp_server(stdio("Notes"));
+    moved_away(fixture, "notes", "unknown-id");
+    started.length = 0;
+    expect(fixture.calls.list_mcp_servers()[0]).toMatchObject({ runs_here: false, device_name: "" });
+
+    await expect(fixture.calls.move_mcp_server_here("notes", { command: "/bin/sh", args: [fake_program] })).rejects.toThrow("Notes's command is not the one you were shown");
+    await expect(fixture.calls.move_mcp_server_here("notes", { command: process.execPath, args: [] })).rejects.toThrow("not the one you were shown");
+    expect(started).toEqual([]);
+
+    const moved = await fixture.calls.move_mcp_server_here("notes", { command: process.execPath, args: [fake_program] });
+    expect(moved).toMatchObject({ runs_here: true });
+    expect(started).toEqual(["list notes"]);
+    expect((fixture.calls.get_settings().mcp_servers as { device: string }[])[0]!.device).toBe(device_id_of(fixture.database));
+    const { tools } = await tools_of(fixture);
+    expect(tools.definitions.map((tool) => tool.name)).toContain("mcp_notes__read_note");
+  });
+
+  it("starts nowhere when it was added before its device was recorded, until moved", async () => {
+    const fixture = with_mcp();
+    fixture.calls.set_setting("mcp_servers", [{ id: "old", name: "Old", transport: "stdio", command: process.execPath, args: [fake_program], variables: [], enabled: true, tools: [{ name: "read_note", description: "", read_only: true, input_schema: {} }], listed_at: "" }]);
+    expect(fixture.calls.list_mcp_servers()[0]).toMatchObject({ runs_here: false, device_name: "" });
+    expect((await fixture.calls.list_plugin_tools()).map((entry) => entry.key)).toEqual([]);
+  });
+
+  it("does not bind a server at an address, which works from every device", async () => {
+    const fake = await start_fake_mcp_http("");
+    try {
+      const fixture = with_mcp();
+      await fixture.calls.add_mcp_server({ name: "Remote", transport: "http", address: fake.address, token: "" });
+      moved_away(fixture, "remote", "laptop-id");
+      expect(fixture.calls.list_mcp_servers()[0]).toMatchObject({ runs_here: true });
+      await expect(fixture.calls.move_mcp_server_here("remote", { command: "", args: [] })).rejects.toThrow("works from every device already");
+      // Turned into a local command here, it runs here.
+      await fixture.calls.change_mcp_server("remote", stdio("Remote"));
+      expect((fixture.calls.get_settings().mcp_servers as { device: string }[])[0]!.device).toBe(device_id_of(fixture.database));
+    } finally {
+      await fake.close();
+    }
+  });
+});
+
 describe("an MCP server over streamable HTTP", () => {
   it("is reached at its address with its bearer token, kept hidden from everything that reads settings", async () => {
     const fake = await start_fake_mcp_http("secret-token-1234");
@@ -245,7 +339,7 @@ describe("the MCP servers' settings", () => {
   });
 
   it("are the user's alone: every change page-only, the setting user-only, never an engine's tool", async () => {
-    for (const name of ["add_mcp_server", "change_mcp_server", "refresh_mcp_server", "remove_mcp_server"]) {
+    for (const name of ["add_mcp_server", "change_mcp_server", "refresh_mcp_server", "move_mcp_server_here", "remove_mcp_server"]) {
       expect(page_only_methods.has(name)).toBe(true);
       expect(page_only.is_page_only_call(name, [])).toBe(true);
     }
@@ -254,7 +348,7 @@ describe("the MCP servers' settings", () => {
     expect(page_only.is_page_only_call("set_setting", ["mcp_servers", []])).toBe(true);
     const fixture = with_mcp();
     const { tools } = await tools_of(fixture);
-    for (const name of ["list_mcp_servers", "add_mcp_server", "change_mcp_server", "refresh_mcp_server", "remove_mcp_server"]) expect(tools.definitions.map((tool) => tool.name)).not.toContain(name);
+    for (const name of ["list_mcp_servers", "add_mcp_server", "change_mcp_server", "refresh_mcp_server", "move_mcp_server_here", "remove_mcp_server"]) expect(tools.definitions.map((tool) => tool.name)).not.toContain(name);
   });
 
   it("count a server's tools as sending outside unless it is a local command or on a loopback address", () => {

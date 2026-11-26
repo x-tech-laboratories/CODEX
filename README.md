@@ -246,9 +246,9 @@ name, such as `web__web_fetch`, so they never clash with CODEX's own calls or ea
 What a tool plugin gives back is a source of its own, with its own **May be sent to a hosted engine** mark. Off, a
 hosted engine is not offered that plugin's tools at all, since what they give back would be kept from it, and it is
 never replayed an earlier answer, shown a search hit or sent anything else that drew on them, only a line saying it
-was left out. The mark is on to begin with for a plugin whose tools all send what they are given outside this
-computer, such as Web or an MCP server at a remote address, since what they read is outside already, and off for
-every other, such as an MCP server run as a command, which may read your private files.
+was left out. The mark is on to begin with only for the bundled Web plugin, which reads public pages, and off for
+every other plugin and every MCP server until you turn it on, since a server, even one at a remote address, may give
+back what is private to you, such as a notes service behind a token.
 
 A tool that sends what it is given outside this computer, such as a web search, is an outside destination like a hosted
 engine. Each tool plugin has another mark, **May be used after reading private sources**, off at first: without it,
@@ -281,8 +281,11 @@ reading only and sending outside:
 - **A command on this computer (stdio):** the program that starts the server, by its full path or a name on the
   `PATH`, its arguments one a line, and the names of any variables of CODEX's own it needs, such as `GITHUB_TOKEN`. It
   is started without a shell, with only `HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM`, `USER` and the variables you name.
-  It runs where CODEX's data is: in the desktop app's daemon, or on the server, so on a NixOS server give the program by
-  its full path. A server that exits or stops answering gives a plain error, with the last of what it wrote, and never
+  It runs only on the device you add it from: the desktop app's daemon, or the server when you add it from a browser, so
+  on a NixOS server give the program by its full path. The servers sync between your devices, but a command is never
+  started on another one: there it shows as **Runs on** that device, and its tools are not offered. **Move to this
+  device…** in its dialog shows the program, its arguments and the variables passed, and runs it here instead once you
+  confirm. A server that exits or stops answering gives a plain error, with the last of what it wrote, and never
   stops CODEX; one left unused for two minutes is stopped and started again when next needed.
 - **An address (streamable HTTP):** where it answers MCP, such as `https://mcp.example.org/mcp`, and a bearer token if
   it needs one, kept like a plugin's key: never shown again, and kept when you save without typing a new one.

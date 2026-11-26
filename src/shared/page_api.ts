@@ -72,7 +72,7 @@ export function is_read_only(method: string): boolean {
 // Calls that keep the user in charge of the assistant, approving and undoing its changes, the graph's proposals and
 // proposed blueprints, bringing a blueprint back or widening where it applies, turning a job on, running one now and
 // choosing the device that runs them, a maintenance job's switch and budget, the tool plugins' marks, which of their tools are offered and at what level, the
-// MCP servers added, changed, refreshed or removed (a local one's command runs on this machine),
+// MCP servers added, changed, refreshed, moved to this device or removed (a local one's command runs on this machine),
 // setting how freely it may make them and what each source's items may reach, and which apps are read with which token,
 // answered only for the user at the page: a signed-in browser, or the desktop window. Their specs are marked page-only
 // with X-Libs `api_spec`, so a token, MCP and any engine are refused them and nothing a program does can approve a
@@ -101,6 +101,7 @@ export const page_only_methods: ReadonlySet<string> = new Set([
   "add_mcp_server",
   "change_mcp_server",
   "refresh_mcp_server",
+  "move_mcp_server_here",
   "remove_mcp_server",
 ]);
 

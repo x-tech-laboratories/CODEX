@@ -504,8 +504,8 @@ the tool's own name made safe, cut with a hash at 64 characters. CODEX's own cal
 shadow one, and of two tools named alike the first is kept. A plugin whose `tools()` throws or takes over 15 seconds is
 listed with its problem and no tools. The synced setting `tool_plugins`, one of `user_only_settings`, holds per key the
 marks `send_to_hosted`, `trusted` and `after_private` and, per tool, `off` and `small`; `send_to_hosted` left unset
-reads as on only for a plugin with tools that all send outside, such as Web or a remote MCP server (`marks_of` in
-`tools/offered.ts`), and the others as off; levels go in `action_policy` under the tool's
+reads as on only for the bundled Web plugin's key, `codex.web/web` (`hosted_by_default` and `marks_of` in
+`tools/offered.ts`), and as off for every other plugin and every MCP server, and the others as off; levels go in `action_policy` under the tool's
 name. The feature's calls (`tools/store.ts`) are `list_plugin_tools` and the page-only `set_tool_plugin_mark`,
 `set_plugin_tool_offer` and `set_plugin_tool_level`.
 
@@ -553,21 +553,28 @@ the first eight results' titles, addresses and snippets.
 
 The bundled `codex.mcp` plugin (`src/shared/mcp/`) turns each MCP server the user added into a tool plugin of its own.
 The servers are the synced setting `mcp_servers`, one of `user_only_settings`, a list of `{ id, name, transport,
-address, token, command, args, variables, enabled, tools, listed_at }`: `transport` is `http` (streamable HTTP at
+address, token, command, args, variables, device, enabled, tools, listed_at }`: `transport` is `http` (streamable HTTP at
 `address`, with `token` as a bearer token, hidden by `get_settings` and kept by `set_setting` when the hidden mark comes
 back, as the apps' tokens are) or `stdio` (`command` started with `args`, passing the variables of CODEX's own
-environment that `variables` names). The id is made once from the first name. `tools` is what the server listed when it
+environment that `variables` names, on the device whose id is `device` alone). The id is made once from the first name.
+`device` is this device's own id (`device_id_of`, never synced) when a stdio server is added or a server becomes stdio
+here, and empty for `http`; `runs_on(server, device_id)` in `mcp/model.ts` holds for an address anywhere and for a
+command only on its device, and one with no device recorded runs nowhere. `tools` is what the server listed when it
 was added or refreshed, each with its name, description (2,000 characters at most), `read_only` (the server's
 `readOnlyHint`) and input schema, so opening the plugin host starts no server. `mcp_plugin(database)`, which
-`open_plugin_host` adds beside the apps' plugin, provides `tools` under `mcp_<id>` for each server that is on, labelled
+`open_plugin_host` adds beside the apps' plugin, provides `tools` under `mcp_<id>` for each server that is on and runs on this device, labelled
 with its name, without `own_words`, so its descriptions reach the engine fenced and clipped; a tool changes something
 unless it is read-only, and sends outside unless the server is a command or its address is a loopback one
 (`sends_outside` in `mcp/model.ts`). Its key for marks and tool choices is `codex.mcp/mcp_<id>`.
 
 The calls (`mcp/store.ts`): `list_mcp_servers` reads (tokens never, only `has_token`), and the page-only
-`add_mcp_server(fields)`, `change_mcp_server(id, fields)`, `refresh_mcp_server(id)` and `remove_mcp_server(id)` check
-the fields, list the tools before keeping a new or newly reached server (a server that cannot answer is not kept), and
-close a connection whose server changed or went. They reach servers through an `McpConnector` (`mcp/connector.ts`) set
+`add_mcp_server(fields)`, `change_mcp_server(id, fields)`, `refresh_mcp_server(id)`, `move_mcp_server_here(id,
+{ command, args })` and `remove_mcp_server(id)` check the fields, list the tools before keeping a new or newly reached
+server (a server that cannot answer is not kept), and close a connection whose server changed or went. A command on
+another device is never started here: refreshing it, or changing how it starts, is refused, while its name and On switch
+can still change; `move_mcp_server_here` takes the program and arguments the page showed, refuses them unless they are
+the stored ones, lists the tools here and records this device. `list_mcp_servers` gives each `runs_here` and the
+`device_name` it runs on, from the background devices. They reach servers through an `McpConnector` (`mcp/connector.ts`) set
 where the store runs by `load_collectors`, since a command needs Node: `src/server/tools/mcp_client.ts`, on the
 official SDK's client (`@modelcontextprotocol/client`). It keeps one connection a server, closed after two minutes
 unused; starts a command through the SDK's stdio transport, without a shell, with the SDK's safe variables (`HOME`,
@@ -583,7 +590,9 @@ the tools while it is off, and each tool with its facts, an on switch and "Also
 offer to small models" (`src/web/tools/ToolSettings.tsx`); Action policy lists the plugin tools that change something
 after CODEX's own; the hosted log shows tool uses in words. MCP servers have a row each under Plugins
 (`src/web/mcp/McpServers.tsx`): its On switch, how it is reached, Save, its tools with Refresh, its marks and each
-tool's switches, and Remove, then **Add an MCP server…**.
+tool's switches, and Remove, then **Add an MCP server…**. A command on another device shows **Runs on** that device in
+its row and dialog, no tools, and **Move to this device…**, whose confirmation shows the program, arguments and
+variables before `move_mcp_server_here` runs.
 
 ### The pane
 

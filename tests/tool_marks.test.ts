@@ -79,7 +79,7 @@ describe("the mark's starting value", () => {
 
   it("is off for every MCP server, a remote one included, and keeps a mark the user set", async () => {
     const fixture = start_fixture();
-    const record = (id: string, fields: Partial<McpServerRecord>): McpServerRecord => ({ id, name: id, transport: "http", address: "https://notes.example.org/mcp", token: "t", command: "", args: [], variables: [], enabled: true, tools: [{ name: "read", description: "", read_only: true, input_schema: {} }], listed_at: "", ...fields });
+    const record = (id: string, fields: Partial<McpServerRecord>): McpServerRecord => ({ id, name: id, transport: "http", address: "https://notes.example.org/mcp", token: "t", command: "", args: [], variables: [], device: "", enabled: true, tools: [{ name: "read", description: "", read_only: true, input_schema: {} }], listed_at: "", ...fields });
     fixture.calls.set_setting("mcp_servers", [record("remote", {}), record("local", { transport: "http", address: "http://127.0.0.1:9000/mcp" }), record("set", {})]);
     fixture.calls.set_tool_plugin_mark(mcp_key_of("set"), "send_to_hosted", true);
     const listed = Object.fromEntries((await fixture.calls.list_plugin_tools()).map((entry) => [entry.key, entry.send_to_hosted]));
