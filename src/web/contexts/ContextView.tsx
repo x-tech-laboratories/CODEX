@@ -23,6 +23,7 @@ import { conversation_collector, conversation_route } from "../../shared/convers
 import { open_conversation } from "../assistant/selection.ts";
 import { attempt, calls, succeeds, use_data } from "../api.ts";
 import { GraphPanel } from "../graph/GraphPanel.tsx";
+import { ContextJobs } from "../jobs/JobsPage.tsx";
 import { graph_href } from "../graph/GraphPage.tsx";
 import { open_item_history } from "../history/HistoryView.tsx";
 import { context_href, context_menu } from "./actions.tsx";
@@ -464,6 +465,7 @@ function Page({ context, all }: { context: ContextDetail; all: ContextSummary[] 
       <Section title="Notes" class_name="context-notes">
         <Notes key={context.id} context={context} />
       </Section>
+      <ContextJobs context_id={context.id} />
       <LinkCounts.Provider value={counts.data ?? {}}>
       {context.view === "graph" && <GraphPanel key={context.id} context_id={context.id} label={`Graph of ${context.name}`} />}
       {context.view !== "graph" && context.items.length === 0 && <Empty title="Nothing here yet" hint="Add tasks, notes, files, emails and links from the apps that keep them, or start a conversation in the Assistant pane." />}

@@ -195,10 +195,12 @@ export async function* run_direct(model: ChatModel, request: EngineRequest, sign
   const told = new Set<string>();
   let ratio = chars_per_token(key);
   let said = "";
+  // A background job may allow fewer rounds than the engine's own limit.
+  const max_rounds = Math.max(1, Math.min(options.max_rounds, request.limits?.max_rounds ?? options.max_rounds));
   try {
-    for (let round = 0; round < options.max_rounds; round += 1) {
+    for (let round = 0; round < max_rounds; round += 1) {
       if (signal.aborted) throw new Error(stopped_message);
-      const offered = round === options.max_rounds - 1 ? undefined : tools;
+      const offered = round === max_rounds - 1 ? undefined : tools;
       let completion: ChatCompletion | undefined;
       let fit: Extract<Fit, { fits: true }> | undefined;
       let thought = false;
@@ -264,7 +266,7 @@ export async function* run_direct(model: ChatModel, request: EngineRequest, sign
         messages.push({ role: "tool", tool_call_id: call.id, content: outcome.result });
       }
     }
-    throw new PlainFailure(`The model was still calling tools after ${options.max_rounds} rounds.`);
+    throw new PlainFailure(`The model was still calling tools after ${max_rounds} rounds.`);
   } catch (error) {
     if (signal.aborted) yield { type: "error", message: stopped_message };
     else yield { type: "error", ...plain_of(error, options) };

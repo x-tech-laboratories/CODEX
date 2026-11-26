@@ -19,6 +19,7 @@ import type { DesktopSettings } from "../../shared/desktop.ts";
 import { attempt, calls, data_watch, page, set_setting, show_error, use_settings } from "../api.ts";
 import { read_picked, save_text } from "../files.ts";
 import { engine_section, policy_section } from "../assistant/AssistantSettings.tsx";
+import { background_section } from "../jobs/BackgroundSettings.tsx";
 import { CollectorRows } from "../plugins.tsx";
 import { hosted_log_section } from "../privacy/PrivacySettings.tsx";
 import { index_section } from "../search/IndexSettings.tsx";
@@ -159,6 +160,28 @@ function Desktop() {
   );
 }
 
+// Which kinds of desktop notification this computer shows.
+function Notifications() {
+  const { desktop } = page();
+  const [settings, set_settings] = useState<DesktopSettings | null>(null);
+  useEffect(() => void desktop?.get_desktop_settings().then(set_settings, show_error), [desktop]);
+  if (!desktop || !settings) return null;
+  const change = (key: "notify_missing" | "notify_inbox", on: boolean): void => {
+    set_settings({ ...settings, [key]: on });
+    void desktop.set_desktop_setting(key, on).catch(show_error);
+  };
+  return (
+    <>
+      <SettingRow label="Waiting in the Inbox" hint="When a background job proposes changes, fails or stops at a limit while the window is not in front." as_label>
+        <Switch label="Waiting in the Inbox" checked={settings.notify_inbox} on_change={(on) => change("notify_inbox", on)} />
+      </SettingRow>
+      <SettingRow label="Items gone from their apps" hint="When a refresh finds items their apps no longer have." as_label>
+        <Switch label="Items gone from their apps" checked={settings.notify_missing} on_change={(on) => change("notify_missing", on)} />
+      </SettingRow>
+    </>
+  );
+}
+
 // Sync on a device with its own database, and backups of whichever database the page works on.
 function data_category(): SettingsCategory[] {
   const { device, backups, backup_folder, certificates, local_mcp, desktop } = page();
@@ -170,6 +193,7 @@ function data_category(): SettingsCategory[] {
     ...(backups
       ? [{ id: "backups", heading: "Backups", hint: backup_folder ? "Copies of this device's data, kept in a folder you pick." : device ? "Copies of this device's data, kept beside it." : "Copies of the server's data, kept in its data folder. A restore restarts the server.", content: <Backups /> }]
       : []),
+    ...(desktop ? [{ id: "notifications", heading: "Notifications", hint: "What this computer tells you while CODEX's window is not in front.", content: <Notifications /> }] : []),
     ...(local_mcp
       ? [{ id: "mcp", heading: "MCP server", hint: "Let AI assistants such as Claude Code reach this device's data without the server.", content: <LocalMcpSettings device={local_mcp} name="codex" data_name="read and change your contexts and the items they hold" /> }]
       : []),
@@ -189,7 +213,7 @@ export function SettingsView() {
           <SettingsPage
             categories={[
               { heading: "General", sections: [general_section(values, set_setting), history_section(values, set_setting), collectors_section, index_section(values), transfer_section] },
-              { heading: "Assistant", sections: [engine_section(values), policy_section, hosted_log_section(values, set_setting)] },
+              { heading: "Assistant", sections: [engine_section(values), policy_section, background_section, hosted_log_section(values, set_setting)] },
               ...data_category(),
             ]}
           />

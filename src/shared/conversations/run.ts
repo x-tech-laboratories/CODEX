@@ -123,7 +123,7 @@ export function engine_tools(context: ToolContext): EngineTools {
   const run = async (name: string, args: unknown[]): Promise<{ text: string; sources: Set<string>; plain: string }> => {
     // A search leaves out this conversation's own messages, the user's question among them.
     const sent = name === "search_index" ? [args[0], args[1] ?? null, args[2] ?? default_hits, context.conversation_id] : args;
-    const value = await context.call(name, sent);
+    const value = await context.call(name, sent, "engine");
     if (!brings_outside_content(name)) return { text: as_text(value), sources: new Set(), plain: as_text(value) };
     const screened = screen_result(context.database(), screen, name, args, value);
     if (taints(screen, screened.sources)) context.has_outside_content = true;
@@ -183,8 +183,35 @@ export function engine_tools(context: ToolContext): EngineTools {
 
 // ── Runs ─────────────────────────────────────────────────────────────────────
 
+// What a background job's run is given beyond a conversation's: nobody is present, and it stops at its limits.
+export interface RunOptions {
+  presence?: Presence;
+  limits?: { max_rounds: number; max_tokens: number };
+  // Hears how the run ended, once it has been kept.
+  on_end?: (end: RunEnd) => void;
+}
+
+// How a run ended, for a background job's record.
+export interface RunEnd {
+  run_id: string;
+  conversation_id: string;
+  engine: string;
+  model: string;
+  rounds: number;
+  input_tokens: number;
+  output_tokens: number;
+  tool_calls: ToolCallRecord[];
+  error: string;
+  // Which limit stopped it, if one did; or that it gave way to a live conversation.
+  stopped_by: "" | "rounds" | "tokens" | "gave_way";
+}
+
 interface Run {
   conversation_id: string;
+  presence: Presence;
+  options: RunOptions;
+  // Set when it was stopped for a reason of CODEX's own rather than the user's Stop.
+  stopped_by: RunEnd["stopped_by"];
   // What the engine may be sent of each source, and what it was so far.
   screen: Screen;
   abort: AbortController;
@@ -212,6 +239,20 @@ export function stop_run_of(conversation_id: string): boolean {
   const run = runs.get(conversation_id);
   run?.abort.abort();
   return run !== undefined;
+}
+
+// Whether a reply the user is waiting for is being written anywhere here.
+export function has_live_runs(): boolean {
+  return [...runs.values()].some((run) => run.presence === "conversation");
+}
+
+// Stops every background run, which gives way to a live conversation and runs again at its next turn.
+export function give_way(): void {
+  for (const run of runs.values()) {
+    if (run.presence !== "background") continue;
+    run.stopped_by = "gave_way";
+    run.abort.abort();
+  }
 }
 
 export function stop_all_runs(): void {
@@ -269,12 +310,19 @@ function conversation_for(database: SqlDatabase, context_id: string | null, conv
 
 // Keeps the user's message, in a new conversation in the open context when asked or when there is none, and starts the
 // engine on it, told about the context the user has open; answers at once, while the reply streams to open pages.
-export async function start_run(database: SqlDatabase, context_id: string | null, text: string, asked?: string | null): Promise<{ conversation_id: string; run_id: string }> {
+export async function start_run(database: SqlDatabase, context_id: string | null, text: string, asked?: string | null, options: RunOptions = {}): Promise<{ conversation_id: string; run_id: string }> {
   const host = assistant_host();
+  const presence = options.presence ?? "conversation";
   if (!text.trim()) throw new Error("Write a message first.");
   // Fails on a context or conversation that does not exist, before anything is kept.
   screened_instructions(database, context_id, null, "", local_screen());
   const chosen = conversation_for(database, context_id, asked);
+  // The user writing where a background job is running stops the job's run first, since the user goes first.
+  const in_the_way = chosen !== undefined && presence === "conversation" ? runs.get(chosen) : undefined;
+  if (in_the_way?.presence === "background") {
+    give_way();
+    await in_the_way.done;
+  }
   if (chosen !== undefined && runs.has(chosen)) throw new Error("A reply is still being written here; stop it or wait for it first.");
   const found = await find_engine(database);
   if (!found.running || !found.engine) throw new Error(found.problem);
@@ -290,7 +338,9 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   const notices = recalled.map(({ row }) => `Recalled the blueprint “${row.title}” for this message.`);
   const state: RunState = { run_id: new_id(), engine: found.engine.label, model: found.engine.model, started_at: new Date().toISOString(), text: "", reasoning: "", tool_calls: [], notices };
   record_uses(database, recalled.map(({ row }) => row.id), conversation_id, state.run_id);
-  const run: Run = { conversation_id, screen, abort: new AbortController(), state, done: Promise.resolve() };
+  // A live conversation always goes first: a background run writing now stops and runs again later.
+  if (presence === "conversation") give_way();
+  const run: Run = { conversation_id, presence, options, stopped_by: "", screen, abort: new AbortController(), state, done: Promise.resolve() };
   runs.set(conversation_id, run);
   reply_started();
   // An earlier answer replayed counts as reading its sources again, so one that drew on an untrusted source taints the run.
@@ -299,7 +349,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
     database: host.database,
     call: host.call,
     conversation_id,
-    presence: "conversation",
+    presence,
     has_outside_content: taints(screen, [...instructions.sources, ...replayed.sources]),
     screen,
     maker: { engine: found.engine.id, model: found.engine.model },
@@ -307,7 +357,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
     run_id: state.run_id,
     on_decided: (name, record) => note_decision(run, name, record),
   });
-  const request = { instructions: instructions.value, conversation: replayed.turns, tools };
+  const request = { instructions: instructions.value, conversation: replayed.turns, tools, ...(options.limits ? { limits: { max_rounds: options.limits.max_rounds } } : {}) };
   run.done = drive(run, found.running.run(request, run.abort.signal), host);
   host.emit({ conversation_id, run_id: state.run_id, type: "started", engine: state.engine, model: state.model });
   for (const notice of notices) host.emit({ conversation_id, run_id: state.run_id, type: "notice", text: notice });
@@ -341,6 +391,8 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
   let error_detail = "";
   let input_tokens = 0;
   let output_tokens = 0;
+  let rounds = 0;
+  const limits = run.options.limits;
   try {
     for await (const event of events) {
       if (run.abort.signal.aborted) break;
@@ -368,6 +420,15 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
       } else if (event.type === "usage") {
         input_tokens += event.input_tokens;
         output_tokens += event.output_tokens;
+        rounds += 1;
+        // A background job stops at its limits, whatever the engine would do next.
+        if (limits && input_tokens + output_tokens >= limits.max_tokens) run.stopped_by = "tokens";
+        // The engine is asked to stop at the round limit; one that goes past it anyway is stopped here.
+        else if (limits && rounds > limits.max_rounds) run.stopped_by = "rounds";
+        if (run.stopped_by) {
+          run.abort.abort();
+          break;
+        }
       } else if (event.type === "done") {
         final_text = event.text;
         break;
@@ -380,7 +441,15 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
   } catch (thrown) {
     error = thrown instanceof Error ? thrown.message : String(thrown);
   }
-  if (run.abort.signal.aborted) [error, error_detail] = ["Stopped.", ""];
+  // The engine's own round limit, when a job set it lower, counts as the job's limit.
+  if (limits && !run.stopped_by && error && rounds >= limits.max_rounds) run.stopped_by = "rounds";
+  const stops: Record<RunEnd["stopped_by"], string> = {
+    "": "Stopped.",
+    tokens: `Stopped: it reached its limit of ${limits?.max_tokens.toLocaleString("en") ?? 0} tokens for one run.`,
+    rounds: `Stopped: it reached its limit of ${limits?.max_rounds ?? 0} rounds for one run.`,
+    gave_way: "Stopped to give way to a conversation; it runs again at its next turn.",
+  };
+  if (run.abort.signal.aborted || run.stopped_by) [error, error_detail] = [stops[run.stopped_by], ""];
   else if (final_text === null && !error) error = "The engine stopped without an answer.";
   for (const call of state.tool_calls) if (call.outcome === "pending") call.outcome = "failed";
   // Gone before the pages hear of the end, so a page loading the conversation then finds the message and no run.
@@ -415,5 +484,6 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
   } finally {
     host.emit({ ...base, type: "finished", error, ...(error_detail ? { error_detail } : {}) });
     host.announce();
+    run.options.on_end?.({ run_id: state.run_id, conversation_id, engine: state.engine, model: state.model, rounds, input_tokens, output_tokens, tool_calls: state.tool_calls, error, stopped_by: run.stopped_by });
   }
 }

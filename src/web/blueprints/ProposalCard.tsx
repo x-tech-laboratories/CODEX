@@ -32,7 +32,7 @@ function maker_words(proposal: BlueprintProposal): string {
 }
 
 // The proposal's text: the whole blueprint when new, what differs when a change.
-function ProposalText({ proposal }: { proposal: BlueprintProposal }) {
+export function ProposalText({ proposal }: { proposal: BlueprintProposal }) {
   const before = proposal.before;
   if (!before) {
     return (

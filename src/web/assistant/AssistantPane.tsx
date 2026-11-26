@@ -201,7 +201,7 @@ function brief_arguments(args: Record<string, unknown>): string {
 }
 
 // What a proposal came from: the message that asked for it, what the run read before proposing, and the sources.
-function Evidence({ proposal, asked, label_of }: { proposal: Proposal; asked: string | null; label_of: (source: string) => string }) {
+export function Evidence({ proposal, asked, label_of }: { proposal: Proposal; asked: string | null; label_of: (source: string) => string }) {
   const { evidence } = proposal;
   if (!evidence.asked_by && evidence.reads.length === 0) return <p className="muted small">No evidence was kept for this proposal.</p>;
   const sources = proposal.sources.filter((source) => source !== "*");

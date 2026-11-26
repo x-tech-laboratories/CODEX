@@ -129,6 +129,15 @@ export const item_kinds: ItemKind[] = [
   entity_history,
   link_history,
   blueprint_history,
+  {
+    kind: "job",
+    label: "Job",
+    item_table: "jobs",
+    levels: [{ table: "jobs", column: "id" }],
+    watches: [{ table: "jobs", item_columns: ["id"] }],
+    name_of: (snapshot) => String(first(snapshot, "jobs")?.title ?? "Job"),
+    summary: (snapshot) => (Number(first(snapshot, "jobs")?.is_on) === 1 ? "on" : "off"),
+  },
 ];
 
 const histories = new Map<string, History<Snapshot>>(
@@ -252,7 +261,7 @@ export const history_feature = define_feature({
       description: "Lists one item's versions, newest first: when each was made, whether it was created, edited, deleted or restored, and on this device or another.",
       params: [
         { name: "kind", schema: { type: "string", enum: kinds, description: "What the item is." } },
-        { name: "item_id", schema: { ...id_of("item"), description: "The context's, entity's, link's or blueprint's id." } },
+        { name: "item_id", schema: { ...id_of("item"), description: "The context's, entity's, link's, blueprint's or job's id." } },
       ],
     },
     list_recent_changes: {

@@ -464,3 +464,18 @@
 .blueprint-editor input {
   width: 100%;
 }
+
+/* A job's interval: its number and unit side by side; its weekdays in a wrapping row. */
+.job-every,
+.job-days {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* An Inbox row: its tick box first, then the kind's icon, the text and its buttons. */
+.inbox-row > input[type="checkbox"] {
+  flex: none;
+  margin-top: var(--space-1);
+}

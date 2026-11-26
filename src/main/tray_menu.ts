@@ -10,6 +10,8 @@ import type { ContextSummary } from "../shared/contexts/model.ts";
 
 export interface TrayState {
   contexts: ContextSummary[];
+  // How many things wait for the user in the Inbox.
+  waiting: number;
 }
 
 // What the tray's rows do.
@@ -25,15 +27,16 @@ const most_contexts = 8;
 
 // ── Menu ─────────────────────────────────────────────────────────────────────
 
-// The top-level contexts in their order, each opening the window on it, then showing the window, quitting the window
-// and tray, and quitting the daemon too.
+// The Inbox with how many things wait, the top-level contexts in their order, each opening the window on it, then
+// showing the window, quitting the window and tray, and quitting the daemon too.
 export function tray_view(state: TrayState, actions: TrayActions): TrayView {
+  const inbox: TrayRow = { kind: "item", label: state.waiting > 0 ? `Inbox (${state.waiting} waiting)` : "Inbox", run: () => actions.open_route("#/inbox") };
   const context_rows = state.contexts
     .filter((context) => context.parent_id === null)
     .slice(0, most_contexts)
     .map((context): TrayRow => ({ kind: "item", label: context.name, run: () => actions.open_route(`#/context/${context.id}`) }));
   return {
-    tooltip: "CODEX",
-    rows: tray_groups(context_rows, app_rows({ app_name: "CODEX", show: actions.show, quit: actions.quit, quit_completely: actions.quit_completely })),
+    tooltip: state.waiting > 0 ? `CODEX · ${state.waiting} waiting in the Inbox` : "CODEX",
+    rows: tray_groups([inbox], context_rows, app_rows({ app_name: "CODEX", show: actions.show, quit: actions.quit, quit_completely: actions.quit_completely })),
   };
 }

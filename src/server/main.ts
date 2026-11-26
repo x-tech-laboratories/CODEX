@@ -3,6 +3,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -12,6 +13,7 @@ import { load_accounts } from "@x-tech-laboratories/x-libs/server/passwords";
 import { sqlite_backups, take_staged_restore } from "@x-tech-laboratories/x-libs/server/sqlite_backups";
 
 import { codex_backup_naming, read_schedule } from "../shared/backups.ts";
+import { keep_running_jobs } from "../shared/jobs/runner.ts";
 import { keep_indexing, open_index } from "../shared/search/indexer.ts";
 import { after_index_change, needs_upgrade, open_store, sync_engine } from "../shared/store.ts";
 import { build_app } from "./app.ts";
@@ -108,11 +110,15 @@ const app = await build_app({
     },
   },
 });
+// The server runs the assistant's jobs only once the user chose it as the device that does.
+const jobs = keep_running_jobs({ database: () => database, device: `server on ${hostname()}`, now: () => Date.now() });
+
 await app.listen({ host: server_config.host, port: server_config.port });
 console.info(`CODEX is serving http://${server_config.host}:${server_config.port}/`);
 
 function stop(): void {
   refreshing.stop();
+  void jobs.stop();
   void indexing.stop().then(() => index.close());
   backing_up.stop();
   void app.close().then(() => database.close());

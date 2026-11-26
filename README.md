@@ -137,8 +137,7 @@ start a new conversation.
 **What it can do:** read and change contexts and their items, search the collectors and follow feeds, through the same
 calls the API and MCP serve; never your settings, plugins, accounts, sync, backups or History. Each kind of change has
 a level under **Settings → Assistant → Action policy**: **Never**, **Ask me first** (the default for every change),
-**Allowed while I'm in the conversation**, or **Allowed, even in the background** (for background jobs to come; none
-exist yet). A change that has to ask shows as a card in the conversation with **Approve** and **Reject**, and under
+**Allowed while I'm in the conversation**, or **Allowed, even in the background** (for its jobs, below). A change that has to ask shows as a card in the conversation with **Approve** and **Reject**, and under
 **Why, and from what** the message that asked for it and what the assistant read first, quoting another app's text only
 when that app is marked **May be sent to a hosted engine**. Every change it made, by your approval or on its own, has
 **Undo** on its row in the conversation for as long as nothing has changed those contexts since; the undo goes through
@@ -163,6 +162,31 @@ everywhere are on the **Blueprints** page in the sidebar, and **New blueprint…
 What you write or edit yourself is active at once; one added through a token or MCP is only proposed. A proposed
 blueprint written after reading another app's text carries that app as its source, so a hosted engine is not shown it
 until you accept it, after which it is your own.
+
+**Jobs** are the assistant's own recurring work (your own recurring tasks belong in X-Tasks): a title, what it does,
+written as you would ask it, the context it works in, when it runs (every so many minutes, hours or days, or at a time
+on chosen weekdays), whether it runs only when something in its context changed since its last run, and its limits:
+the most rounds and tokens one run may use and the most runs a day. Make them on the **Jobs** page or from a context's
+⋮ menu, or ask the assistant in a conversation: adding, changing and removing a job are changes under the action
+policy like any other, so by default its request is a card you approve. Each run is an ordinary reply in a
+conversation of the job's own, named after it in its context, with nobody present: only changes set to **Allowed, even
+in the background** are made, everything else waits for you as a proposal, and text from other apps makes every change
+wait as in a conversation. A run that reaches its round or token limit stops with a note saying so. The Jobs page shows
+each job's schedule, next turn, latest run and the device that ran it, with **Run now**, an on switch and its runs.
+
+Nothing runs until you turn on **Background work** under **Settings → Assistant → Background work**, which also holds
+the caps on runs and tokens a day for every job together, with today's use. Since your data syncs to several devices
+and a server, only the one where you turn on **This device runs background work** (on the server's page, **The server
+runs background work**) runs jobs. A job never runs twice at once and runs once however many turns it missed; a
+conversation you are in always goes first, and a job's run that is writing stops to make way and runs again at its
+next turn; a job set to run only on change makes no call to the engine while nothing changed.
+
+**The Inbox** in the sidebar, with its count, lists everything that waits for you, newest first: changes proposed in
+conversations and jobs, with why and from what; proposed links and entities; proposed blueprints and changes to them;
+and job runs that failed or stopped at a limit. Each opens its conversation or page, and each can be approved or
+accepted, rejected, or for a run set aside, in place; tick several to decide them at once after a confirmation. On the
+desktop the tray shows the count too, and while the window is not in front a notification says when a job left
+something waiting (**Settings → This device → Notifications**).
 
 **Privacy and trust by source:** each collector's row under **Settings → Plugins**, and each app's row under **Apps**,
 has two switches, both off at first.
@@ -282,9 +306,11 @@ The admins are read from the accounts file `CODEX_PASSWORD_HASH_FILE` names, one
 The desktop app runs as two processes: a daemon that holds the data and does the work, and the window that shows it.
 The daemon keeps `codex.db` in the app's profile folder and serves the window on `$XDG_RUNTIME_DIR/codex/daemon.sock`.
 The window first opens over most of the screen and then keeps the size and place you leave it at.
-Closing the window leaves sync, backups, refreshing and the MCP server running. A tray icon lists the top-level
-contexts to open and brings the window back; **Quit completely** there or under **Settings → Desktop** stops the
-daemon too. The daemon tells you with a desktop notification when a refresh finds items gone from their apps. The app
+Closing the window leaves sync, backups, refreshing, the assistant's jobs and the MCP server running. A tray icon opens
+the Inbox, showing how many things wait there, lists the top-level contexts to open and brings the window back; **Quit completely** there or under **Settings → Desktop** stops the
+daemon too. The daemon tells you with a desktop notification when a refresh finds items gone from their apps, and
+when a job left something waiting in the Inbox while the window is not in front; each kind can be turned off under
+**Settings → This device → Notifications**. The server sends no notifications yet. The app
 opens `codex://context/<id>` links on that context, and `codex://conversation/<id>` links on a context holding the
 conversation, with it in the pane.
 
@@ -335,8 +361,9 @@ context points to are not CODEX's items; their own apps answer for them.
 
 ## Not yet
 
-- **More of the assistant:** the Inbox and background jobs, in the order
+- **More of the assistant:** self-maintenance, mood and curiosity, in the order
   [docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) gives.
+- **Notifications from the server** through X-Libs' channels; only the desktop app notifies so far.
 - **Android.** Collectors need Node, so a phone app would show what is kept but search nothing; it waits for collectors
   that run on the server alone.
 - **CSV export.** Contexts export and import as JSON only so far.

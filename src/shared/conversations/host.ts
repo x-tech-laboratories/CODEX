@@ -5,6 +5,7 @@
 
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
+import type { Caller } from "../caller.ts";
 import type { ConversationEvent } from "./model.ts";
 
 // ── Host ─────────────────────────────────────────────────────────────────────
@@ -12,7 +13,7 @@ import type { ConversationEvent } from "./model.ts";
 export interface AssistantHost {
   database: () => SqlDatabase;
   // Runs one of the store's calls as the page would, so it is recorded in History and announced like any other.
-  call: (method: string, args: unknown[]) => Promise<unknown>;
+  call: (method: string, args: unknown[], caller?: Caller) => Promise<unknown>;
   // Tells open pages and devices the conversation's own rows changed.
   announce: () => void;
   // Streams a run's progress to open pages.
