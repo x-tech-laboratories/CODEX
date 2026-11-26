@@ -19,6 +19,7 @@ export const unmarked: SourceMark = { send_to_hosted: false, trusted: false };
 
 // One collector plugin as Settings lists it, with its marks.
 export interface SourceMarkEntry extends SourceMark {
+  // The plugin's id, or for an app marked on its own the plugin's id and its collector, such as codex.items/app.x-tasks.
   plugin_id: string;
   name: string;
   // The collectors it provides, by id, such as ["x-tasks"].

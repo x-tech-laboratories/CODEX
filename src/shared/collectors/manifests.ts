@@ -62,4 +62,10 @@ export const links_manifest = manifest("links", "Web links", "Keeps web pages an
 
 export const email_manifest = manifest("email", "Email", "Takes emails sent from Thunderbird with the CODEX add-on, keyed by their Message-ID so a moved email is still found.");
 
-export const bundled_manifests = [files_manifest, bookmarks_manifest, x_tasks_manifest, trilium_manifest, links_manifest, email_manifest];
+export const item_sources_manifest = manifest(
+  "items",
+  "Apps answering the item calls",
+  "Reads any app that answers the X-Tech item calls, such as another X-app, with a read-only token; add each app under Apps below.",
+);
+
+export const bundled_manifests = [files_manifest, bookmarks_manifest, x_tasks_manifest, trilium_manifest, links_manifest, email_manifest, item_sources_manifest];

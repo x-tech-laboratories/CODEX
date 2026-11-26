@@ -140,7 +140,8 @@ exist yet). A change that has to ask shows as a card in the conversation with **
 has read text that came from another app, such as an item's title or a search, every change it asks for waits for you,
 whatever its level, since that text could carry someone else's instructions.
 
-**Privacy and trust by source:** each collector's row under **Settings → Plugins** has two switches, both off at first.
+**Privacy and trust by source:** each collector's row under **Settings → Plugins**, and each app's row under **Apps**,
+has two switches, both off at first.
 **May be sent to a hosted engine** lets its items, titles included, reach an engine a company runs, such as Anthropic, or
 an OpenAI-compatible endpoint that is not on this computer or a private network; without it such an engine is told
 only how many items were left out, so it can say so. A local engine sees everything. **Trusted content** says the app
@@ -153,8 +154,8 @@ on a source not marked **Trusted content** makes the changes of every later repl
 reading that source again would. Your conversations' titles are your own words, and a reply is never shown another
 conversation's latest exchange.
 
-The assistant's settings, the marks, the engine and embedder in use and every plugin's settings can be changed only on
-CODEX's own page; a token or an MCP client can read them, with keys hidden, but not change them.
+The assistant's settings, the marks, the engine and embedder in use, every plugin's settings and the apps read through
+the item calls can be changed only on CODEX's own page; a token or an MCP client can read them, with keys hidden, but not change them.
 
 ## Collectors
 
@@ -166,10 +167,29 @@ CODEX's own page; a token or an MCP client can read them, with keys hidden, but 
 | Firefox bookmarks | bookmarks found by title or address, and each bookmark folder to follow | the Firefox profile folder, or nothing for Firefox's default profile |
 | Web links | web pages typed in by address and title | nothing |
 | Email     | emails sent from Thunderbird with the add-on below, as `mid:` links keyed by their Message-ID | nothing here; the add-on has its own options |
+| Apps answering the item calls | the items of any app that answers the X-Tech item calls, such as another X-app, opening by the app's own links | each app under **Apps**: a name, its address and a read-only token |
 
 Files reads the disk of the machine its server or daemon runs on, so on a server it finds the server's files. Firefox
 bookmarks runs in the desktop app alone: it reads a copy of the profile's `places.sqlite`, since Firefox keeps the file
 locked, and what it brings syncs to the server and other devices like anything else.
+
+**Apps answering the item calls.** Every X-app answers the same four read-only calls about its items
+(`list_item_kinds`, `search_items`, `get_items`, `list_item_changes`), so any of them, and any other app that answers
+them, becomes a source with no plugin of its own: under **Settings → Plugins**, **Add an app…** takes a name, the app's
+address (such as `https://tasks.example.org`) and a read-only token made on that app's account page, and saves it only
+once the app answers. Each app is then a collector of its own, named as you named it, with the kinds the app gave,
+its own row to change its address or token, see whether it answers now, or remove it, and its own **May be sent to a
+hosted engine** and **Trusted content** switches. CODEX only ever reads it, calling those four calls and nothing else:
+it searches with `search_items`, and a refresh asks `list_item_changes` for what changed since the last refresh, so
+only changed items are read again; an item the app deleted is marked missing. The token is kept like a plugin's key:
+never shown to the page, the API, MCP or a settings export, and never in a message. The index gets each item's snippet,
+as the item calls give nothing more. Removing an app leaves the items it brought in their contexts as last seen.
+
+**X-Tasks, both ways.** X-Tasks answers the item calls too, so it can be read either way. The **X-Tasks** collector
+above knows X-Tasks: it offers tags and tasks with subtasks to follow, gives the graph a subtask's parent, and indexes a
+task's whole notes. Use it for X-Tasks. Use **Add an app…** for any X-app with no collector of its own; an X-Tasks
+added that way searches and refreshes tasks, but follows nothing and indexes only the first 200 characters of the
+notes. The two keep their items apart (`x-tasks:<id>` and `app.<name>:<id>`), so nothing moves from one to the other.
 
 A collector of your own is a plugin in a subfolder of the plugins folder (`plugins_folder` in the server's config, or
 `plugins/` in the desktop app's profile) whose `package.json` names its built server entry under

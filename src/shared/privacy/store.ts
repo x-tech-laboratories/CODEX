@@ -14,7 +14,7 @@ import { settings_feature } from "../settings.ts";
 import { migrations } from "./migrations/index.ts";
 import { mark_names, unmarked, type HostedSend, type MarkName, type SourceCount, type SourceMarkEntry } from "./model.ts";
 import { hosted_sends, privacy_tables } from "./schema.ts";
-import { marks_setting, stored_marks } from "./screen.ts";
+import { mark_key_of, marks_setting, stored_marks } from "./screen.ts";
 
 // ── Marks ────────────────────────────────────────────────────────────────────
 
@@ -23,9 +23,15 @@ async function list_source_marks(database: SqlDatabase): Promise<SourceMarkEntry
   const host = await open_plugin_host(database);
   const stored = stored_marks(database);
   const names = new Map(host.list().map((status) => [status.manifest.id, status.manifest.name]));
-  const by_plugin = new Map<string, string[]>();
-  for (const { id, plugin_id } of host.providers("collector")) if (plugin_id !== conversations_plugin_id) by_plugin.set(plugin_id, [...(by_plugin.get(plugin_id) ?? []), id]);
-  return [...by_plugin].map(([plugin_id, collectors]) => ({ plugin_id, name: names.get(plugin_id) ?? plugin_id, collectors, ...unmarked, ...stored[plugin_id] }));
+  // A collector marked on its own, such as each app the item calls read, is an entry of its own, named by its label.
+  const by_key = new Map<string, { name: string; collectors: string[] }>();
+  for (const collector of host.providers("collector")) {
+    if (collector.plugin_id === conversations_plugin_id) continue;
+    const key = mark_key_of(collector);
+    const name = collector.value.marked_alone ? collector.value.label : (names.get(collector.plugin_id) ?? collector.plugin_id);
+    by_key.set(key, { name, collectors: [...(by_key.get(key)?.collectors ?? []), collector.id] });
+  }
+  return [...by_key].map(([plugin_id, { name, collectors }]) => ({ plugin_id, name, collectors, ...unmarked, ...stored[plugin_id] }));
 }
 
 function set_source_mark(database: SqlDatabase, plugin_id: string, mark: MarkName, on: boolean): void {
@@ -95,13 +101,13 @@ export const privacy_feature = define_feature({
   api: {
     list_source_marks: {
       description:
-        "Lists each collector plugin running with its two marks: send_to_hosted, whether its items may be sent to a hosted engine (without it they are withheld from one), and trusted, whether reading its items leaves the assistant's changes at their own levels instead of making them all wait for approval.",
+        "Lists each collector plugin running, and each app read through the item calls on its own (its plugin_id then the plugin's id and its collector, such as codex.items/app.x-tasks), with its two marks: send_to_hosted, whether its items may be sent to a hosted engine (without it they are withheld from one), and trusted, whether reading its items leaves the assistant's changes at their own levels instead of making them all wait for approval.",
       params: [],
     },
     set_source_mark: {
       description: "Turns one of a collector plugin's marks on or off. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
-        { name: "plugin_id", schema: text("The collector plugin's id, such as codex.x-tasks, from list_source_marks.") },
+        { name: "plugin_id", schema: text("The collector plugin's id, such as codex.x-tasks, or an app's key such as codex.items/app.x-tasks, from list_source_marks.") },
         { name: "mark", schema: { type: "string", enum: mark_names, description: "send_to_hosted or trusted." } },
         { name: "on", schema: { type: "boolean", description: "True to turn it on, false to turn it off." } },
       ],
