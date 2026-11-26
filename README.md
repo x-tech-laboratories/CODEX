@@ -80,7 +80,12 @@ an OpenAI-compatible endpoint that is not on this computer or a private network;
 only how many items were left out, so it can say so. A local engine sees everything. **Trusted content** says the app
 holds only your own words, so reading its items no longer makes changes wait for you; context names and notes you write
 in CODEX never do. **Settings → Assistant → Sent to hosted engines** lists every reply a hosted engine wrote, with how
-many items of each source it was sent, for 90 days unless changed.
+many items of each source it was sent, for 90 days unless changed. An earlier answer, an approved or rejected change, or
+a message found by search that drew on a source not marked for hosted engines is withheld from one the same way;
+answers kept before 2026-11-26 recorded no sources and are withheld from hosted engines.
+
+The assistant's settings, the marks, the engine and embedder in use and every plugin's settings can be changed only on
+CODEX's own page; a token or an MCP client can read them, with keys hidden, but not change them.
 
 ## Collectors
 

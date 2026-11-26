@@ -20,6 +20,9 @@ export const proposals = sqliteTable(
     summary: text().notNull(),
     // Why it waits: "level" when its level asks for approval, "outside content" when the run had read other apps' text.
     reason: text().notNull().default("level"),
+    // The sources whose content the run that proposed it had read, or its summary names, as a JSON list of collector
+    // ids; ["*"] when not recorded.
+    sources: text().notNull().default('["*"]'),
     // "waiting", "approved", "rejected" or "failed".
     status: text().notNull().default("waiting"),
     // The call's answer as JSON once approved, or why it failed.

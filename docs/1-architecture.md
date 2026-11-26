@@ -171,6 +171,20 @@ outside content; a result with none of it left is not fenced and lowers nothing.
 `hosted_sends` keeps its time, engine, model and the counts per source sent and withheld (never the items),
 pruned to `hosted_log.keep_days`, 90 by default, and `list_hosted_sends` reads it for Settings.
 
+Each `conversation_messages` and `proposals` row has a `sources` column, a JSON list of the collector ids whose
+content its run had read (the screen's included sources, which take in the sources of the earlier answers it was
+replayed; a proposal adds the collector its arguments name and the collector of an item it names by id, whose title
+its summary quotes). `["*"]`, the column's default, means not recorded, as on every row kept before 2026-11-26; the
+user's own messages are written with `[]` and are always theirs. `turns_of` replaces, for a hosted engine, any answer
+or event carrying a source it may not be sent with one line saying so, and notes it on the run's screen for the log;
+the index stores each document's sources, so `search_index` screens message hits the same way and a hosted embedder
+is never sent them.
+
+The settings that keep the user in charge (`user_only_settings` in `page_api.ts`: `action_policy`, `source_marks`,
+`engine`, `embedder`, `hosted_log.keep_days` and `plugins`) are written only from the page: `is_page_only_call`
+refuses `set_setting` on any of them to a token on the server's API and to both MCP endpoints, as it refuses the
+page-only calls.
+
 ### Tools and the action policy
 
 The tools are the contexts feature's calls (contexts, items, collectors and feeds), built from their api specs, less

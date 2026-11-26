@@ -38,6 +38,8 @@ export interface ConversationMessage {
   model: string;
   tool_calls: ToolCallRecord[];
   error: string;
+  // The sources whose content the run that wrote it had read, by collector id; "*" when not recorded.
+  sources: string[];
   input_tokens: number;
   output_tokens: number;
   created_at: string;

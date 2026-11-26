@@ -9,7 +9,7 @@ import { feed_key, item_id_of, type Feed, type FoundItem } from "../collectors/c
 import type { ContextDetail, KeptItem, RefreshReport } from "../contexts/model.ts";
 import { contexts_feature } from "../contexts/store.ts";
 import type { SearchHit } from "../search/model.ts";
-import { may_send, screen_entries, type Screen, type Screened } from "./screen.ts";
+import { may_send, screen_entries, screen_sourced, type Screen, type Screened } from "./screen.ts";
 
 // ── Screeners ────────────────────────────────────────────────────────────────
 
@@ -71,17 +71,9 @@ function screen_report(_database: SqlDatabase, screen: Screen, _args: unknown[],
   return { ...problems, value: { ...report, problems: problems.value } };
 }
 
-// Items found come from their collectors; contexts and messages are what the user and the assistant wrote in CODEX.
+// Each hit carries its sources: an item its collector, an answer what its run had read, the user's own words none.
 function screen_hits(_database: SqlDatabase, screen: Screen, _args: unknown[], value: unknown): Screened<unknown> {
-  const hits = value as SearchHit[];
-  const items = screen_entries(
-    screen,
-    hits.filter((hit) => hit.kind === "item"),
-    (hit) => hit.collector,
-    (hit) => hit.id,
-  );
-  const kept = new Set(items.value);
-  return { ...items, value: hits.filter((hit) => hit.kind !== "item" || kept.has(hit)) };
+  return screen_sourced(screen, value as SearchHit[], (hit) => hit.sources, (hit) => (hit.kind === "item" ? hit.id : `${hit.kind}:${hit.id}`));
 }
 
 // Every offered call that can answer with other apps' text; a test holds this to the calls the policy says bring it.

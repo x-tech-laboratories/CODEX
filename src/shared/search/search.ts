@@ -8,6 +8,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { items } from "../contexts/schema.ts";
 import { drizzle_of } from "../feature.ts";
+import { parse_sources } from "../privacy/sources.ts";
 import { context_tree, subtree } from "./documents.ts";
 import { find_embedder } from "./indexer.ts";
 import type { HitKind, HitPlace, SearchHit } from "./model.ts";
@@ -34,6 +35,7 @@ interface DocRow {
   body: string;
   content: string;
   context_ids: string;
+  sources: string;
 }
 
 function in_scope(row: { context_ids: string }, scope: Set<string> | null): boolean {
@@ -102,7 +104,7 @@ export async function search(database: SqlDatabase, index: SqlDatabase, query: s
   const wanted = Math.max(1, Math.min(most_hits, Math.floor(Number(limit) || default_hits)));
   const keys = [...scores].sort((first, second) => second[1] - first[1]).slice(0, wanted).map(([key]) => key);
   if (keys.length === 0) return [];
-  const rows = new Map((index.prepare(`SELECT key, kind, ref_id, collector, title, body, content, context_ids FROM docs WHERE key IN (${keys.map(() => "?").join(", ")})`).all(...keys) as unknown as DocRow[]).map((row) => [row.key, row]));
+  const rows = new Map((index.prepare(`SELECT key, kind, ref_id, collector, title, body, content, context_ids, sources FROM docs WHERE key IN (${keys.map(() => "?").join(", ")})`).all(...keys) as unknown as DocRow[]).map((row) => [row.key, row]));
   const item_ids = [...rows.values()].filter((row) => row.kind === "item").map((row) => row.ref_id);
   const item_rows = new Map(item_ids.length > 0 ? drizzle_of(database).select({ id: items.id, kind: items.kind, uri: items.uri }).from(items).where(inArray(items.id, item_ids)).all().map((row) => [row.id, row]) : []);
   const place = (id: string): HitPlace => ({ id, name: tree.get(id)?.name ?? id });
@@ -116,6 +118,6 @@ export async function search(database: SqlDatabase, index: SqlDatabase, query: s
     // The title is shown anyway, so it is never the excerpt too.
     const excerpt = shorten(words.excerpts.get(key) || meaning.excerpts.get(key) || row.body || row.content);
     const item = item_rows.get(row.ref_id);
-    return [{ kind: row.kind, id: row.ref_id, title: row.title, excerpt, collector: row.collector, item_kind: item?.kind ?? "", uri: item?.uri ?? "", where, matched_by, score: scores.get(key)! }];
+    return [{ kind: row.kind, id: row.ref_id, title: row.title, excerpt, collector: row.collector, item_kind: item?.kind ?? "", uri: item?.uri ?? "", where, sources: parse_sources(row.sources), matched_by, score: scores.get(key)! }];
   });
 }

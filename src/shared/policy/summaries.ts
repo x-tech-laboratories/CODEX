@@ -82,3 +82,15 @@ export function summarize_call(database: SqlDatabase, method: string, args: Args
   const description = offered_api[method]?.description ?? method;
   return `${description} (${JSON.stringify(args)})`;
 }
+
+// The sources whose content a summary may carry: the collector a call names, such as the one an added item or a feed
+// comes from, and the collector of an item it names by id, whose title the summary quotes.
+export function sources_named(database: SqlDatabase, args: Args): string[] {
+  const found = new Set<string>();
+  if (typeof args.collector === "string" && args.collector) found.add(args.collector);
+  if (typeof args.item_id === "string") {
+    const row = drizzle_of(database).select({ collector: items.collector }).from(items).where(eq(items.id, args.item_id)).get();
+    if (row) found.add(row.collector);
+  }
+  return [...found];
+}

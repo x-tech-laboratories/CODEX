@@ -43,6 +43,8 @@ const schema: MigrationStep[] = [
     `CREATE TABLE vectors (key TEXT NOT NULL, seq INTEGER NOT NULL, embedder TEXT NOT NULL, model TEXT NOT NULL, vector BLOB NOT NULL, PRIMARY KEY (key, seq))`,
     `CREATE TABLE meta (name TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   ],
+  // The sources whose content each document carries, as a JSON list of collector ids.
+  [`ALTER TABLE docs ADD COLUMN sources TEXT NOT NULL DEFAULT '["*"]'`, `UPDATE docs SET sources = json_array(collector) WHERE collector != ''`, `UPDATE docs SET sources = '[]' WHERE kind = 'context'`],
 ];
 
 // Brings an index file up to date; run once each time it opens.
@@ -88,6 +90,7 @@ interface IndexedRow {
   key: string;
   content: string;
   context_ids: string;
+  sources: string;
   source_hash: string;
   text_hash: string;
 }
@@ -107,8 +110,8 @@ function remove_document(index: SqlDatabase, key: string): void {
 function write_document(index: SqlDatabase, document: SourceDocument, content: string, hash: string): void {
   remove_document(index, document.key);
   index
-    .prepare("INSERT INTO docs (key, kind, ref_id, collector, title, body, content, context_ids, source_hash, text_hash, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .run(document.key, document.kind, document.ref_id, document.collector, document.title, document.body, content, JSON.stringify(document.context_ids), document.source_hash, hash, new Date().toISOString());
+    .prepare("INSERT INTO docs (key, kind, ref_id, collector, title, body, content, context_ids, sources, source_hash, text_hash, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(document.key, document.kind, document.ref_id, document.collector, document.title, document.body, content, JSON.stringify(document.context_ids), JSON.stringify(document.sources), document.source_hash, hash, new Date().toISOString());
   index.prepare("INSERT INTO docs_text (key, title, body) VALUES (?, ?, ?)").run(document.key, document.title, [document.body, content].filter((part) => part.trim()).join("\n"));
   const insert = index.prepare("INSERT INTO chunks (key, seq, text) VALUES (?, ?, ?)");
   chunk_text(full_text(document, content)).forEach((text, seq) => insert.run(document.key, seq, text));
@@ -137,7 +140,7 @@ async function read_contents(database: SqlDatabase, wanted: SourceDocument[], pr
 // alone. Gives back how many were written and removed.
 export async function sync_documents(database: SqlDatabase, index: SqlDatabase, problems: string[] = []): Promise<{ written: number; removed: number }> {
   const documents = read_documents(database);
-  const indexed = new Map((index.prepare("SELECT key, content, context_ids, source_hash, text_hash FROM docs").all() as unknown as IndexedRow[]).map((row) => [row.key, row]));
+  const indexed = new Map((index.prepare("SELECT key, content, context_ids, sources, source_hash, text_hash FROM docs").all() as unknown as IndexedRow[]).map((row) => [row.key, row]));
   const needs_text = documents.filter((document) => document.kind === "item" && indexed.get(document.key)?.source_hash !== document.source_hash);
   const contents = await read_contents(database, needs_text, problems);
   let written = 0;
@@ -150,6 +153,7 @@ export async function sync_documents(database: SqlDatabase, index: SqlDatabase, 
       const places = JSON.stringify(document.context_ids);
       if (was?.text_hash === hash) {
         if (was.context_ids !== places) index.prepare("UPDATE docs SET context_ids = ? WHERE key = ?").run(places, document.key);
+        if (was.sources !== JSON.stringify(document.sources)) index.prepare("UPDATE docs SET sources = ? WHERE key = ?").run(JSON.stringify(document.sources), document.key);
         if (was.source_hash !== document.source_hash) index.prepare("UPDATE docs SET source_hash = ? WHERE key = ?").run(document.source_hash, document.key);
         continue;
       }
@@ -188,16 +192,17 @@ export function describe_embedder({ id, embedder }: FoundEmbedder): IndexedEmbed
   return { id, label: embedder.label, model: embedder.model(), dimensions: embedder.dimensions(), is_local: !is_hosted(embedder) };
 }
 
-// The collectors whose items a hosted embedder may not be sent; none for a local one.
+// The sources whose content a hosted embedder may not be sent, items' and answers' alike; none for a local one.
 async function withheld_collectors(database: SqlDatabase, index: SqlDatabase, embedder: Embedder): Promise<string[]> {
   if (!is_hosted(embedder)) return [];
   const screen = await open_screen(database, true);
-  const collectors = (index.prepare("SELECT DISTINCT collector FROM docs WHERE collector != ''").all() as { collector: string }[]).map((row) => row.collector);
-  return collectors.filter((collector) => !may_send(screen, collector));
+  const sources = (index.prepare("SELECT DISTINCT s.value AS source FROM docs d, json_each(d.sources) s").all() as { source: string }[]).map((row) => row.source);
+  return sources.filter((source) => !may_send(screen, source));
 }
 
-function not_in(column: string, values: string[]): string {
-  return values.length === 0 ? "1" : `${column} NOT IN (${values.map(() => "?").join(", ")})`;
+// A condition on a document that holds none of the sources given.
+function holds_none(values: string[]): string {
+  return values.length === 0 ? "1" : `NOT EXISTS (SELECT 1 FROM json_each(d.sources) s WHERE s.value IN (${values.map(() => "?").join(", ")}))`;
 }
 
 // Pieces still without a vector from this embedder and model, but those it may not be sent.
@@ -206,7 +211,7 @@ function pending_query(index: SqlDatabase, withheld: string[], limit: number): {
     .prepare(
       `SELECT c.key, c.seq, c.text FROM chunks c JOIN docs d ON d.key = c.key
        LEFT JOIN vectors v ON v.key = c.key AND v.seq = c.seq
-       WHERE v.key IS NULL AND ${not_in("d.collector", withheld)} ORDER BY c.key, c.seq LIMIT ?`,
+       WHERE v.key IS NULL AND ${holds_none(withheld)} ORDER BY c.key, c.seq LIMIT ?`,
     )
     .all(...withheld, limit) as { key: string; seq: number; text: string }[];
 }
@@ -253,7 +258,7 @@ export async function index_state(database: SqlDatabase, index: SqlDatabase): Pr
   const { found, problem } = await find_embedder(database);
   const withheld = found ? await withheld_collectors(database, index, found.embedder) : [];
   const chunks = count("SELECT COUNT(*) AS total FROM chunks");
-  const withheld_chunks = withheld.length === 0 ? 0 : count(`SELECT COUNT(*) AS total FROM chunks c JOIN docs d ON d.key = c.key WHERE d.collector IN (${withheld.map(() => "?").join(", ")})`, ...withheld);
+  const withheld_chunks = withheld.length === 0 ? 0 : count(`SELECT COUNT(*) AS total FROM chunks c JOIN docs d ON d.key = c.key WHERE NOT ${holds_none(withheld)}`, ...withheld);
   const embedded = found ? count("SELECT COUNT(*) AS total FROM vectors WHERE embedder = ? AND model = ?", found.id, found.embedder.model()) : 0;
   return {
     items: count("SELECT COUNT(*) AS total FROM docs WHERE kind = 'item'"),
