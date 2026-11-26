@@ -81,7 +81,9 @@ const allowed_tools = [
   "add_contexts_from_feeds",
   "add_item",
   "add_item_to_contexts",
+  "add_job",
   "add_manual_item",
+  "change_job",
   "follow_feed",
   "get_blueprint",
   "get_context",
@@ -92,6 +94,7 @@ const allowed_tools = [
   "list_collectors",
   "list_contexts",
   "list_feed_group_news",
+  "list_jobs",
   "move_context",
   "move_item",
   "propose_blueprint",
@@ -101,6 +104,7 @@ const allowed_tools = [
   "refresh_items",
   "remove_context",
   "remove_item",
+  "remove_job",
   "rename_context",
   "search_collector",
   "search_index",
@@ -139,7 +143,7 @@ describe("a run's tools", () => {
     expect(tools.definitions.map((tool) => tool.name).sort()).toEqual(allowed_tools);
     expect(tools.core!.map((tool) => tool.name).sort()).toEqual(allowed_core_tools);
     for (const name of allowed_core_tools) expect(allowed_tools).toContain(name);
-    for (const never of ["set_setting", "get_settings", "set_action_level", "resolve_proposal", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals", "add_graph_link", "remove_entity", "suggest_links", "accept_blueprint_proposals", "reject_blueprint_proposals", "add_blueprint", "change_blueprint", "retire_blueprint", "restore_blueprint", "place_blueprint", "remove_blueprint", "save_as_blueprint", "list_blueprint_proposals", "rebuild_index", "import_contexts", "send_message", "list_conversations", "get_conversation", "rename_conversation", "delete_conversation", "stop_reply"]) {
+    for (const never of ["set_setting", "get_settings", "set_action_level", "resolve_proposal", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals", "add_graph_link", "remove_entity", "suggest_links", "accept_blueprint_proposals", "reject_blueprint_proposals", "add_blueprint", "change_blueprint", "retire_blueprint", "restore_blueprint", "place_blueprint", "remove_blueprint", "save_as_blueprint", "list_blueprint_proposals", "set_job_on", "run_job_now", "set_background_device", "dismiss_job_runs", "list_inbox", "get_inbox_count", "get_background_state", "rebuild_index", "import_contexts", "send_message", "list_conversations", "get_conversation", "rename_conversation", "delete_conversation", "stop_reply"]) {
       expect(allowed_tools).not.toContain(never);
     }
   });

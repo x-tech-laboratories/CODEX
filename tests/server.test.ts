@@ -142,7 +142,7 @@ describe("server", () => {
     const tools = listed.tools as { name: string; annotations: { readOnlyHint: boolean } }[];
     // Approving a change and setting a level are the user's alone, so no MCP client is offered them.
     expect(tools.map((tool) => tool.name).sort()).toEqual(
-      method_names.filter((name) => !["resolve_proposal", "undo_change", "set_action_level", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals", "add_item_source", "change_item_source", "remove_item_source", "accept_blueprint_proposals", "reject_blueprint_proposals", "restore_blueprint", "place_blueprint"].includes(name)).sort(),
+      method_names.filter((name) => !["resolve_proposal", "undo_change", "set_action_level", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals", "add_item_source", "change_item_source", "remove_item_source", "accept_blueprint_proposals", "reject_blueprint_proposals", "restore_blueprint", "place_blueprint", "set_job_on", "run_job_now", "set_background_device"].includes(name)).sort(),
     );
     expect(tools.some((tool) => tool.name === "get_action_policy" || tool.name === "list_proposals")).toBe(true);
     expect(tools.find((tool) => tool.name === "list_contexts")!.annotations.readOnlyHint).toBe(true);
@@ -323,6 +323,9 @@ describe("server", () => {
       "hosted_log.keep_days": 1,
       plugins: { "codex.openai": { enabled: true, settings: { endpoint: "https://elsewhere.example.org/v1", api_key_command: "touch /tmp/x" } } },
       item_sources: [{ id: "elsewhere", name: "Elsewhere", address: "https://elsewhere.example.org", token: "", kinds: [] }],
+      "background.enabled": true,
+      "background.daily_runs": 500,
+      "background.daily_tokens": 9_000_000,
     };
     expect(Object.keys(protected_values).sort()).toEqual([...user_only_settings].sort());
     const before = (await signed({ method: "POST", url: "/api/call/get_settings", payload: [] })).json() as Record<string, unknown>;

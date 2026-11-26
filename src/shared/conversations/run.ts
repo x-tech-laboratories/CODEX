@@ -317,6 +317,12 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   // Fails on a context or conversation that does not exist, before anything is kept.
   screened_instructions(database, context_id, null, "", local_screen());
   const chosen = conversation_for(database, context_id, asked);
+  // The user writing where a background job is running stops the job's run first, since the user goes first.
+  const in_the_way = chosen !== undefined && presence === "conversation" ? runs.get(chosen) : undefined;
+  if (in_the_way?.presence === "background") {
+    give_way();
+    await in_the_way.done;
+  }
   if (chosen !== undefined && runs.has(chosen)) throw new Error("A reply is still being written here; stop it or wait for it first.");
   const found = await find_engine(database);
   if (!found.running || !found.engine) throw new Error(found.problem);
