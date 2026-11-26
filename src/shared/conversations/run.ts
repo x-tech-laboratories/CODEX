@@ -11,6 +11,8 @@ import { open_plugin_host } from "../collectors/host.ts";
 import { engine_setting, is_hosted, type Engine, type EngineEvent, type EngineTools, type EngineTurn, type ToolOutcome } from "../engines/engine.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
 
+import { recall_blueprints, recalled_part } from "../blueprints/recall.ts";
+import { record_uses } from "../blueprints/records.ts";
 import { new_id } from "../feature.ts";
 import { is_read_only } from "../page_api.ts";
 import { brings_outside_content, core_tools, decide, is_offered, level_of, offered_api, proposing_calls, type Presence } from "../policy/policy.ts";
@@ -147,10 +149,10 @@ export function engine_tools(context: ToolContext): EngineTools {
           await note_read(name, given, read.sources, read.plain);
           return decided(name, { outcome: "ran" }, { result: read.text, is_error: false });
         }
-        // A proposal to the graph waits for the user anyway, so it runs at once, carrying what the run has read.
+        // A proposal to the graph or a blueprint waits for the user anyway, so it runs at once, carrying what the run has read.
         if (proposing_calls.has(name)) {
           const padded = [...args, ...Array.from({ length: Math.max(0, offered_api[name]!.params.length - args.length) }, () => undefined)];
-          const maker = { engine: context.maker?.engine ?? "", model: context.maker?.model ?? "", sources: read_sources(screen) };
+          const maker = { engine: context.maker?.engine ?? "", model: context.maker?.model ?? "", sources: read_sources(screen), conversation_id: context.conversation_id, run_id: context.run_id ?? "" };
           return decided(name, { outcome: "ran" }, { result: (await run(name, [...padded, maker])).text, is_error: false });
         }
         const database = context.database();
@@ -280,8 +282,14 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   if (chosen !== undefined && (runs.has(chosen) || !has_conversation(database, chosen))) throw new Error(runs.has(chosen) ? "A reply is still being written here; stop it or wait for it first." : `There is no conversation ${chosen}.`);
   const conversation_id = chosen ?? add_conversation_record(database, context_id);
   const instructions = screened_instructions(database, context_id, conversation_id, new Date().toISOString().slice(0, 10), screen);
+  // The user's own approved blueprints that match the message, put in by CODEX itself; not fenced, and tainting nothing.
+  const recalled = await recall_blueprints(database, context_id, text);
+  if (recalled.length > 0) instructions.value = `${instructions.value}\n\n${recalled_part(recalled)}`;
+  if (runs.has(conversation_id)) throw new Error("A reply is still being written here; stop it or wait for it first.");
   const question = add_message(database, { conversation_id, role: "user", text: text.trim(), sources: [] });
-  const state: RunState = { run_id: new_id(), engine: found.engine.label, model: found.engine.model, started_at: new Date().toISOString(), text: "", reasoning: "", tool_calls: [], notices: [] };
+  const notices = recalled.map(({ row }) => `Recalled the blueprint “${row.title}” for this message.`);
+  const state: RunState = { run_id: new_id(), engine: found.engine.label, model: found.engine.model, started_at: new Date().toISOString(), text: "", reasoning: "", tool_calls: [], notices };
+  record_uses(database, recalled.map(({ row }) => row.id), conversation_id, state.run_id);
   const run: Run = { conversation_id, screen, abort: new AbortController(), state, done: Promise.resolve() };
   runs.set(conversation_id, run);
   reply_started();
@@ -302,6 +310,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   const request = { instructions: instructions.value, conversation: replayed.turns, tools };
   run.done = drive(run, found.running.run(request, run.abort.signal), host);
   host.emit({ conversation_id, run_id: state.run_id, type: "started", engine: state.engine, model: state.model });
+  for (const notice of notices) host.emit({ conversation_id, run_id: state.run_id, type: "notice", text: notice });
   return { conversation_id, run_id: state.run_id };
 }
 

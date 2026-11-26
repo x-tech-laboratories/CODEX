@@ -83,15 +83,19 @@ const allowed_tools = [
   "add_item_to_contexts",
   "add_manual_item",
   "follow_feed",
+  "get_blueprint",
   "get_context",
   "get_item",
   "get_node_links",
+  "list_blueprints",
   "list_collector_feeds",
   "list_collectors",
   "list_contexts",
   "list_feed_group_news",
   "move_context",
   "move_item",
+  "propose_blueprint",
+  "propose_blueprint_change",
   "propose_entity",
   "propose_link",
   "refresh_items",
@@ -109,7 +113,24 @@ const allowed_tools = [
 ];
 
 // The core set a model with a small context is offered, written out the same way.
-const allowed_core_tools = ["add_context", "add_item_to_contexts", "get_context", "get_item", "list_contexts", "move_item", "propose_entity", "propose_link", "remove_item", "rename_context", "search_index", "set_context_notes", "set_item_note"];
+const allowed_core_tools = [
+  "add_context",
+  "add_item_to_contexts",
+  "get_blueprint",
+  "get_context",
+  "get_item",
+  "list_contexts",
+  "move_item",
+  "propose_blueprint",
+  "propose_blueprint_change",
+  "propose_entity",
+  "propose_link",
+  "remove_item",
+  "rename_context",
+  "search_index",
+  "set_context_notes",
+  "set_item_note",
+];
 
 describe("a run's tools", () => {
   it("are exactly the allowed calls, and never settings, plugins, the policy, marks or anything only the page may call", () => {
@@ -118,7 +139,7 @@ describe("a run's tools", () => {
     expect(tools.definitions.map((tool) => tool.name).sort()).toEqual(allowed_tools);
     expect(tools.core!.map((tool) => tool.name).sort()).toEqual(allowed_core_tools);
     for (const name of allowed_core_tools) expect(allowed_tools).toContain(name);
-    for (const never of ["set_setting", "get_settings", "set_action_level", "resolve_proposal", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals", "add_graph_link", "remove_entity", "suggest_links", "rebuild_index", "import_contexts", "send_message", "list_conversations", "get_conversation", "rename_conversation", "delete_conversation", "stop_reply"]) {
+    for (const never of ["set_setting", "get_settings", "set_action_level", "resolve_proposal", "set_source_mark", "accept_graph_proposals", "reject_graph_proposals", "add_graph_link", "remove_entity", "suggest_links", "accept_blueprint_proposals", "reject_blueprint_proposals", "add_blueprint", "change_blueprint", "retire_blueprint", "restore_blueprint", "place_blueprint", "remove_blueprint", "save_as_blueprint", "list_blueprint_proposals", "rebuild_index", "import_contexts", "send_message", "list_conversations", "get_conversation", "rename_conversation", "delete_conversation", "stop_reply"]) {
       expect(allowed_tools).not.toContain(never);
     }
   });

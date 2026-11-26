@@ -1,5 +1,6 @@
-// Every change to a context, its name, notes and the items it holds, and to the graph's entities and links, kept as
-// versions through X-Libs history: any version can be restored, and a deleted item brought back. The versions sync.
+// Every change to a context, its name, notes and the items it holds, to the graph's entities and links, and to the
+// blueprints, kept as versions through X-Libs history: any version can be restored, and a deleted item brought back.
+// The versions sync.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -8,6 +9,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
 import { define_feature } from "../feature.ts";
+import { blueprint_history } from "../blueprints/history.ts";
 import { entity_history, insert_row, link_ends_exist, link_history } from "../graph/history.ts";
 
 // ── Snapshots ────────────────────────────────────────────────────────────────
@@ -126,6 +128,7 @@ export const item_kinds: ItemKind[] = [
   },
   entity_history,
   link_history,
+  blueprint_history,
 ];
 
 const histories = new Map<string, History<Snapshot>>(
@@ -249,7 +252,7 @@ export const history_feature = define_feature({
       description: "Lists one item's versions, newest first: when each was made, whether it was created, edited, deleted or restored, and on this device or another.",
       params: [
         { name: "kind", schema: { type: "string", enum: kinds, description: "What the item is." } },
-        { name: "item_id", schema: { ...id_of("item"), description: "The context's, entity's or link's id." } },
+        { name: "item_id", schema: { ...id_of("item"), description: "The context's, entity's, link's or blueprint's id." } },
       ],
     },
     list_recent_changes: {

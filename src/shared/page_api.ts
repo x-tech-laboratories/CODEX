@@ -69,7 +69,8 @@ export function is_read_only(method: string): boolean {
   return /^(list|get|search|lookup|export)_/.test(method);
 }
 
-// Calls that keep the user in charge of the assistant, approving and undoing its changes and the graph's proposals,
+// Calls that keep the user in charge of the assistant, approving and undoing its changes, the graph's proposals and
+// proposed blueprints, bringing a blueprint back or widening where it applies,
 // setting how freely it may make them and what each source's items may reach, and which apps are read with which token,
 // answered only for the user at the page: a signed-in browser, or the desktop window. Their specs are marked page-only
 // with X-Libs `api_spec`, so a token, MCP and any engine are refused them and nothing a program does can approve a
@@ -84,6 +85,10 @@ export const page_only_methods: ReadonlySet<string> = new Set([
   "add_item_source",
   "change_item_source",
   "remove_item_source",
+  "accept_blueprint_proposals",
+  "reject_blueprint_proposals",
+  "restore_blueprint",
+  "place_blueprint",
 ]);
 
 // Settings that keep the user in charge, written only by the user at the page: the action policy, the source marks,

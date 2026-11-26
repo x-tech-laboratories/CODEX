@@ -334,7 +334,7 @@ describe("conversations as items", () => {
     const report = await fixture.calls.refresh_items(kitchen);
     expect(report).toMatchObject({ checked: 1, updated: 1, missing: 0 });
     expect(fixture.calls.get_context(kitchen).items[0]!.title).toBe("Tiles");
-    expect((await fixture.calls.list_collectors()).at(-1)).toMatchObject({ id: "conversation", label: "CODEX conversations", can_search: false, can_refresh: true });
+    expect((await fixture.calls.list_collectors()).at(-2)).toMatchObject({ id: "conversation", label: "CODEX conversations", can_search: false, can_refresh: true });
     expect((await fixture.calls.list_source_marks()).map((each) => each.plugin_id)).not.toContain("codex.conversations");
   });
 });

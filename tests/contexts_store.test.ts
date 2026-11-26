@@ -161,6 +161,8 @@ describe("collectors", () => {
       ["links", false, false, false, 2],
       // CODEX's own, answering for the conversations kept as items.
       ["conversation", false, true, false, 0],
+      // And for the blueprints.
+      ["blueprint", false, true, false, 0],
     ]);
   });
 

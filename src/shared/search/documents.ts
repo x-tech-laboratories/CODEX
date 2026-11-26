@@ -1,7 +1,7 @@
 // What the index holds, read from the store: every context (its name and notes), every item some context keeps (its
 // title, snippet and the user's notes on it; a conversation's title and notes alone), every message of the user
-// and the assistant, placed in the contexts holding its conversation, and every entity of the graph not rejected (its
-// name, kind and other names), placed in the contexts it is linked to. An item's text from its
+// and the assistant, placed in the contexts holding its conversation, every entity of the graph not rejected (its
+// name, kind and other names), placed in the contexts it is linked to, and every blueprint. An item's text from its
 // app is read by the indexer, through its collector, and held only in the index.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
@@ -9,6 +9,8 @@
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { inArray, ne } from "@x-tech-laboratories/x-libs/drizzle";
+import { blueprint_collector, blueprint_item_id } from "../blueprints/model.ts";
+import { blueprints } from "../blueprints/schema.ts";
 import { context_items, contexts, items } from "../contexts/schema.ts";
 import { conversation_messages } from "../conversations/schema.ts";
 import { conversation_collector, conversation_item_id } from "../conversations/model.ts";
@@ -57,6 +59,8 @@ export function read_documents(database: SqlDatabase): SourceDocument[] {
   const kept = held.size > 0 ? db.select().from(items).where(inArray(items.id, [...held.keys()])).all() : [];
   for (const item of kept) {
     const entry = held.get(item.id)!;
+    // A blueprint is a document of its own below, held or not.
+    if (item.collector === blueprint_collector) continue;
     // A conversation's item is its title and the notes on it, the user's own; its messages are documents of their own.
     if (item.collector === conversation_collector) {
       documents.push({ key: `item:${item.id}`, kind: "item", ref_id: item.id, collector: item.collector, source_id: item.source_id, title: item.title, body: entry.notes.join("\n"), context_ids: entry.context_ids.sort(), sources: [], source_hash: "" });
@@ -82,6 +86,7 @@ export function read_documents(database: SqlDatabase): SourceDocument[] {
     documents.push({ key: `message:${message.id}`, kind: "message", ref_id: message.id, collector: "", source_id: "", title: message.role === "user" ? "You" : "Assistant", body: message.text, context_ids, sources: message.role === "user" ? [] : parse_sources(message.sources), source_hash: "" });
   }
   documents.push(...entity_documents(database, held));
+  documents.push(...blueprint_documents(database, held));
   return documents;
 }
 
@@ -113,6 +118,31 @@ function entity_documents(database: SqlDatabase, held: Map<string, { context_ids
     sources: parse_sources(entity.sources),
     source_hash: "",
   }));
+}
+
+// Each blueprint as an item, held or applying everywhere: its title, when it applies, its body and the notes on it; one
+// written during a run carries what that run had read until the user makes it theirs.
+function blueprint_documents(database: SqlDatabase, held: Map<string, { context_ids: string[]; notes: string[] }>): SourceDocument[] {
+  return drizzle_of(database)
+    .select()
+    .from(blueprints)
+    .all()
+    .map((row) => {
+      const item_id = blueprint_item_id(row.id);
+      const entry = held.get(item_id);
+      return {
+        key: `item:${item_id}`,
+        kind: "item",
+        ref_id: item_id,
+        collector: blueprint_collector,
+        source_id: row.id,
+        title: row.title,
+        body: [row.applies_when, row.body, ...(entry?.notes ?? [])].filter((part) => part.trim()).join("\n"),
+        context_ids: [...(entry?.context_ids ?? [])].sort(),
+        sources: parse_sources(row.sources),
+        source_hash: "",
+      };
+    });
 }
 
 function parse_names(json: string): string[] {

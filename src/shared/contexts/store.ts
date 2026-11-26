@@ -9,6 +9,7 @@ import { in_transaction, type SqlDatabase } from "@x-tech-laboratories/x-libs/sq
 import { id_of, text } from "../api_schemas.ts";
 import { feed_key, item_id_of, type CollectorSummary, type Feed, type FoundItem } from "../collectors/collector.ts";
 import { open_plugin_host } from "../collectors/host.ts";
+import { blueprint_collector } from "../blueprints/model.ts";
 import { conversation_collector } from "../conversations/model.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { migrations } from "./migrations/index.ts";
@@ -298,6 +299,7 @@ function keep_item(database: SqlDatabase, collector: string, found: FoundItem): 
 function add_item(database: SqlDatabase, context_ids: string[], collector: string, found: FoundItem, note = ""): string {
   if (context_ids.length === 0) throw new Error("Pick at least one context.");
   if (collector === conversation_collector) throw new Error("A conversation is started in the Assistant pane; add_item_to_contexts puts one in more contexts.");
+  if (collector === blueprint_collector) throw new Error("A blueprint is written with add_blueprint; add_item_to_contexts makes one apply in more contexts.");
   for (const context_id of context_ids) context_row(database, context_id);
   return in_transaction(database, () => {
     const item_id = keep_item(database, collector, found);
@@ -324,14 +326,15 @@ function set_item_note(database: SqlDatabase, context_id: string, item_id: strin
     .run();
 }
 
-// A conversation is CODEX's own, so it is never left in no context by this: it is deleted with delete_conversation.
+// A conversation or a blueprint is CODEX's own, so it is never left in no context by this: it is deleted with its own call.
 function remove_item(database: SqlDatabase, context_id: string, item_id: string): void {
   const db = drizzle_of(database);
   const memberships = db.select({ context_id: context_items.context_id }).from(context_items).where(eq(context_items.item_id, item_id)).all();
   const is_last = memberships.length === 1 && memberships[0]!.context_id === context_id;
-  if (is_last && db.select({ collector: items.collector }).from(items).where(eq(items.id, item_id)).get()?.collector === conversation_collector) {
-    throw new Error("This is the last context holding that conversation; delete it with delete_conversation, or move it with move_item.");
-  }
+  const collector = is_last ? db.select({ collector: items.collector }).from(items).where(eq(items.id, item_id)).get()?.collector : undefined;
+  if (collector === conversation_collector) throw new Error("This is the last context holding that conversation; delete it with delete_conversation, or move it with move_item.");
+  // A blueprint left in no context would apply everywhere, so that is only done on purpose, with place_blueprint.
+  if (collector === blueprint_collector) throw new Error("This is the last context holding that blueprint; delete it with remove_blueprint, move it with move_item, or make it apply everywhere on its page.");
   db.delete(context_items)
     .where(and(eq(context_items.context_id, context_id), eq(context_items.item_id, item_id)))
     .run();
@@ -341,6 +344,7 @@ function kept_item_row(database: SqlDatabase, item_id: string) {
   const row = drizzle_of(database).select().from(items).where(eq(items.id, item_id)).get();
   if (!row) throw new Error(`There is no item ${item_id}.`);
   if (row.collector === conversation_collector && row.status === "missing") throw new Error("That conversation was deleted.");
+  if (row.collector === blueprint_collector && row.status === "missing") throw new Error("That blueprint was deleted.");
   return row;
 }
 

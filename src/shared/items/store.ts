@@ -1,6 +1,6 @@
 // The four calls every X-app answers about its items for other apps, through X-Libs `items`: CODEX's own contexts,
-// conversations and entities, never the items it merely points to in other apps, which those apps answer for. A
-// conversation is told by its title, the contexts holding it and when it was used, never by its messages.
+// conversations, entities and blueprints, never the items it merely points to in other apps, which those apps answer
+// for. A conversation is told by its title, the contexts holding it and when it was used, never by its messages.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -8,6 +8,7 @@ import { and, eq, inArray, like, or, sql } from "@x-tech-laboratories/x-libs/dri
 import { item_calls, history_item_changes, type DeletedItem, type ItemFields, type ItemMethods } from "@x-tech-laboratories/x-libs/items";
 import { in_transaction, type SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
+import { blueprints } from "../blueprints/schema.ts";
 import { context_items, contexts, items } from "../contexts/schema.ts";
 import { conversation_collector, conversation_item_id, conversation_kind } from "../conversations/model.ts";
 import { summaries_of } from "../conversations/records.ts";
@@ -26,6 +27,7 @@ export const item_kinds = [
   { kind: "context", label: "Context" },
   { kind: conversation_kind, label: "Conversation" },
   { kind: "entity", label: "Entity" },
+  { kind: "blueprint", label: "Blueprint" },
 ] as const;
 
 type OwnKind = (typeof item_kinds)[number]["kind"];
@@ -109,6 +111,24 @@ function entities_as_items(database: SqlDatabase, rows: EntityRow[]): ItemFields
     changed_at: latest_version_at(database, "entity", row.id, row.decided_at || row.created_at),
     ...entity_fields(row),
   }));
+}
+
+// ── Blueprints ───────────────────────────────────────────────────────────────
+
+type BlueprintRow = typeof blueprints.$inferSelect;
+
+function blueprint_fields(row: Record<string, unknown>): Omit<ItemFields, "id" | "kind" | "changed_at"> {
+  return {
+    title: String(row.title ?? ""),
+    snippet: String(row.applies_when ?? ""),
+    link: link_of("blueprint", String(row.id)),
+    status: String(row.status ?? ""),
+    detail: { made_by: String(row.made_by ?? "") },
+  };
+}
+
+function blueprints_as_items(database: SqlDatabase, rows: BlueprintRow[]): ItemFields[] {
+  return rows.map((row) => ({ id: own_item_id("blueprint", row.id), kind: "blueprint", changed_at: latest_version_at(database, "blueprint", row.id, row.updated_at), ...blueprint_fields(row) }));
 }
 
 // ── Conversations ────────────────────────────────────────────────────────────
@@ -223,7 +243,8 @@ function search(database: SqlDatabase, query: string, limit: number): ItemFields
   const matching_conversations = summaries_of(database, conversation_ids)
     .filter((summary) => contains_all(words, `${summary.title} ${notes.get(conversation_item_id(summary.id)) ?? ""}`))
     .map((summary) => summary.id);
-  const found = [...contexts_as_items(database, found_contexts), ...conversations_as_items(database, matching_conversations), ...entities_as_items(database, found_entities)];
+  const found_blueprints = db.select().from(blueprints).where(text_holds([blueprints.title, blueprints.applies_when, blueprints.body])).all();
+  const found = [...contexts_as_items(database, found_contexts), ...conversations_as_items(database, matching_conversations), ...entities_as_items(database, found_entities), ...blueprints_as_items(database, found_blueprints)];
   return found
     .map((item, order) => ({ item, order, score: score_of(query, item.title) }))
     .sort((first, second) => second.score - first.score || first.order - second.order)
@@ -234,7 +255,7 @@ function search(database: SqlDatabase, query: string, limit: number): ItemFields
 // ── Getting ──────────────────────────────────────────────────────────────────
 
 function get(database: SqlDatabase, item_ids: string[]): ItemFields[] {
-  const wanted: Record<OwnKind, string[]> = { context: [], conversation: [], entity: [] };
+  const wanted: Record<OwnKind, string[]> = { context: [], conversation: [], entity: [], blueprint: [] };
   for (const item_id of item_ids) {
     const parsed = parse_own_id(item_id);
     if (parsed) wanted[parsed.kind].push(parsed.id);
@@ -244,6 +265,7 @@ function get(database: SqlDatabase, item_ids: string[]): ItemFields[] {
     ...contexts_as_items(database, wanted.context.length ? db.select().from(contexts).where(inArray(contexts.id, wanted.context)).all() : []),
     ...conversations_as_items(database, wanted.conversation),
     ...entities_as_items(database, wanted.entity.length ? db.select().from(graph_entities).where(inArray(graph_entities.id, wanted.entity)).all() : []),
+    ...blueprints_as_items(database, wanted.blueprint.length ? db.select().from(blueprints).where(inArray(blueprints.id, wanted.blueprint)).all() : []),
   ];
   const by_id = new Map(found.map((item) => [item.id, item]));
   return item_ids.flatMap((id) => (by_id.has(id) ? [by_id.get(id)!] : []));
@@ -251,7 +273,7 @@ function get(database: SqlDatabase, item_ids: string[]): ItemFields[] {
 
 // ── Changes ──────────────────────────────────────────────────────────────────
 
-// Contexts and entities from their versions in History; a context's version counts its memberships.
+// Contexts, entities and blueprints from their versions in History; a context's version counts its memberships.
 const history_changes = (database: SqlDatabase) =>
   history_item_changes<Snapshot>(
     [
@@ -266,6 +288,12 @@ const history_changes = (database: SqlDatabase) =>
         history: history_of("entity"),
         id: (id) => own_item_id("entity", id),
         item: (snapshot) => entity_fields(snapshot.graph_entities?.[0] ?? {}),
+      },
+      {
+        kind: "blueprint",
+        history: history_of("blueprint"),
+        id: (id) => own_item_id("blueprint", id),
+        item: (snapshot) => blueprint_fields(snapshot.blueprints?.[0] ?? {}),
       },
     ],
     () => database,
@@ -319,8 +347,8 @@ export const items_feature = define_feature({
       calls_on(database).methods.list_item_changes(since, limit),
   },
   api: {
-    list_item_kinds: { ...spec.list_item_kinds, description: `${spec.list_item_kinds.description} CODEX's own are contexts, conversations and entities; the items it points to in other apps are answered for by those apps.` },
-    search_items: { ...spec.search_items, description: `${spec.search_items.description} Contexts are found by name and notes, conversations by title and the notes on them, entities by name.` },
+    list_item_kinds: { ...spec.list_item_kinds, description: `${spec.list_item_kinds.description} CODEX's own are contexts, conversations, entities and blueprints; the items it points to in other apps are answered for by those apps.` },
+    search_items: { ...spec.search_items, description: `${spec.search_items.description} Contexts are found by name and notes, conversations by title and the notes on them, entities by name, blueprints by their text.` },
     get_items: { ...spec.get_items, description: `${spec.get_items.description} Ids are the kind and CODEX's own id, such as context:<id>.` },
     list_item_changes: spec.list_item_changes,
   },

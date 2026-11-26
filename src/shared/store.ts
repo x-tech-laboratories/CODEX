@@ -12,6 +12,7 @@ import { as_caller, type Caller } from "./caller.ts";
 import { plugins_setting } from "./collectors/collector.ts";
 import { bundled_manifests } from "./collectors/manifests.ts";
 
+import { blueprints_feature } from "./blueprints/store.ts";
 import { contexts_feature } from "./contexts/store.ts";
 import { assistant_host, use_assistant_host, type AssistantHost } from "./conversations/host.ts";
 import { conversations_feature } from "./conversations/store.ts";
@@ -29,7 +30,7 @@ import { sources_feature } from "./sources/store.ts";
 
 // ── Features ─────────────────────────────────────────────────────────────────
 
-export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature];
+export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature];
 
 export const sync_engine = create_sync_engine({ tables: features.flatMap((feature) => feature.tables), after_apply: forget_synced_changes });
 
@@ -67,7 +68,8 @@ const all_methods = {
     typeof search_feature.methods &
     typeof graph_feature.methods &
     typeof items_feature.methods &
-    typeof sources_feature.methods),
+    typeof sources_feature.methods &
+    typeof blueprints_feature.methods),
   // Every setting, the ones never set at their defaults, with plugin keys and apps' tokens hidden from the page and other programs.
   get_settings: (database: SqlDatabase): Record<string, unknown> => {
     const settings: Record<string, unknown> = { ...setting_defaults, ...settings_feature.methods.get_settings(database) };

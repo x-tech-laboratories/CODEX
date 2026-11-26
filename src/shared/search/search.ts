@@ -130,6 +130,30 @@ async function by_meaning(database: SqlDatabase, index: SqlDatabase, query: stri
   return { keys: ranked.map(([key]) => key), excerpts: new Map(ranked.map(([key, { text }]) => [key, shorten(text)])) };
 }
 
+// The documents among those wanted that match the query by meaning, best first with their scores, judged against every
+// document's score for it; none without an embedder or when the best does not stand out.
+export async function meaning_matches(database: SqlDatabase, index: SqlDatabase, query: string, wanted: Set<string>): Promise<{ key: string; score: number }[]> {
+  if (wanted.size === 0 || !query.trim()) return [];
+  const { found } = await find_embedder(database);
+  if (!found) return [];
+  const rows = index.prepare("SELECT key, vector FROM vectors WHERE embedder = ? AND model = ?").all(found.id, found.embedder.model()) as { key: string; vector: Uint8Array }[];
+  if (!rows.some((row) => wanted.has(row.key))) return [];
+  const { embedder } = found;
+  const vector = embedder.embed_query ? await embedder.embed_query(query) : (await embedder.embed([query]))[0];
+  const asked = unit(vector ?? []);
+  const best = new Map<string, number>();
+  for (const row of rows) {
+    const score = dot(asked, from_blob(row.vector));
+    if (score > (best.get(row.key) ?? -Infinity)) best.set(row.key, score);
+  }
+  const floor = meaning_floor([...best.values()]);
+  if (floor === null) return [];
+  return [...best]
+    .filter(([key, score]) => wanted.has(key) && score >= floor)
+    .sort((first, second) => second[1] - first[1])
+    .map(([key, score]) => ({ key, score }));
+}
+
 // A message's score is weighed down by this much, so items, contexts and entities rank ahead of messages scoring close.
 export const message_weight = 0.85;
 
