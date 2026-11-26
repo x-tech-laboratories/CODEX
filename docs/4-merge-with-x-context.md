@@ -63,7 +63,10 @@ which embedder the index uses, how long the hosted log is kept, and every plugin
 each engine's and embedder's endpoint and key command). Only the user at CODEX's own page, a signed-in browser or the
 desktop window, can write them, through `set_setting` or the calls above; a token over the API and every MCP client are
 refused, and no engine is offered any of these calls (a test holds the engine's tools to a written allow-list). They
-read as before, keys hidden, and sync from the user's own devices as before.
+read as before, keys hidden, and sync from the user's own devices as before. Sync honours the rule too (built
+2026-11-26): the server takes a change to one of these settings only from a device that signed in for sync, so a
+program's token cannot change them through the sync exchange, and it cannot replace the server's data either. The
+marking lives in X-Libs (`page_only` specs, `page_only_calls`, and sync's `device_only`), so every app can use it.
 
 Withheld content has no side door (built 2026-11-26): every stored answer, event and proposal records which sources'
 content its run had read, as collector ids, and a proposal also the sources its summary names. A hosted engine is not
