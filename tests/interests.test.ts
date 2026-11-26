@@ -21,6 +21,7 @@ import { run_maintenance_job, use_maintenance_host, type MaintenanceHost } from 
 import { research_message, save_finding_name, web_fetch_tool, web_search_tool } from "../src/shared/maintenance/research.ts";
 import { mood_state } from "../src/shared/mood/mood.ts";
 import { page_only_methods, user_only_settings } from "../src/shared/page_api.ts";
+import { screen_result } from "../src/shared/privacy/results.ts";
 import { open_screen } from "../src/shared/privacy/screen.ts";
 import { read_documents } from "../src/shared/search/documents.ts";
 import { open_index } from "../src/shared/search/indexer.ts";
@@ -152,6 +153,20 @@ describe("interests", () => {
     }
     expect(page_only.is_page_only_call("propose_interest", [])).toBe(false);
     for (const key of Object.values(interest_settings)) expect(user_only_settings.has(key)).toBe(true);
+  });
+});
+
+describe("the interests as an engine reads them", () => {
+  it("withhold from a hosted engine one proposed by a run that read a source not marked for it", async () => {
+    const fixture = start_fixture();
+    fixture.calls.add_interest("Rain barrels");
+    fixture.calls.propose_interest("Kitchen tiles", "From a private note.", { engine: "fake", model: "fake-model", sources: ["tool:tests.files/files"], conversation_id: "" });
+    const hosted = screen_result(fixture.database, await open_screen(fixture.database, true), "list_interests", [], fixture.calls.list_interests());
+    expect((hosted.value as { topic: string }[]).map((each) => each.topic)).toEqual(["Rain barrels"]);
+    expect([...hosted.withheld.keys()]).toEqual(["tool:tests.files/files"]);
+    const local = screen_result(fixture.database, await open_screen(fixture.database, false), "list_interests", [], fixture.calls.list_interests());
+    expect((local.value as unknown[]).length).toBe(2);
+    expect([...local.sources]).toEqual(["tool:tests.files/files"]);
   });
 });
 
