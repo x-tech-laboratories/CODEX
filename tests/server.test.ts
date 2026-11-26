@@ -179,6 +179,47 @@ describe("server", () => {
     expect((await signed({ method: "POST", url: "/api/backup/drop_everything", payload: [] })).statusCode).toBe(404);
   });
 
+  it("restores, deletes and reschedules backups only for the user at the page, never for a token", async () => {
+    await start();
+    fake_backups.restore_backup.mockClear();
+    fake_backups.remove_backup.mockClear();
+    fake_backups.set_backup_schedule.mockClear();
+    const made = async (read_only: boolean) => (await as_page({ method: "POST", url: "/api/account/tokens", payload: { name: `script ${read_only}`, read_only } })).json<{ token: string }>().token;
+    // The admin's own device token, an admin's program token that may change things, and a read-only one.
+    const tokens = [token, await made(false), await made(true)];
+    const guarded: [string, unknown[]][] = [
+      ["restore_backup", [taken.name]],
+      ["remove_backup", [taken.name]],
+      ["set_backup_schedule", [{ automatic: false, to_keep: 0 }]],
+    ];
+    for (const each of tokens) {
+      for (const [method, args] of guarded) {
+        // The address spelled with an escaped letter reaches the same route, and is refused the same way.
+        for (const url of [`/api/backup/${method}`, `/api/backup/${method.replace("e", "%65")}`]) {
+          const refused = await app.inject({ method: "POST", url, headers: { authorization: `Bearer ${each}` }, payload: args });
+          expect([url, refused.statusCode]).toEqual([url, 403]);
+        }
+      }
+    }
+    expect(fake_backups.restore_backup).not.toHaveBeenCalled();
+    expect(fake_backups.remove_backup).not.toHaveBeenCalled();
+    expect(fake_backups.set_backup_schedule).not.toHaveBeenCalled();
+    // Listing, taking a backup and reading the schedule stay open to an admin's token.
+    expect((await signed({ method: "POST", url: "/api/backup/list_backups", payload: [] })).statusCode).toBe(200);
+    expect((await signed({ method: "POST", url: "/api/backup/create_backup", payload: [] })).statusCode).toBe(200);
+    expect((await signed({ method: "POST", url: "/api/backup/get_backup_schedule", payload: [] })).statusCode).toBe(200);
+
+    // The page still restores, deletes and sets the schedule.
+    expect((await as_page({ method: "POST", url: "/api/backup/restore_backup", payload: [taken.name] })).statusCode).toBe(204);
+    expect(fake_backups.restore_backup).toHaveBeenCalledWith(taken.name);
+    expect((await as_page({ method: "POST", url: "/api/backup/remove_backup", payload: [taken.name] })).statusCode).toBe(204);
+    expect((await as_page({ method: "POST", url: "/api/backup/set_backup_schedule", payload: [{ automatic: true, to_keep: 7 }] })).statusCode).toBe(204);
+
+    // No MCP client is offered a backup call at all.
+    const tools = ((await mcp("tools/list")).tools as { name: string }[]).map((tool) => tool.name);
+    expect(tools.filter((name) => name.includes("backup"))).toEqual([]);
+  });
+
   it("streams a reply to the pages over the event stream as it is written, and keeps it", async () => {
     use_plugins([
       define_plugin<ContextPluginApi>({

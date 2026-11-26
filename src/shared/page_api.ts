@@ -87,4 +87,9 @@ export function is_user_only_setting_write(method: string, args: readonly unknow
   return method === "set_setting" && user_only_settings.has(String(args[0]));
 }
 
+// Backup calls that replace or delete data, answered only for the user at the page: restoring a backup would rewrite
+// every setting only the user may change, and deleting backups, or a schedule keeping fewer, takes away the way back.
+// Listing, taking a backup and reading the schedule stay open to an admin's token.
+export const user_only_backup_calls: ReadonlySet<string> = new Set(["restore_backup", "remove_backup", "set_backup_schedule"]);
+
 export const page_only_refusal = "Only you can do this, from CODEX's own page; a token or an MCP client cannot.";

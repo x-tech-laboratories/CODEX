@@ -21,7 +21,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { context_bridge } from "../shared/bridge.ts";
 import { mcp_instructions as instructions } from "../shared/mcp.ts";
 import { stop_all_runs } from "../shared/conversations/run.ts";
-import { conversation_event, user_only_settings } from "../shared/page_api.ts";
+import { conversation_event, page_only_refusal, user_only_backup_calls, user_only_settings } from "../shared/page_api.ts";
 import { bind_methods, context_api, is_read_only, page_only, start_assistant, sync_engine } from "../shared/store.ts";
 import { register_context_calls } from "./calls.ts";
 
@@ -91,8 +91,17 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
         },
       });
 
-      // Backup calls arrive as POST /api/backup/<method> with the arguments as a JSON list.
-      register_call_table(api, "/backup", options.backups, { is_read_only });
+      // Backup calls arrive as POST /api/backup/<method> with the arguments as a JSON list. Restoring, deleting and the
+      // schedule answer only a browser signed in with a password, itself or through the trusted proxy: every token, a
+      // device's included, is refused them, as a restored backup could rewrite what only the user may change.
+      await api.register(async (backups) => {
+        // By the route's own decoded name, so no spelling of the address gets past it.
+        backups.addHook("preHandler", async (request, reply) => {
+          const method = (request.params as { method?: string }).method ?? "";
+          if (user_only_backup_calls.has(method) && request.viewer?.via !== "session" && request.viewer?.via !== "proxy") await reply.code(403).type("text/plain").send(page_only_refusal);
+        });
+        register_call_table(backups, "/backup", options.backups, { is_read_only });
+      });
       register_sync_routes(api, {
         engine: sync_engine,
         database,
