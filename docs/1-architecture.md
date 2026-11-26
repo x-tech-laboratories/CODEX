@@ -111,7 +111,9 @@ user's message, starts a run (`run.ts`) and answers at once; one run at a time p
 the store runs. As the engine streams, the run sends `conversation` events on the host's event stream: the server's
 `api/events` for a browser, and the daemon's, which the main process passes to the window as a `conversation` event
 (`PageApi.on_conversation`). When the run ends its answer is kept and `changed` is announced; `get_conversation`
-gives the messages, the proposals and the run still going, so a page opened mid-reply catches up.
+gives the messages, the proposals and the run still going, so a page opened mid-reply catches up. Removing a context
+removes its conversation and proposals, and stops a reply being written there; History brings the context back
+without them.
 
 The instructions (`instructions.ts`) say who the engine is, today's date and the open context: its name, its place in
 the tree, its notes, the contexts inside it and its items, whose titles, snippets and notes go inside an
@@ -134,7 +136,9 @@ as having read outside content. Every call that changes something has a level in
 
 Once a run has read outside content, every change it asks for becomes a proposal whatever its level. Approving
 (`resolve_proposal`) runs the call through the store as the page would, so History records it, and adds an event to the
-conversation saying the user approved it and what came back; rejecting adds one saying so. The engine reads those
+conversation saying the user approved it and what came back; rejecting adds one saying so. `resolve_proposal` and
+`set_action_level` answer only the page (`is_page_only` in `page_api.ts`): the server refuses them to a bearer token, the
+daemon takes them over its socket from the window, and neither MCP endpoint lists them (`program_api`). The engine reads those
 events at the start of the user's next message. The policy's own calls and the conversations' are never offered.
 
 ### The pane

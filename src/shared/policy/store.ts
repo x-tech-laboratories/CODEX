@@ -77,7 +77,8 @@ async function resolve_proposal(database: SqlDatabase, id: string, decision: "ap
       error: message,
     });
   }
-  return proposal_of(host.database(), id);
+  // An approved removal of the proposal's own context takes the proposal with it.
+  return list_proposals_of(host.database(), proposal.conversation_id).find((each) => each.id === id) ?? { ...proposal, status: "approved", resolved_at: new Date().toISOString() };
 }
 
 // ── Feature ──────────────────────────────────────────────────────────────────
@@ -99,7 +100,7 @@ export const policy_feature = define_feature({
       params: [],
     },
     set_action_level: {
-      description: "Sets how freely the assistant may make one kind of change.",
+      description: "Sets how freely the assistant may make one kind of change. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         { name: "method", schema: { type: "string", description: "The call, such as rename_context, from get_action_policy." } },
         { name: "level", schema: level_schema },
@@ -113,7 +114,8 @@ export const policy_feature = define_feature({
       ],
     },
     resolve_proposal: {
-      description: "Approves a proposed change, which makes it now, or rejects it; either way it is recorded in the conversation it was proposed in.",
+      description:
+        "Approves a proposed change, which makes it now, or rejects it; either way it is recorded in the conversation it was proposed in. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         { name: "id", schema: id_of("proposal") },
         { name: "decision", schema: { type: "string", enum: ["approve", "reject"], description: "approve or reject." } },

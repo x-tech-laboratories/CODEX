@@ -117,7 +117,9 @@ describe("server", () => {
     await start();
     const listed = await mcp("tools/list");
     const tools = listed.tools as { name: string; annotations: { readOnlyHint: boolean } }[];
-    expect(tools.map((tool) => tool.name).sort()).toEqual([...method_names].sort());
+    // Approving a change and setting a level are the user's alone, so no MCP client is offered them.
+    expect(tools.map((tool) => tool.name).sort()).toEqual(method_names.filter((name) => name !== "resolve_proposal" && name !== "set_action_level").sort());
+    expect(tools.some((tool) => tool.name === "get_action_policy" || tool.name === "list_proposals")).toBe(true);
     expect(tools.find((tool) => tool.name === "list_contexts")!.annotations.readOnlyHint).toBe(true);
     expect(tools.find((tool) => tool.name === "add_context")!.annotations.readOnlyHint).toBe(false);
 
@@ -201,5 +203,27 @@ describe("server", () => {
       ["hi", ""],
       ["You said hi", "Echo"],
     ]);
+  });
+
+  it("lets only a signed-in browser approve a change or set a level, never a token or MCP", async () => {
+    await start();
+    const refused_level = await signed({ method: "POST", url: "/api/call/set_action_level", payload: ["rename_context", "auto"] });
+    const refused_approval = await signed({ method: "POST", url: "/api/call/resolve_proposal", payload: { id: "anything", decision: "approve" } });
+    expect([refused_level.statusCode, refused_approval.statusCode]).toEqual([403, 403]);
+    expect(refused_level.body).toContain("Only you can do this");
+    const through_mcp = await mcp("tools/call", { name: "set_action_level", arguments: { method: "rename_context", level: "auto" } });
+    // An unknown tool answers with a protocol error rather than a result.
+    expect(through_mcp === undefined || through_mcp.isError === true).toBe(true);
+    // The reads stay open to programs, and nothing was changed.
+    const before = (await signed({ method: "POST", url: "/api/call/get_action_policy", payload: [] })).json() as { method: string; level: string }[];
+    expect(before.find((entry) => entry.method === "rename_context")!.level).toBe("proposal");
+    expect((await signed({ method: "POST", url: "/api/call/list_proposals", payload: [] })).statusCode).toBe(200);
+
+    const login = await app.inject({ method: "POST", url: "/api/login", payload: { name: "root", password } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0]!;
+    const set = await app.inject({ method: "POST", url: "/api/call/set_action_level", headers: { cookie }, payload: ["rename_context", "auto"] });
+    expect(set.statusCode).toBe(204);
+    const policy = (await signed({ method: "POST", url: "/api/call/get_action_policy", payload: [] })).json() as { method: string; level: string }[];
+    expect(policy.find((entry) => entry.method === "rename_context")!.level).toBe("auto");
   });
 });

@@ -170,18 +170,18 @@ describe("proposals", () => {
   it("are set aside when rejected, and recorded as failed when the change fails", async () => {
     const fixture = start_fixture();
     const kitchen = fixture.calls.add_context("Kitchen");
-    const { tools } = tools_of(fixture, kitchen);
+    const { tools } = tools_of(fixture);
     await tools.call("rename_context", { id: kitchen, name: "Cooking" });
     await tools.call("remove_context", { id: kitchen });
     await tools.call("rename_context", { id: kitchen, name: "Baking" });
-    const [rename, remove, again] = fixture.calls.list_proposals(kitchen);
+    const [rename, remove, again] = fixture.calls.list_proposals("general");
 
     expect(await fixture.calls.resolve_proposal(rename!.id, "reject")).toMatchObject({ status: "rejected" });
     await fixture.calls.resolve_proposal(remove!.id, "approve");
     const failed = await fixture.calls.resolve_proposal(again!.id, "approve");
 
     expect(failed).toMatchObject({ status: "failed", result: `There is no context ${kitchen}.` });
-    const events = fixture.calls.get_conversation(kitchen).messages.map((message) => [message.role, message.text.split(":")[0]]);
+    const events = fixture.calls.get_conversation(null).messages.map((message) => [message.role, message.text.split(":")[0]]);
     expect(events).toEqual([
       ["event", "Rejected"],
       ["event", "Approved and done"],
@@ -189,6 +189,18 @@ describe("proposals", () => {
     ]);
     await expect(fixture.calls.resolve_proposal("nothing", "approve")).rejects.toThrow("There is no proposal nothing.");
     await expect(fixture.calls.resolve_proposal(rename!.id, "maybe" as never)).rejects.toThrow("already rejected");
+  });
+
+  it("can remove the context whose conversation proposed it, taking that conversation with it", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const { tools } = tools_of(fixture, kitchen);
+    await tools.call("remove_context", { id: kitchen });
+    const [remove] = fixture.calls.list_proposals(kitchen);
+
+    expect(await fixture.calls.resolve_proposal(remove!.id, "approve")).toMatchObject({ status: "approved" });
+    expect(fixture.calls.list_contexts()).toEqual([]);
+    expect(fixture.calls.get_conversation(kitchen)).toMatchObject({ messages: [], proposals: [] });
   });
 
   it("say each change in plain words, naming contexts and items", () => {

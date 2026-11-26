@@ -45,6 +45,7 @@ proposal kept on the conversation it was asked for in (the Inbox comes later), a
 proposing every change. An applied change records whether the user approved it or the engine made it at auto; the
 evidence and the undo wait for the Inbox, and History already keeps every context change.
 
+- **Only the user approves or raises a level.** `resolve_proposal` and `set_action_level` answer only the user at the page (a signed-in browser, or the desktop window); a token over the API is refused, and MCP and engines are never offered them.
 - **New functions start at proposal only.**
 - **Every applied change is recorded** with what made it (user, rule or engine), the evidence, and an undo.
 - **Outside content lowers a run:** a run that has read mail, a web page or any other untrusted text is treated as proposal only, whatever the level.
