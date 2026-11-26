@@ -11,6 +11,7 @@ import { Toasts } from "@x-tech-laboratories/x-libs/web/react/toasts";
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { wait_for_runs } from "../src/shared/conversations/run.ts";
 import { use_job_host, wait_for_job } from "../src/shared/jobs/runner.ts";
+import { register_device } from "../src/shared/jobs/records.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { set_page_api } from "../src/web/api.ts";
 import { InboxPage } from "../src/web/inbox/InboxPage.tsx";
@@ -52,10 +53,10 @@ describe("the Jobs page", () => {
     );
     expect(await screen.findByText("Tidy")).toBeTruthy();
     expect(screen.getByText(/Every day, only when something changed/)).toBeTruthy();
-    expect(screen.getByText(/Background work is off/)).toBeTruthy();
+    expect(screen.getByText(/The assistant's jobs are off/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Run now" }));
-    await waitFor(() => expect(screen.getByText(/Background work is off; turn it on/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/The assistant's jobs are off; turn them on/)).toBeTruthy());
 
     fixture.calls.set_setting("background.enabled", true);
     fireEvent.click(screen.getByRole("button", { name: "Run now" }));
@@ -99,14 +100,20 @@ describe("the Jobs page", () => {
 });
 
 describe("Settings → Background work", () => {
-  it("turns background work on, makes this device the one, and shows today's use", async () => {
+  it("turns the assistant's jobs on, makes this device the one, and shows today's use", async () => {
     const fixture = open_page();
+    const server = "server-1";
+    fixture.database.prepare("INSERT INTO background_devices (id, name, kind, started_at) VALUES (?, ?, ?, ?)").run(server, "server on home", "server", new Date().toISOString());
+    fixture.calls.set_background_device(server);
+    const own = register_device(fixture.database, "Test laptop", "desktop", Date.now());
     render(<>{background_section.content}</>);
-    fireEvent.click(await screen.findByRole("switch", { name: "Background work" }));
+    fireEvent.click(await screen.findByRole("switch", { name: "The assistant's jobs" }));
     await waitFor(() => expect(fixture.calls.get_background_state().enabled).toBe(true));
-    fireEvent.click(screen.getByRole("switch", { name: "This device runs background work" }));
+    const device = screen.getByLabelText("Device that does it") as HTMLSelectElement;
+    expect(device.value).toBe(server);
+    fireEvent.change(device, { target: { value: own } });
     await waitFor(() => expect(fixture.calls.get_background_state().runs_here).toBe(true));
-    expect(screen.getByText("Every job on every device together. Today: 0.")).toBeTruthy();
+    expect(screen.getByText("The assistant's jobs together, on every device. Today: 0.")).toBeTruthy();
   });
 });
 
@@ -199,8 +206,8 @@ describe("the Jobs page's other states", () => {
         <ContextMenus />
       </>,
     );
-    expect(await screen.findByText(/this device does not run it/)).toBeTruthy();
-    fixture.calls.set_background_device(true);
+    expect(await screen.findByText(/run on the device you choose, not here/)).toBeTruthy();
+    fixture.calls.set_background_device(register_device(fixture.database, "Test laptop", "desktop", Date.now()));
 
     fireEvent.click(screen.getByRole("button", { name: /New job/ }));
     const dialog = await screen.findByRole("dialog");
@@ -224,11 +231,11 @@ describe("one job with no runs", () => {
   it("says it has not run, and where background work runs", async () => {
     const fixture = open_page();
     fixture.calls.set_setting("background.enabled", true);
-    fixture.calls.set_background_device(true);
+    fixture.calls.set_background_device(register_device(fixture.database, "Test laptop", "desktop", Date.now()));
     const id = fixture.calls.add_job({ title: "Tidy", instruction: "Tidy.", context_id: null, schedule: every_day, only_when_changed: false, limits: { max_rounds: 4, max_tokens: 10_000, max_runs_per_day: 2 } });
     render(<JobsPage focus={id} />);
     expect(await screen.findByText("It has not run yet.")).toBeTruthy();
-    expect(screen.getByText(/Background work runs on this device \(Test laptop\)/)).toBeTruthy();
+    expect(screen.getByText(/The assistant's jobs run on this device \(Test laptop\)/)).toBeTruthy();
   });
 });
 

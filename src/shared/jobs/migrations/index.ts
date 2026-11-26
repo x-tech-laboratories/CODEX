@@ -12,5 +12,12 @@ export const migrations: DrizzleMigration[] = [
       "CREATE TABLE `jobs` (\n\t`id` text PRIMARY KEY,\n\t`title` text NOT NULL,\n\t`instruction` text NOT NULL,\n\t`context_id` text DEFAULT '' NOT NULL,\n\t`schedule` text NOT NULL,\n\t`only_when_changed` integer DEFAULT 0 NOT NULL,\n\t`max_rounds` integer NOT NULL,\n\t`max_tokens` integer NOT NULL,\n\t`max_runs_per_day` integer NOT NULL,\n\t`is_on` integer DEFAULT 1 NOT NULL,\n\t`made_by` text NOT NULL,\n\t`conversation_id` text DEFAULT '' NOT NULL,\n\t`created_at` text NOT NULL,\n\t`updated_at` text NOT NULL\n);",
       "CREATE INDEX `job_runs_by_job` ON `job_runs` (`job_id`,`started_at`);"
     ]
+  },
+  {
+    "name": "20261126211622_devices",
+    "statements": [
+      "CREATE TABLE `background_devices` (\n\t`id` text PRIMARY KEY,\n\t`name` text NOT NULL,\n\t`kind` text NOT NULL,\n\t`started_at` text NOT NULL\n);",
+      "ALTER TABLE `job_runs` ADD `items` integer DEFAULT 0 NOT NULL;"
+    ]
   }
 ];

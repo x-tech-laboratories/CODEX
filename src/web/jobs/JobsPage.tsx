@@ -166,11 +166,13 @@ export function ContextJobs({ context_id }: { context_id: string }) {
 // What background work is set to, in a line, with where to change it.
 function StateLine({ state }: { state: BackgroundState }) {
   const where = <a href="#/settings">Settings → Assistant → Background work</a>;
-  if (!state.enabled) return <p className="muted small">Background work is off, so no job runs. Turn it on under {where}.</p>;
-  if (!state.runs_here) return <p className="muted small">Background work is on, but this device does not run it; another of your devices or the server may. {where}.</p>;
+  if (!state.enabled) return <p className="muted small">The assistant's jobs are off, so none of them runs. Turn them on under {where}.</p>;
+  if (state.paused) return <p className="muted small">Background work is paused, so no job runs until you carry on under {where}.</p>;
+  const chosen = state.devices.find((device) => device.id === state.chosen_device);
+  if (!state.runs_here) return <p className="muted small">The assistant's jobs are on, and run on {chosen ? chosen.name : "the device you choose"}, not here. {where}.</p>;
   return (
     <p className="muted small">
-      Background work runs on this device ({state.device}): {state.runs_today} of {state.daily_runs} runs and {state.tokens_today.toLocaleString()} of {state.daily_tokens.toLocaleString()} tokens today.
+      The assistant's jobs run on this device ({state.device}): {state.runs_today} of {state.daily_runs} runs and {state.tokens_today.toLocaleString()} of {state.daily_tokens.toLocaleString()} tokens today.
     </p>
   );
 }

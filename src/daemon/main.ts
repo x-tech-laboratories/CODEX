@@ -33,6 +33,7 @@ import { register_context_calls } from "../server/calls.ts";
 import { load_collectors } from "../server/collectors/index.ts";
 import { keep_refreshing } from "../server/refreshing.ts";
 import { keep_indexing, open_index } from "../shared/search/indexer.ts";
+import { keep_maintaining } from "../shared/maintenance/loop.ts";
 import { keep_running_jobs } from "../shared/jobs/runner.ts";
 import type { JobRun } from "../shared/jobs/model.ts";
 import { socket_of } from "./profile.ts";
@@ -141,7 +142,11 @@ const jobs = keep_running_jobs({
 const index = new DatabaseSync(join(profile, "codex-index.db"));
 index.exec("PRAGMA journal_mode = WAL");
 open_index(index);
-const indexing = keep_indexing({ database: () => database, index: () => index, on_change: () => after_index_change(database) });
+const indexing = keep_indexing({ database: () => database, index: () => index });
+
+// The maintenance jobs: this device's own index and embeddings, and, on the device chosen for background work, the
+// graph's upkeep and the daily digest, each within its budget.
+const maintaining = keep_maintaining({ database: () => database, index: () => index, device: `CODEX on ${hostname()}`, kind: "desktop", now: () => Date.now(), on_change: () => after_index_change(database) });
 
 // The schedule belongs to this device, so it is kept beside the database rather than in the synced settings.
 const schedule_file = join(profile, "backup-schedule.json");
@@ -256,7 +261,7 @@ async function main(): Promise<void> {
     stop_all_runs();
     refreshing.stop();
     void jobs.stop();
-    void indexing.stop().then(() => index.close());
+    void maintaining.stop().then(() => indexing.stop()).then(() => index.close());
     sync.stop();
     backing_up.stop();
     void daemon

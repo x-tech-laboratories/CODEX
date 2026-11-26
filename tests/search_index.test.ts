@@ -204,7 +204,7 @@ describe("indexing", () => {
     const first_reads = notes.reads.length;
     const first_calls = embedder.calls.length;
 
-    expect(await sync_documents(fixture.database, index)).toEqual({ written: 0, removed: 0, written_keys: [], was_empty: false });
+    expect(await sync_documents(fixture.database, index)).toEqual({ written: 0, removed: 0, written_keys: [], was_empty: false, waiting: 0 });
     await index_now();
     expect([notes.reads.length, embedder.calls.length]).toEqual([first_reads, first_calls]);
 
@@ -426,8 +426,9 @@ describe("indexing", () => {
     expect((await setup.fixture.calls.get_index_state()).contexts).toBe(before.contexts + 1);
 
     use_search_index(null);
-    const kept = keep_indexing({ database: () => setup.fixture.database, index: () => setup.index }, 10);
+    const kept = keep_indexing({ database: () => setup.fixture.database, index: () => setup.index });
     setup.fixture.calls.add_context("Shed");
+    poke_index(1);
     await new Promise((resolve) => setTimeout(resolve, 60));
     await settle_index();
     await kept.stop();

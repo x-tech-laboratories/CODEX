@@ -4,15 +4,16 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { asc, desc, eq, inArray, synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
+import { asc, desc, eq, inArray, like, not, synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
 import { current_caller } from "../caller.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { migrations } from "./migrations/index.ts";
-import { background_defaults, type BackgroundState, type Job, type JobFields, type JobRun } from "./model.ts";
-import { as_job, as_run, background_setting, checked_fields, counted_today, fields_of, job_row, rows_with_ids, runs_here, runs_of, set_runs_here } from "./records.ts";
+import { background_defaults, background_settings, maintenance_prefix, type BackgroundState, type Job, type JobFields, type JobRun } from "./model.ts";
+import { as_job, as_run, background_setting, checked_fields, counted_today, device_id_of, fields_of, job_row, list_devices, rows_with_ids, runs_here, runs_of } from "./records.ts";
+import { settings_feature } from "../settings.ts";
 import { job_host, job_running, run_now } from "./runner.ts";
 import { job_runs, job_tables, jobs } from "./schema.ts";
 
@@ -40,7 +41,8 @@ function get_job(database: SqlDatabase, id: string): Job & { runs: JobRun[] } {
 function list_job_runs(database: SqlDatabase, job_id: string | null = null, limit = 50): JobRun[] {
   const most = Math.max(1, Math.min(500, Number(limit) || 50));
   if (job_id) return runs_of(database, job_id, most);
-  return drizzle_of(database).select().from(job_runs).orderBy(desc(job_runs.started_at)).limit(most).all().map(as_run);
+  // The maintenance jobs' runs are listed with them, under Settings → Background work.
+  return drizzle_of(database).select().from(job_runs).where(not(like(job_runs.job_id, `${maintenance_prefix}%`))).orderBy(desc(job_runs.started_at)).limit(most).all().map(as_run);
 }
 
 function get_background_state(database: SqlDatabase): BackgroundState {
@@ -53,8 +55,14 @@ function get_background_state(database: SqlDatabase): BackgroundState {
   }
   return {
     enabled: background_setting(database, "enabled"),
+    paused: background_setting(database, "paused"),
     runs_here: runs_here(database),
+    device_id: device ? device_id_of(database) : "",
     device,
+    chosen_device: background_setting(database, "device"),
+    devices: list_devices(database),
+    tick_minutes: background_setting(database, "tick_minutes"),
+    hosted_allowed: background_setting(database, "hosted"),
     daily_runs: background_setting(database, "daily_runs"),
     daily_tokens: background_setting(database, "daily_tokens"),
     runs_today: today.runs,
@@ -126,8 +134,10 @@ async function run_job_now(database: SqlDatabase, id: string): Promise<{ started
   return { started: true };
 }
 
-function set_background_device(database: SqlDatabase, on: boolean): void {
-  set_runs_here(database, on === true);
+// Names the one device that runs background work; every other device does none.
+function set_background_device(database: SqlDatabase, device_id: string): void {
+  if (typeof device_id !== "string" || !list_devices(database).some((device) => device.id === device_id)) throw new Error("Choose one of the devices get_background_state lists.");
+  settings_feature.methods.set_setting(database, background_settings.device, device_id);
 }
 
 // Sets runs that ended badly aside, so the Inbox no longer lists them.
@@ -199,7 +209,8 @@ export const jobs_feature = define_feature({
       ],
     },
     get_background_state: {
-      description: "Says whether background work is on, whether this device is the one that runs it, today's caps on runs and tokens with today's use, and whether a job runs now.",
+      description:
+        "Says whether the assistant's jobs are on and whether all background work is paused, which device runs background work and every device that can, whether this device is that one, how often the maintenance jobs look for work, whether background work may use a hosted engine, today's caps on the assistant's jobs' runs and tokens with today's use, and whether a job runs now.",
       params: [],
     },
     add_job: {
@@ -218,8 +229,9 @@ export const jobs_feature = define_feature({
       params: [job_param],
     },
     set_background_device: {
-      description: "Says whether this device is the one that runs background work; only one of the user's devices and server should. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
-      params: [{ name: "on", schema: { type: "boolean", description: "true for this device to run jobs." } }],
+      description:
+        "Chooses the one device, a desktop app or a server, that runs background work: the assistant's jobs, the maintenance jobs and asking the apps what changed; every other device does none. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
+      params: [{ name: "device_id", schema: text("The device's id, from get_background_state's devices.") }],
     },
     dismiss_job_runs: {
       description: "Sets runs that ended in an error or at a limit aside, so the Inbox no longer lists them; gives back how many.",

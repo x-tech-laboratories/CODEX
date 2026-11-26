@@ -8,12 +8,13 @@ import { add_conversation_record } from "../src/shared/conversations/records.ts"
 import { engine_tools, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
 import { run_direct, type ChatModel } from "../src/shared/engines/direct.ts";
 import { node_key, parse_node_key } from "../src/shared/graph/model.ts";
-import { addresses_in, normal_address, rule_link_id } from "../src/shared/graph/rules.ts";
+import { addresses_in, normal_address, rule_link_id, run_rules } from "../src/shared/graph/rules.ts";
 import { most_similar_per_item, propose_similar, similarity_link_id, standing_out } from "../src/shared/graph/similarity.ts";
 import { proposals_note, suggest_links_message, suggest_rounds, suggest_tools } from "../src/shared/graph/store.ts";
 import { changing_calls, offered_api } from "../src/shared/policy/policy.ts";
 import { open_screen } from "../src/shared/privacy/screen.ts";
-import { after_pass, index_now, open_index, settle_index, sync_documents, use_search_index, type IndexPass } from "../src/shared/search/indexer.ts";
+import { count_changed, open_index, sync_documents, use_search_index, type IndexPass } from "../src/shared/search/indexer.ts";
+import { run_maintenance_job } from "../src/shared/maintenance/loop.ts";
 import { search } from "../src/shared/search/search.ts";
 import { to_blob, unit } from "../src/shared/search/text.ts";
 import { after_index_change, bind_methods, page_only, sync_engine } from "../src/shared/store.ts";
@@ -55,10 +56,13 @@ function index_of(fixture: Fixture): DatabaseSync {
   return index;
 }
 
-// Brings the index in step and runs what follows a pass, as the indexer does.
+// Brings the index in step and runs the rules and similarity on what it wrote, as the maintenance jobs do.
 async function index_pass(fixture: Fixture, index: DatabaseSync, extra: Partial<IndexPass> = {}): Promise<boolean> {
   const synced = await sync_documents(fixture.database, index);
-  return after_pass(fixture.database, index, { written: synced.written_keys, all: synced.was_empty, embedded: [], embedder: null, ...extra });
+  const pass = { written: synced.written_keys, all: synced.was_empty, embedded: [], embedder: null, ...extra };
+  const by_rules = run_rules(fixture.database, index, pass);
+  const by_similarity = propose_similar(fixture.database, index, pass);
+  return by_rules || by_similarity;
 }
 
 describe("links and entities the user makes", () => {
@@ -533,15 +537,16 @@ describe("rules on exact keys", () => {
     expect(fixture.calls.get_node_links(shop).links.map((link) => link.made_by)).toEqual(["user"]);
   });
 
-  it("run in the index's own passes, which record History and tell the pages when they made links", async () => {
+  it("run in their maintenance job on what the index wrote, which records History and tells the pages when it made links", async () => {
     const fixture = start_fixture();
     const { shop } = garden_of(fixture);
-    const index = new DatabaseSync(":memory:");
-    open_index(index);
+    const index = index_of(fixture);
+    await sync_documents(fixture.database, index);
+    expect(count_changed(index, "rules")).toBeGreaterThan(0);
     let told = 0;
-    use_search_index({ database: () => fixture.database, index: () => index, on_change: () => (after_index_change(fixture.database), (told += 1)) });
-    await index_now();
-    await settle_index();
+    const outcome = await run_maintenance_job({ database: () => fixture.database, index: () => index, device: "Test laptop", kind: "desktop", now: () => Date.now(), on_change: () => (after_index_change(fixture.database), (told += 1)) }, "rules");
+    expect(outcome).toMatchObject({ ran: true, done: { applied: ["The rules made 1 link."] } });
+    expect(count_changed(index, "rules")).toBe(0);
     expect(told).toBe(1);
     const [link] = fixture.calls.get_node_links(shop).links;
     expect(fixture.calls.list_item_history("link", link!.id).map((version) => version.change)).toEqual(["created"]);

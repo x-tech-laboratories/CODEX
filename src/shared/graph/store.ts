@@ -18,14 +18,11 @@ import type { ToolCallRecord } from "../conversations/model.ts";
 import { start_run } from "../conversations/run.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
 import { may_send, merge_withheld, open_screen, screen_sourced, withheld_line, type Screen, type Screened } from "../privacy/screen.ts";
-import { when_indexed } from "../search/indexer.ts";
 import { migrations } from "./migrations/index.ts";
 import { entity_kinds, graph_statuses, link_types, node_key, parse_node_key, type DecisionCount, type GraphLink, type GraphNode, type DecisionReport, type EntityKind, type EvidenceInput, type LinkChanges, type LinkType, type MadeBy } from "./model.ts";
 import { default_graph_limit, get_graph, get_node_links, list_graph_proposals, list_link_counts, most_graph_nodes } from "./reading.ts";
 import { canonical, entity_row, from_key, is_open, link_row, links_touching, name_key, now, parse_names, read_joins, resolve_node, to_key, type EntityRow } from "./records.ts";
-import { run_rules } from "./rules.ts";
 import { graph_decisions, graph_entities, graph_links, graph_tables } from "./schema.ts";
-import { propose_similar } from "./similarity.ts";
 import { checked_moment, checked_type, clip_excerpt, insert_link, record_decision, remove_dangling_links, resolve_evidence, same_links, set_entity_status, set_link_status } from "./writing.ts";
 
 // ── Checks ───────────────────────────────────────────────────────────────────
@@ -416,15 +413,6 @@ async function suggest_links(database: SqlDatabase, context_id: string): Promise
   await host.call("rename_conversation", [started.conversation_id, "Suggest links"]);
   return started;
 }
-
-// ── After indexing ───────────────────────────────────────────────────────────
-
-// The rules and similarity run after each index pass, for what it changed.
-when_indexed((database, index, pass) => {
-  const by_rules = run_rules(database, index, pass);
-  const by_similarity = propose_similar(database, index, pass);
-  return by_rules || by_similarity;
-});
 
 // ── Feature ──────────────────────────────────────────────────────────────────
 

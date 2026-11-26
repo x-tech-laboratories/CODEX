@@ -56,11 +56,22 @@ export const job_runs = sqliteTable(
     // What its context looked like when it ran, for "only when changed".
     context_mark: text().notNull().default(""),
     dismissed_at: text().notNull().default(""),
+    // How many things a maintenance job's run handled, such as documents indexed or links ended; 0 for an assistant job.
+    items: integer().notNull().default(0),
   },
   (table) => [index("job_runs_by_job").on(table.job_id, table.started_at)],
 );
 
-export const job_tables = [jobs, job_runs];
+// Each device that can run background work, a desktop daemon or a server, as it last said of itself when it started.
+export const background_devices = sqliteTable("background_devices", {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  // "desktop" or "server".
+  kind: text().notNull(),
+  started_at: text().notNull(),
+});
+
+export const job_tables = [jobs, job_runs, background_devices];
 
 // ── This device's own ────────────────────────────────────────────────────────
 

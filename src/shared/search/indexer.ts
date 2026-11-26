@@ -1,8 +1,9 @@
 // The local search index: a SQLite file of its own beside the store's database, never synced and never backed up,
 // rebuilt from the store and the sources whenever it is lost. It holds each document's text in an FTS5 table, the text
 // cut into overlapping pieces, and a vector for each piece from the embedder in use, tagged with that embedder and
-// model. Only what changed is indexed again, by a hash of its text; embedding runs in batches in the background, waits
-// while a reply is written, and makes no call when nothing is new.
+// model. Only what changed is indexed again, by a hash of its text; embedding runs in batches, waits while a reply is
+// written, and makes no call when nothing is new. Each pass notes the documents it wrote and embedded, for the
+// maintenance jobs that make links from what changed.
 //
 // The index is a derived cache rather than a store feature, so it is reached with SQL of its own, which FTS5 and
 // vector blobs need, rather than through Drizzle.
@@ -47,6 +48,8 @@ const schema: MigrationStep[] = [
   ],
   // The sources whose content each document carries, as a JSON list of collector ids.
   [`ALTER TABLE docs ADD COLUMN sources TEXT NOT NULL DEFAULT '["*"]'`, `UPDATE docs SET sources = json_array(collector) WHERE collector != ''`, `UPDATE docs SET sources = '[]' WHERE kind = 'context'`],
+  // The documents written or embedded since a maintenance job last looked, by job: "rules" and "similarity".
+  [`CREATE TABLE changed (job TEXT NOT NULL, key TEXT NOT NULL, PRIMARY KEY (job, key))`],
 ];
 
 // Brings an index file up to date; run once each time it opens.
@@ -60,14 +63,10 @@ export interface IndexHost {
   // The store's database, and the index's own.
   database: () => SqlDatabase;
   index: () => SqlDatabase;
-  // Told when a pass changed the store itself, such as links a rule made, so History records it and pages hear of it.
-  on_change?: () => void;
 }
 
-// ── Passes ───────────────────────────────────────────────────────────────────
-
-// What one pass did: the documents written because their text changed, whether every document was, and the documents
-// given vectors, with the embedder that made them.
+// What one pass did, as the rules and similarity read it: the documents written because their text changed, whether
+// every document was, and the documents given vectors, with the embedder that made them.
 export interface IndexPass {
   written: string[];
   all: boolean;
@@ -75,20 +74,29 @@ export interface IndexPass {
   embedder: { id: string; model: string } | null;
 }
 
-// Runs after a pass with what it did, such as the graph's rules; true when it changed the store.
-type PassListener = (database: SqlDatabase, index: SqlDatabase, pass: IndexPass) => boolean | Promise<boolean>;
+// ── Changed documents ────────────────────────────────────────────────────────
 
-const pass_listeners: PassListener[] = [];
+// The maintenance jobs that work from what an index pass changed: the rules from what was written, similarity from
+// what was given new vectors.
+export type ChangedFor = "rules" | "similarity";
 
-export function when_indexed(listener: PassListener): void {
-  if (!pass_listeners.includes(listener)) pass_listeners.push(listener);
+export function note_changed(index: SqlDatabase, job: ChangedFor, keys: Iterable<string>): void {
+  const insert = index.prepare("INSERT OR IGNORE INTO changed (job, key) VALUES (?, ?)");
+  for (const key of keys) insert.run(job, key);
 }
 
-// Tells each listener what a pass did; true when any changed the store.
-export async function after_pass(database: SqlDatabase, index: SqlDatabase, pass: IndexPass): Promise<boolean> {
-  let changed = false;
-  for (const listener of pass_listeners) changed = (await listener(database, index, pass)) || changed;
-  return changed;
+export function count_changed(index: SqlDatabase, job: ChangedFor): number {
+  return (index.prepare("SELECT COUNT(*) AS total FROM changed WHERE job = ?").get(job) as { total: number }).total;
+}
+
+// The oldest keys waiting for a job, at most so many, in a steady order.
+export function peek_changed(index: SqlDatabase, job: ChangedFor, limit: number): string[] {
+  return (index.prepare("SELECT key FROM changed WHERE job = ? ORDER BY key LIMIT ?").all(job, Math.max(0, limit)) as { key: string }[]).map((row) => row.key);
+}
+
+export function drop_changed(index: SqlDatabase, job: ChangedFor, keys: string[]): void {
+  const remove = index.prepare("DELETE FROM changed WHERE job = ? AND key = ?");
+  for (const key of keys) remove.run(job, key);
 }
 
 let current: IndexHost | null = null;
@@ -169,15 +177,19 @@ async function read_contents(database: SqlDatabase, wanted: SourceDocument[], pr
 
 // Brings the index in step with the store: new and changed documents written, gone ones removed, unchanged ones left
 // alone. Gives back how many were written and removed.
-export async function sync_documents(database: SqlDatabase, index: SqlDatabase, problems: string[] = []): Promise<{ written: number; removed: number; written_keys: string[]; was_empty: boolean }> {
+// At most `most_texts` items' text is read from their apps in one go; the rest wait, unwritten, for a later pass.
+export async function sync_documents(database: SqlDatabase, index: SqlDatabase, problems: string[] = [], most_texts = Infinity): Promise<{ written: number; removed: number; written_keys: string[]; was_empty: boolean; waiting: number }> {
   const documents = read_documents(database);
   const indexed = new Map((index.prepare("SELECT key, content, context_ids, sources, source_hash, text_hash FROM docs").all() as unknown as IndexedRow[]).map((row) => [row.key, row]));
-  const needs_text = documents.filter((document) => document.kind === "item" && indexed.get(document.key)?.source_hash !== document.source_hash);
+  const all_needing_text = documents.filter((document) => document.kind === "item" && indexed.get(document.key)?.source_hash !== document.source_hash);
+  const needs_text = all_needing_text.slice(0, Math.max(0, most_texts));
+  const later = new Set(all_needing_text.slice(needs_text.length).map((document) => document.key));
   const contents = await read_contents(database, needs_text, problems);
   const written_keys: string[] = [];
   index.exec("BEGIN");
   try {
     for (const document of documents) {
+      if (later.has(document.key)) continue;
       const was = indexed.get(document.key);
       const content = contents.get(document.key) ?? was?.content ?? "";
       const hash = text_hash(full_text(document, content));
@@ -194,12 +206,29 @@ export async function sync_documents(database: SqlDatabase, index: SqlDatabase, 
     const present = new Set(documents.map((document) => document.key));
     const gone = [...indexed.keys()].filter((key) => !present.has(key));
     for (const key of gone) remove_document(index, key);
+    // A document written or gone may change the rules' links, from it or to it.
+    note_changed(index, "rules", [...written_keys, ...gone]);
     index.exec("COMMIT");
-    return { written: written_keys.length, removed: gone.length, written_keys, was_empty: indexed.size === 0 };
+    return { written: written_keys.length, removed: gone.length, written_keys, was_empty: indexed.size === 0, waiting: later.size };
   } catch (error) {
     index.exec("ROLLBACK");
     throw error;
   }
+}
+
+// How many documents the index is out of step with the store on, new, changed or gone, read from the store alone
+// with no call to any app; an item whose app said something new counts, its text still to be read.
+export function count_out_of_step(database: SqlDatabase, index: SqlDatabase): number {
+  const documents = read_documents(database);
+  const indexed = new Map((index.prepare("SELECT key, content, context_ids, sources, source_hash, text_hash FROM docs").all() as unknown as IndexedRow[]).map((row) => [row.key, row]));
+  let count = 0;
+  for (const document of documents) {
+    const was = indexed.get(document.key);
+    if (!was || was.source_hash !== document.source_hash || was.text_hash !== text_hash(full_text(document, was.content)) || was.context_ids !== JSON.stringify(document.context_ids) || was.sources !== JSON.stringify(document.sources)) count++;
+  }
+  const present = new Set(documents.map((document) => document.key));
+  for (const key of indexed.keys()) if (!present.has(key)) count++;
+  return count;
 }
 
 // ── Embedding ────────────────────────────────────────────────────────────────
@@ -256,7 +285,9 @@ async function yield_to_replies(signal: AbortSignal, wait_ms: number): Promise<v
 
 // Embeds every piece that has no vector from the embedder in use, in batches; vectors from any other embedder or
 // model are let go first, so changing either embeds everything again. Gives back how many pieces were embedded.
-export async function embed_pending(database: SqlDatabase, index: SqlDatabase, signal: AbortSignal, wait_ms = 250, embedded_keys: Set<string> = new Set(), on_batch?: () => void): Promise<number> {
+// At most `most` pieces are embedded in one go; the rest wait for a later pass. Each item given vectors is noted for
+// the similarity job.
+export async function embed_pending(database: SqlDatabase, index: SqlDatabase, signal: AbortSignal, wait_ms = 250, embedded_keys: Set<string> = new Set(), on_batch?: () => void, most = Infinity): Promise<number> {
   const { found } = await find_embedder(database);
   if (!found) return 0;
   const { id, embedder } = found;
@@ -264,8 +295,8 @@ export async function embed_pending(database: SqlDatabase, index: SqlDatabase, s
   index.prepare("DELETE FROM vectors WHERE embedder != ? OR model != ?").run(id, model);
   const withheld = await withheld_collectors(database, index, embedder);
   let embedded = 0;
-  while (!signal.aborted) {
-    const batch = pending_query(index, withheld, embed_batch_size);
+  while (!signal.aborted && embedded < most) {
+    const batch = pending_query(index, withheld, Math.min(embed_batch_size, most - embedded));
     if (batch.length === 0) break;
     await yield_to_replies(signal, wait_ms);
     if (signal.aborted) break;
@@ -278,10 +309,26 @@ export async function embed_pending(database: SqlDatabase, index: SqlDatabase, s
       insert.run(piece.key, piece.seq, id, model, to_blob(unit(vectors[at]!)));
       embedded_keys.add(piece.key);
     });
+    note_changed(index, "similarity", batch.map((piece) => piece.key).filter((key) => key.startsWith("item:")));
     embedded += batch.length;
     on_batch?.();
   }
   return embedded;
+}
+
+// How many pieces wait for a vector from the embedder in use, leaving out those it may not be sent; 0 with no embedder.
+export async function count_unembedded(database: SqlDatabase, index: SqlDatabase): Promise<number> {
+  const { found } = await find_embedder(database);
+  if (!found) return 0;
+  const withheld = await withheld_collectors(database, index, found.embedder);
+  const row = index
+    .prepare(
+      `SELECT COUNT(*) AS total FROM chunks c JOIN docs d ON d.key = c.key
+       LEFT JOIN vectors v ON v.key = c.key AND v.seq = c.seq AND v.embedder = ? AND v.model = ?
+       WHERE v.key IS NULL AND ${holds_none(withheld)}`,
+    )
+    .get(found.id, found.embedder.model(), ...withheld) as { total: number };
+  return row.total;
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -327,9 +374,19 @@ function embedder_settings(database: SqlDatabase): string {
   return JSON.stringify([settings[embedder_setting] ?? "", settings[plugins_setting] ?? {}]);
 }
 
+// What one pass does beyond bringing the documents in step: embed what waits (unless told not to, as after a write,
+// when the maintenance job embeds within its budget), and read at most so many items' text from their apps.
+export interface PassOptions {
+  embed?: boolean;
+  most_texts?: number;
+}
+
+// A pass after a write reads at most this many items' text; the maintenance job reads the rest within its budget.
+export const texts_after_write = 50;
+
 // Indexes what changed and embeds what waits, once; a call while one runs makes it go round once more. An error is
 // shown until a later attempt gets past where it failed or the embedder's settings change, then cleared at once.
-export function index_now(): Promise<void> {
+export function index_now(options: PassOptions = {}): Promise<void> {
   if (working) {
     again = true;
     return running;
@@ -354,12 +411,8 @@ export function index_now(): Promise<void> {
           if (meta_of(host.index(), "last_error") !== problems.join(" ")) record();
         };
         try {
-          const synced = await sync_documents(host.database(), host.index(), problems);
-          const embedded = new Set<string>();
-          await embed_pending(host.database(), host.index(), signal, 250, embedded, embedded_batch);
-          const { found } = await find_embedder(host.database());
-          const pass = { written: synced.written_keys, all: synced.was_empty, embedded: [...embedded], embedder: found ? { id: found.id, model: found.embedder.model() } : null };
-          if (await after_pass(host.database(), host.index(), pass)) host.on_change?.();
+          await sync_documents(host.database(), host.index(), problems, options.most_texts);
+          if (options.embed !== false) await embed_pending(host.database(), host.index(), signal, 250, new Set(), embedded_batch);
         } catch (error) {
           // A pass ended because the embedder's settings changed says nothing of the new settings.
           if (!pass_stop.signal.aborted) {
@@ -401,17 +454,16 @@ export function poke_index(delay_ms = 1500): void {
     set_meta(current.index(), "last_error_detail", "");
   }
   clearTimeout(poke_timer);
-  poke_timer = setTimeout(() => void index_now().catch((error: unknown) => console.warn("index:", error)), delay_ms);
+  poke_timer = setTimeout(() => void index_now({ embed: false, most_texts: texts_after_write }).catch((error: unknown) => console.warn("index:", error)), delay_ms);
 }
 
-// Indexes at start and every so often, catching changes that came by sync; stop() ends the work in hand.
-export function keep_indexing(host: IndexHost, interval_ms = 60_000): { stop: () => Promise<void> } {
+// Indexes the store at start, embedding nothing; the maintenance jobs keep it up from then on, catching changes that
+// came by sync, and a write asks for a pass of its own. stop() ends the work in hand.
+export function keep_indexing(host: IndexHost): { stop: () => Promise<void> } {
   use_search_index(host);
-  void index_now().catch((error: unknown) => console.warn("index:", error));
-  const timer = setInterval(() => void index_now().catch((error: unknown) => console.warn("index:", error)), interval_ms);
+  void index_now({ embed: false, most_texts: texts_after_write }).catch((error: unknown) => console.warn("index:", error));
   return {
     stop: async () => {
-      clearInterval(timer);
       clearTimeout(poke_timer);
       stopping.abort();
       await running;

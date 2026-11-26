@@ -5,7 +5,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
-import { CalendarClock, Inbox as InboxGlyph, ScrollText, Shapes, Waypoints } from "lucide-react";
+import { CalendarClock, Inbox as InboxGlyph, Newspaper, ScrollText, Shapes, Waypoints } from "lucide-react";
 import { Chip, Chips } from "@x-tech-laboratories/x-libs/web/react/badges";
 import { confirm_dialog } from "@x-tech-laboratories/x-libs/web/react/dialog";
 import { Icon, type IconGlyph } from "@x-tech-laboratories/x-libs/web/react/icons";
@@ -23,12 +23,15 @@ import { ProposalText } from "../blueprints/ProposalCard.tsx";
 
 // ── Deciding ─────────────────────────────────────────────────────────────────
 
-const icons: Record<InboxKind, IconGlyph> = { change: MessageSquare, link: Waypoints, entity: Shapes, blueprint: ScrollText, blueprint_change: ScrollText, job_run: CalendarClock };
+const icons: Record<InboxKind, IconGlyph> = { change: MessageSquare, link: Waypoints, entity: Shapes, blueprint: ScrollText, blueprint_change: ScrollText, job_run: CalendarClock, digest: Newspaper };
 
-// The words on an entry's two buttons: a change is approved, a proposal accepted, a run set aside.
+// Entries that are only read, then set aside: a run that ended badly, and the daily digest.
+const read_only_kinds: InboxKind[] = ["job_run", "digest"];
+
+// The words on an entry's two buttons: a change is approved, a proposal accepted, a run or digest set aside.
 function words_of(kind: InboxKind): { yes: string; no: string | null } {
   if (kind === "change") return { yes: "Approve", no: "Reject" };
-  if (kind === "job_run") return { yes: "Set aside", no: null };
+  if (read_only_kinds.includes(kind)) return { yes: "Set aside", no: null };
   return { yes: "Accept", no: "Reject" };
 }
 
@@ -47,7 +50,7 @@ export async function decide(entries: InboxEntry[], yes: boolean): Promise<numbe
   }
   const blueprints = of(["blueprint", "blueprint_change"]);
   if (blueprints.length) decided += (yes ? await calls().accept_blueprint_proposals(blueprints) : await calls().reject_blueprint_proposals(blueprints)).decided.length;
-  const runs = of(["job_run"]);
+  const runs = of(read_only_kinds);
   if (runs.length && yes) decided += await calls().dismiss_job_runs(runs);
   return decided;
 }
@@ -63,9 +66,9 @@ async function decide_and_tell(entries: InboxEntry[], yes: boolean): Promise<voi
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
 
-// A change opens its conversation in the pane; anything else its own page.
+// A change opens its conversation in the pane; anything else, and a change background maintenance proposed, its own page.
 function open_entry(entry: InboxEntry): void {
-  if (entry.kind === "change") {
+  if (entry.kind === "change" && entry.conversation_id) {
     open_conversation(entry.conversation_id, [], null);
     return;
   }
@@ -96,10 +99,18 @@ function EntryRow({ entry, picked, on_pick }: { entry: InboxEntry; picked: boole
             {entry.title}
           </a>
         </div>
-        {entry.detail && <span className="muted item-snippet">{entry.detail}</span>}
+        {entry.kind === "digest" && entry.run ? (
+          <ul className="digest-lines">
+            {entry.run.applied.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        ) : (
+          entry.detail && <span className="muted item-snippet">{entry.detail}</span>
+        )}
         <span className="muted small">
           By {entry.made_by}, <Age epoch={Date.parse(entry.created_at) / 1000} />
-          {entry.job_title && entry.kind !== "job_run" ? `, in the background job “${entry.job_title}”` : ""}
+          {entry.job_title && !read_only_kinds.includes(entry.kind) ? `, in the background job “${entry.job_title}”` : ""}
         </span>
         {entry.conversation_title && (
           <Chips inline>
@@ -120,7 +131,7 @@ function EntryRow({ entry, picked, on_pick }: { entry: InboxEntry; picked: boole
         )}
       </div>
       <span className="row-actions">
-        <button type="button" className={entry.kind === "job_run" ? undefined : "accent solid"} disabled={busy} onClick={() => void run(true)}>
+        <button type="button" className={read_only_kinds.includes(entry.kind) ? undefined : "accent solid"} disabled={busy} onClick={() => void run(true)}>
           {words.yes}
         </button>
         {words.no && (
@@ -136,7 +147,7 @@ function EntryRow({ entry, picked, on_pick }: { entry: InboxEntry; picked: boole
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 function ask_then(entries: InboxEntry[], yes: boolean, after: () => void): void {
-  const proposals = entries.filter((entry) => entry.kind !== "job_run").length;
+  const proposals = entries.filter((entry) => !read_only_kinds.includes(entry.kind)).length;
   const runs = entries.length - proposals;
   const what = yes ? [proposals > 0 ? `approve or accept ${proposals} ${proposals === 1 ? "proposal" : "proposals"}` : "", runs > 0 ? `set ${runs} ${runs === 1 ? "run" : "runs"} aside` : ""].filter(Boolean).join(" and ") : `reject ${proposals} ${proposals === 1 ? "proposal" : "proposals"}`;
   confirm_dialog({
@@ -157,7 +168,7 @@ function List({ entries }: { entries: InboxEntry[] }) {
   const chosen = entries.filter((entry) => picked.has(entry.key));
   const pick = (key: string, on: boolean) => set_picked((before) => new Set(on ? [...before, key] : [...before].filter((each) => each !== key)));
   const clear = () => set_picked(new Set());
-  const proposals = chosen.filter((entry) => entry.kind !== "job_run");
+  const proposals = chosen.filter((entry) => !read_only_kinds.includes(entry.kind));
   return (
     <>
       {chosen.length > 0 && (
@@ -186,7 +197,7 @@ export function InboxPage() {
       <PageHeading
         title="Inbox"
         icon={<Icon icon={InboxGlyph} />}
-        subtitle="What waits for you: changes the assistant proposed, in conversations and in background jobs; proposed links, entities and blueprints; and background runs that failed or stopped at a limit."
+        subtitle="What waits for you: changes the assistant proposed, in conversations and in background jobs; proposed links, entities and blueprints; background runs that failed or stopped at a limit; and each day's digest of background work."
       />
       <Loaded resource={inbox}>{(entries) => (entries.length === 0 ? <Empty title="Nothing waits for you" hint="What the assistant proposes, and background runs that need a look, show here." /> : <List entries={entries} />)}</Loaded>
     </>

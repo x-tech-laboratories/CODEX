@@ -15,6 +15,7 @@ import { sqlite_backups, take_staged_restore } from "@x-tech-laboratories/x-libs
 import { codex_backup_naming, read_schedule } from "../shared/backups.ts";
 import { keep_running_jobs } from "../shared/jobs/runner.ts";
 import { keep_indexing, open_index } from "../shared/search/indexer.ts";
+import { keep_maintaining } from "../shared/maintenance/loop.ts";
 import { after_index_change, needs_upgrade, open_store, sync_engine } from "../shared/store.ts";
 import { build_app } from "./app.ts";
 import { load_collectors } from "./collectors/index.ts";
@@ -90,7 +91,11 @@ const index_path = join(dirname(database_path), `${basename(database_path, extna
 const index = new DatabaseSync(index_path);
 index.exec("PRAGMA journal_mode = WAL");
 open_index(index);
-const indexing = keep_indexing({ database: () => database, index: () => index, on_change: () => after_index_change(database) });
+const indexing = keep_indexing({ database: () => database, index: () => index });
+
+// The maintenance jobs: this device's own index and embeddings, and, on the device chosen for background work, the
+// graph's upkeep and the daily digest, each within its budget.
+const maintaining = keep_maintaining({ database: () => database, index: () => index, device: `server on ${hostname()}`, kind: "server", now: () => Date.now(), on_change: () => after_index_change(database) });
 
 // ── Server ───────────────────────────────────────────────────────────────────
 
@@ -119,7 +124,7 @@ console.info(`CODEX is serving http://${server_config.host}:${server_config.port
 function stop(): void {
   refreshing.stop();
   void jobs.stop();
-  void indexing.stop().then(() => index.close());
+  void maintaining.stop().then(() => indexing.stop()).then(() => index.close());
   backing_up.stop();
   void app.close().then(() => database.close());
 }

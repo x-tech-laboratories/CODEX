@@ -46,6 +46,17 @@ export const offered_api: Record<string, MethodSpec> = {
   remove_job: jobs_feature.api.remove_job as MethodSpec,
 };
 
+// Changes background maintenance makes or proposes, never offered to an engine, under the same levels: ending a link
+// the user, a program or an engine made, when the item at its end is gone from its app. Approving one runs it.
+export const maintenance_api: Record<string, MethodSpec> = {
+  close_graph_link: graph_feature.api.close_graph_link as MethodSpec,
+};
+
+// The spec of a call a proposal may be for: one an engine is offered, or one background maintenance proposes.
+export function proposable_spec(method: string): MethodSpec | undefined {
+  return offered_api[method] ?? maintenance_api[method];
+}
+
 // The core set offered to a model with a small context, each briefly described: the reads, the most-used changes, the
 // graph's two proposing calls, so Suggest links works on a small model too, and reading one blueprint whole and the
 // two blueprint proposing calls, so a small model can save and amend what the user teaches it; recall lists the rest.
@@ -75,6 +86,11 @@ export function is_offered(method: string): boolean {
 // The offered calls that change something, each of which has a level.
 export function changing_calls(): string[] {
   return Object.keys(offered_api).filter((method) => !is_read_only(method) && !proposing_calls.has(method));
+}
+
+// Every call with a level: those an engine is offered, then those only background maintenance makes.
+export function leveled_calls(): string[] {
+  return [...changing_calls(), ...Object.keys(maintenance_api)];
 }
 
 // Reads that give back only what the user wrote in CODEX, its jobs included; every other offered read carries text from other apps, such

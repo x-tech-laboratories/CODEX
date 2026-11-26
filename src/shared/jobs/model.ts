@@ -79,18 +79,38 @@ export interface JobRun {
   run_id: string;
   // When the user set it aside in the Inbox; empty while it waits there.
   dismissed_at: string;
+  // How many things a maintenance job's run handled; 0 for an assistant job's.
+  items: number;
 }
 
 // ── Background work ──────────────────────────────────────────────────────────
 
+// A device that can run background work: a desktop daemon or a server, by the id it made for itself.
+export interface BackgroundDevice {
+  id: string;
+  name: string;
+  kind: "desktop" | "server";
+  started_at: string;
+}
+
 export interface BackgroundState {
-  // The global switch, off by default: nothing runs while it is off.
+  // The switch for the assistant's own jobs, off by default: none of them runs while it is off.
   enabled: boolean;
-  // Whether this device is the one that runs jobs; a setting of this device alone.
+  // Every kind of background work waits while this is on, the assistant's jobs and the maintenance jobs alike.
+  paused: boolean;
+  // Whether this device is the one that runs background work.
   runs_here: boolean;
-  // This device's name, as runs record it.
+  // This device's id and name, as runs record it; empty where nothing runs, such as a test's store.
+  device_id: string;
   device: string;
-  // The caps on every device together, a day at a time, and today's use.
+  // The device chosen to run background work, by id, and every device that can, as each last said of itself.
+  chosen_device: string;
+  devices: BackgroundDevice[];
+  // How many minutes apart the maintenance jobs look for work.
+  tick_minutes: number;
+  // Whether background work may use a hosted engine; off, it uses a local engine only.
+  hosted_allowed: boolean;
+  // The caps on the assistant's jobs on every device together, a day at a time, and today's use.
   daily_runs: number;
   daily_tokens: number;
   runs_today: number;
@@ -99,7 +119,26 @@ export interface BackgroundState {
   is_running: boolean;
 }
 
-// The synced settings behind the global switch and caps, which only the user at the page may change.
-export const background_settings = { enabled: "background.enabled", daily_runs: "background.daily_runs", daily_tokens: "background.daily_tokens" } as const;
+// The synced settings behind background work, which only the user at the page may change.
+export const background_settings = {
+  enabled: "background.enabled",
+  daily_runs: "background.daily_runs",
+  daily_tokens: "background.daily_tokens",
+  paused: "background.paused",
+  device: "background.device",
+  tick_minutes: "background.tick_minutes",
+  hosted: "background.hosted",
+} as const;
 
-export const background_defaults = { [background_settings.enabled]: false, [background_settings.daily_runs]: 24, [background_settings.daily_tokens]: 200_000 };
+export const background_defaults = {
+  [background_settings.enabled]: false,
+  [background_settings.daily_runs]: 24,
+  [background_settings.daily_tokens]: 200_000,
+  [background_settings.paused]: false,
+  [background_settings.device]: "",
+  [background_settings.tick_minutes]: 30,
+  [background_settings.hosted]: false,
+};
+
+// The job id under which a maintenance job's runs are kept beside the assistant's own jobs' runs.
+export const maintenance_prefix = "maintenance:";
