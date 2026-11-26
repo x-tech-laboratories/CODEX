@@ -312,7 +312,7 @@ describe("the bundled engines", () => {
   it("say what is missing: a model, or a key the command gives", async () => {
     const no_model = await engine_of(openai_plugin(), {});
     expect(await collect(no_model.run({ instructions: "", conversation: [], tools: no_tools }, new AbortController().signal))).toEqual([
-      { type: "error", message: "Set the OpenAI-compatible engine's model under Settings → Engine." },
+      { type: "error", message: "Set the OpenAI-compatible engine's model under Settings → Assistant → Engine." },
     ]);
     const make = vi.fn();
     const failing = direct_engine("Anthropic", () => ({ model: "claude-opus-5-5", api_key_command: "print-key" }), make, async () => {

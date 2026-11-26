@@ -1,5 +1,27 @@
 /* Layout only; every colour, size and widget look comes from Halon's tokens and stylesheet. */
 
+/* ── Pages ──────────────────────────────────────────────────────────────────── */
+
+/* A page lays out by the room it has beside the Assistant pane, not by the window's width, and never widens into the pane. */
+.main-pane {
+  container: page / inline-size;
+}
+
+/* ── Settings ───────────────────────────────────────────────────────────────── */
+
+/* Settings fits the room beside the Assistant pane: no row widens the others, and a narrow row puts its controls under its label. */
+.settings-sections,
+.settings-category,
+.settings-group {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (max-width: 560px) {
+  .setting-row {
+    flex-wrap: wrap;
+  }
+}
+
 /* ── Context tree ─────────────────────────────────────────────────────────── */
 
 .context-tree {
@@ -238,6 +260,25 @@
   gap: var(--space-2);
 }
 
+/* A reply's wide tables and code scroll sideways on their own rather than squeezing into the pane. */
+.chat-message table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.chat-message :is(th, td) {
+  min-width: 5rem;
+  max-width: 18rem;
+  overflow-wrap: normal;
+}
+
+.chat-message pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .chat-message > .banner {
   margin: 0;
 }
@@ -340,7 +381,7 @@
   margin-block: var(--space-4);
 }
 
-@media (max-width: 900px) {
+@container page (max-width: 900px) {
   .graph-layout {
     grid-template-columns: minmax(0, 1fr);
   }

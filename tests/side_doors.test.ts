@@ -195,7 +195,7 @@ describe("search", () => {
       const context: ToolContext = {
         database: () => fixture.database,
         call: async (method, args) => (fixture.calls as unknown as Record<string, (...args: unknown[]) => unknown>)[method]!(...args),
-        conversation_id: "general",
+        conversation_id: "elsewhere",
         presence: "conversation",
         has_outside_content: false,
         screen: await open_screen(fixture.database, hosted),

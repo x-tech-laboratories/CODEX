@@ -96,15 +96,22 @@ Drizzle, which FTS5 and vector blobs need. The server and the daemon open it and
   written (`conversations/activity.ts`), and calls nothing when no piece waits. A hosted embedder is never sent an
   item from a source not marked for hosted engines.
 - **Search** (`search.ts`): FTS5 by bm25 (title weighted over text, every word as a prefix, any word when not all
-  match) and cosine over the vectors in process, the query embedded by the same embedder; each list's best 50 fused
-  by reciprocal rank (k = 60). A vector hit counts only above a cosine of 0.3 and within three quarters of the
-  nearest. A context given scopes it to that context and every context inside it.
+  match) and cosine over the vectors in process, the query embedded by the same embedder (through its optional
+  `embed_query`, which puts the bundled embedder's query prefix before a search alone); each list's best 50 fused
+  by reciprocal rank (k = 60). A vector hit is judged against every document's score for the same query
+  (`meaning_floor`), so no model's scale matters: the best must stand 1.2 times the middle half's spread above the
+  upper quartile or the query matches nothing by meaning, and a hit must reach a quarter of the way from the upper
+  quartile to the best; under eight documents, three quarters of the way from the lowest. A message's fused score
+  counts 0.85 of an item's, context's or entity's. A context given scopes it to that context and every context
+  inside it.
 - **Calls** (`store.ts`): `search_index(query, context_id?, limit?)` gives items, contexts and messages with an
   excerpt and where each is, a message with the conversation it is in (its id and title) and that conversation's
   `codex://conversation/<id>` link as its `uri`; `get_index_state` the counts, pending and withheld pieces, the embedder and the last
-  error; `rebuild_index` starts again from nothing. The engine is offered `search_index`, screened by source like
-  every other read (PR A's withholding and trust). The first page's search uses it, and Settings → Index shows the
-  state, the embedder and Rebuild.
+  error, cleared as soon as a later attempt embeds a batch; `rebuild_index` starts again from nothing. A change to
+  the `embedder` or `plugins` setting ends the embedding in hand, and the next pass tries the new settings. The
+  engine is offered `search_index`, screened by source like every other read (PR A's withholding and trust), and
+  never given the messages of the conversation it answers in. The first page's search uses it, gathering each
+  conversation and its messages in one row, and Settings → Index shows the state, the embedder and Rebuild.
 
 ## The knowledge graph
 
@@ -410,7 +417,8 @@ unless one was picked or asked for (`selection.ts`: an item's title, a search hi
 which a `codex://conversation/<id>` link opens, go to a context holding it and open the pane on it); New
 conversation leaves the box sending to a new one. `use_conversation` loads the one shown and lays the streamed events
 over it until the kept answer arrives; a reply keeps being written while the user looks at another. Tool calls are
-folded rows, a proposed one reading as the user decided it; waiting proposals are cards with Approve and Reject; the message box sends on Enter. While a reasoning model
+folded rows, each where it was made in the reply (a call keeps `text_at`, how far into the reply's text it came; one
+kept before that was recorded shows ahead of the text), a proposed one reading as the user decided it; waiting proposals are cards with Approve and Reject; the message box sends on Enter. While a reasoning model
 thinks, a folded Thinking row opens to its thinking streaming, and the answer replaces it; a reply's notices show as
 banners above it, and an error says what happened in plain words with the raw detail under Details. Settings gains an
 Assistant category: Engine (which engine answers, whether it is local or hosted, and each engine plugin's own settings

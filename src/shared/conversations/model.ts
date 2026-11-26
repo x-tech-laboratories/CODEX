@@ -27,6 +27,25 @@ export interface ToolCallRecord {
   applied_by?: AppliedBy;
   // Set on a change left for approval.
   proposal_id?: string;
+  // How far into the reply's text the call was made, in characters; left out on calls kept before it was recorded,
+  // which show before the text.
+  text_at?: number;
+}
+
+// A reply as it reads: its text cut where each call was made, each call between the text before it and after it.
+export type ReplyPart = { text: string } | { call: ToolCallRecord };
+
+export function reply_parts(text: string, calls: ToolCallRecord[]): ReplyPart[] {
+  const placed = calls.map((call, order) => ({ call, at: Math.max(0, Math.min(text.length, call.text_at ?? 0)), order })).sort((first, second) => first.at - second.at || first.order - second.order);
+  const parts: ReplyPart[] = [];
+  let from = 0;
+  for (const { call, at } of placed) {
+    if (text.slice(from, at).trim()) parts.push({ text: text.slice(from, at) });
+    parts.push({ call });
+    from = at;
+  }
+  if (text.slice(from).trim()) parts.push({ text: text.slice(from) });
+  return parts;
 }
 
 export type MessageRole = "user" | "assistant" | "event";

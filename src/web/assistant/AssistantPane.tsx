@@ -17,7 +17,7 @@ import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
 import { use_watch } from "@x-tech-laboratories/x-libs/web/react/watch";
 import { Send, Square } from "lucide-react";
 
-import { conversation_item_id, type AssistantStatus, type ConversationMessage, type ConversationSummary, type ToolCallRecord } from "../../shared/conversations/model.ts";
+import { conversation_item_id, reply_parts, type AssistantStatus, type ConversationMessage, type ConversationSummary, type ToolCallRecord } from "../../shared/conversations/model.ts";
 import type { Proposal } from "../../shared/policy/model.ts";
 import { attempt, calls, page, succeeds, use_data } from "../api.ts";
 import { add_to_contexts, delete_conversation, move_to_context, rename_conversation } from "../contexts/item_actions.tsx";
@@ -134,10 +134,9 @@ function Message({ message, decided }: { message: ConversationMessage; decided: 
   return (
     <div className="chat-message from-assistant">
       <Notices notices={message.notices} />
-      {message.tool_calls.map((call) => (
-        <ToolCallRow key={call.id} call={call} decided={call.proposal_id ? decided.get(call.proposal_id) : undefined} />
-      ))}
-      {message.text && <Markdown text={message.text} />}
+      {reply_parts(message.text, message.tool_calls).map((part, at) =>
+        "call" in part ? <ToolCallRow key={part.call.id} call={part.call} decided={part.call.proposal_id ? decided.get(part.call.proposal_id) : undefined} /> : <Markdown key={`text-${at}`} text={part.text} />,
+      )}
       {message.error && <ReplyError error={message.error} detail={message.error_detail} />}
       {message.engine && <p className="muted small">{[message.engine, message.model].filter(Boolean).join(" · ")}</p>}
     </div>
@@ -148,10 +147,9 @@ function Reply({ run }: { run: LiveRun }) {
   return (
     <div className="chat-message from-assistant" aria-live="polite" aria-busy={!run.finished}>
       <Notices notices={run.notices} />
-      {run.tool_calls.map((call) => (
-        <ToolCallRow key={call.id} call={call} />
-      ))}
-      {run.text && <Markdown text={run.text} follow />}
+      {reply_parts(run.text, run.tool_calls).map((part, at, parts) =>
+        "call" in part ? <ToolCallRow key={part.call.id} call={part.call} /> : <Markdown key={`text-${at}`} text={part.text} follow={at === parts.length - 1} />,
+      )}
       {run.reasoning ? <Thinking text={run.reasoning} /> : !run.text && <p className="muted small">Thinking…</p>}
     </div>
   );

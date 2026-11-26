@@ -4,7 +4,8 @@ import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { build_instructions } from "../src/shared/conversations/instructions.ts";
 import { add_message } from "../src/shared/conversations/messages.ts";
 import { title_from } from "../src/shared/conversations/records.ts";
-import { turns_of, wait_for_runs } from "../src/shared/conversations/run.ts";
+import { reply_parts, type ToolCallRecord } from "../src/shared/conversations/model.ts";
+import { placed_in, turns_of, wait_for_runs } from "../src/shared/conversations/run.ts";
 import { ContextOverflow, run_direct, type ChatCompletion, type ChatModel, type ChatRequest } from "../src/shared/engines/direct.ts";
 import { forget_calibrations, message_chars } from "../src/shared/engines/fitting.ts";
 import { listing_caps } from "../src/shared/conversations/instructions.ts";
@@ -61,7 +62,9 @@ describe("a conversation", () => {
     ]);
     const answer = conversation.messages[1]!;
     expect(answer).toMatchObject({ input_tokens: 100, output_tokens: 20, error: "" });
-    expect(answer.tool_calls).toEqual([{ id: "t1", name: "list_contexts", arguments: {}, result: expect.stringContaining("Kitchen"), is_error: false, outcome: "ran" }]);
+    // The call is kept where it was made: after "Looking", before " at it."
+    expect(answer.tool_calls).toEqual([{ id: "t1", name: "list_contexts", arguments: {}, result: expect.stringContaining("Kitchen"), is_error: false, outcome: "ran", text_at: 7 }]);
+    expect(reply_parts(answer.text, answer.tool_calls).map((part) => ("call" in part ? part.call.id : part.text))).toEqual(["Looking", "t1", " at it."]);
     expect(fixture.events.map((event) => event.type)).toEqual(["started", "text", "tool_call", "tool_result", "text", "finished"]);
     expect(fixture.events.every((event) => event.run_id === run_id && event.conversation_id === conversation_id)).toBe(true);
     expect(fixture.requests[0]!.conversation).toEqual([{ role: "user", text: "What is here?" }]);
@@ -196,7 +199,7 @@ describe("a conversation", () => {
 
   it("refuses an empty message, an unknown context or conversation, and sending with no engine set up, keeping nothing", async () => {
     const fixture = start_fixture({ choose_engine: false });
-    await expect(fixture.calls.send_message(null, "Hi")).rejects.toThrow("No engine is set up; choose one under Settings → Engine.");
+    await expect(fixture.calls.send_message(null, "Hi")).rejects.toThrow("No engine is set up; choose one under Settings → Assistant → Engine.");
     fixture.calls.set_setting("engine", "gone");
     await expect(fixture.calls.send_message(null, "Hi")).rejects.toThrow("The gone engine is not running");
     fixture.calls.set_setting("engine", "fake");
@@ -210,7 +213,7 @@ describe("a conversation", () => {
   it("says which engine answers, and why none does", async () => {
     const fixture = start_fixture({ choose_engine: false });
     const none = await fixture.calls.get_assistant_status();
-    expect(none).toEqual({ engine: null, problem: "No engine is set up; choose one under Settings → Engine.", engines: [{ id: "fake", plugin_id: "tests.fake-engine", label: "Fake", model: "fake-model", is_local: true }] });
+    expect(none).toEqual({ engine: null, problem: "No engine is set up; choose one under Settings → Assistant → Engine.", engines: [{ id: "fake", plugin_id: "tests.fake-engine", label: "Fake", model: "fake-model", is_local: true }] });
     fixture.calls.set_setting("engine", "fake");
     expect(await fixture.calls.get_assistant_status()).toMatchObject({ engine: { id: "fake", label: "Fake", model: "fake-model" }, problem: "" });
   });
@@ -457,5 +460,23 @@ describe("what the engine is told", () => {
     for (const hidden of ["get_settings", "set_setting", "export_contexts", "import_contexts", "restore_item_version", "send_message", "list_conversations", "get_conversation", "rename_conversation", "delete_conversation", "stop_reply", "set_action_level", "resolve_proposal", "set_card_places"]) {
       expect(offered).not.toContain(hidden);
     }
+  });
+});
+
+describe("where a reply's tool calls show", () => {
+  const call = (id: string, text_at?: number): ToolCallRecord => ({ id, name: "get_context", arguments: {}, result: "", is_error: false, outcome: "ran", ...(text_at === undefined ? {} : { text_at }) });
+  const read = (text: string, calls: ToolCallRecord[]) => reply_parts(text, calls).map((part) => ("call" in part ? `[${part.call.id}]` : part.text));
+
+  it("cuts the text where each call was made, keeping calls made at one place in order", () => {
+    expect(read("First. Then more.", [call("a", 6), call("b", 6), call("c", 17)])).toEqual(["First.", "[a]", "[b]", " Then more.", "[c]"]);
+    expect(read("", [call("a", 0)])).toEqual(["[a]"]);
+  });
+
+  it("shows calls kept before their place was recorded ahead of the text, and keeps places inside the text", () => {
+    expect(read("Answer.", [call("old"), call("far", 99)])).toEqual(["[old]", "Answer.", "[far]"]);
+  });
+
+  it("moves each place back by the spaces the kept text lost at its start", () => {
+    expect(placed_in("  Hello there", "Hello there", [call("a", 7), call("b", 0), call("old")]).map((each) => each.text_at)).toEqual([5, 0, undefined]);
   });
 });

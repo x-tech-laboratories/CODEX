@@ -1,9 +1,10 @@
-// How each kind of item looks: its icon and its plain name, such as a tick for a task.
+// How each kind of item looks: its icon and its plain name, such as a clipboard for a task; and a task's row icon, an
+// empty circle while open and a ticked one once done, so the kind's icon is never taken for done.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { Mail, MessageSquare } from "lucide-react";
-import { CheckIcon, FileIcon, FolderIcon, LinkIcon, NotesIcon, type IconGlyph } from "@x-tech-laboratories/x-libs/web/react/icons";
+import { Circle, CircleCheckBig, ClipboardList, Mail, MessageSquare } from "lucide-react";
+import { FileIcon, FolderIcon, LinkIcon, NotesIcon, type IconGlyph } from "@x-tech-laboratories/x-libs/web/react/icons";
 
 // ── Kinds ────────────────────────────────────────────────────────────────────
 
@@ -16,7 +17,7 @@ interface KindLook {
 }
 
 const looks: Record<string, KindLook> = {
-  task: { icon: CheckIcon, singular: "Task", plural: "Tasks" },
+  task: { icon: ClipboardList, singular: "Task", plural: "Tasks" },
   note: { icon: NotesIcon, singular: "Note", plural: "Notes" },
   email: { icon: Mail, singular: "Email", plural: "Emails" },
   file: { icon: FileIcon, singular: "File", plural: "Files" },
@@ -31,4 +32,11 @@ export const kind_order = ["task", "note", "email", "file", "folder", "link", "c
 export function look_of(kind: string): KindLook {
   const name = kind.charAt(0).toUpperCase() + kind.slice(1);
   return looks[kind] ?? { icon: FileIcon, singular: name, plural: name };
+}
+
+// The icon leading an item's row: a task's says whether it is done, with words for a screen reader; any other kind's
+// is its kind's.
+export function row_icon(kind: string, status: string): { icon: IconGlyph; label?: string; class_name?: string } {
+  if (kind !== "task") return { icon: look_of(kind).icon };
+  return status === "done" ? { icon: CircleCheckBig, label: "Done task", class_name: "tone-good" } : { icon: Circle, label: "Open task", class_name: "muted" };
 }

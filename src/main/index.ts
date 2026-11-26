@@ -16,7 +16,7 @@ import { certificate_method_names } from "@x-tech-laboratories/x-libs/certificat
 import { local_mcp_method_names } from "@x-tech-laboratories/x-libs/local_mcp_protocol";
 
 import { certificate_bridge, desktop_bridge, device_bridge, context_bridge, context_events, local_mcp_bridge } from "../shared/bridge.ts";
-import { starts_hidden, type DesktopMethods, type DesktopSettings } from "../shared/desktop.ts";
+import { first_window_size, starts_hidden, type DesktopMethods, type DesktopSettings } from "../shared/desktop.ts";
 import { route_of_link } from "../shared/links.ts";
 import { conversation_event, device_method_names, is_read_only } from "../shared/page_api.ts";
 import type { ContextSummary } from "../shared/contexts/model.ts";
@@ -133,7 +133,7 @@ function open_window(): BrowserWindow {
     icon: icon_path,
     // electron-vite emits an ESM preload as .mjs; loading .js here silently yields no bridge.
     preload: join(import.meta.dirname, "../preload/index.mjs"),
-    default_size: { width: 1100, height: 760 },
+    default_size: first_window_size(screen.getPrimaryDisplay().workAreaSize),
     min_size: { width: 360, height: 480 },
     native_theme: nativeTheme,
     shell,

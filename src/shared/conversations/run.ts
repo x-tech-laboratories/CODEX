@@ -19,6 +19,7 @@ import { sources_named, summarize_call } from "../policy/summaries.ts";
 import { screen_result } from "../privacy/results.ts";
 import { counts_of, local_screen, may_send, note_source, open_screen, taints, withheld_line, type Screen } from "../privacy/screen.ts";
 import { record_hosted_send } from "../privacy/store.ts";
+import { default_hits } from "../search/search.ts";
 import { settings_feature } from "../settings.ts";
 import { reply_ended, reply_started } from "./activity.ts";
 import { assistant_host, type AssistantHost } from "./host.ts";
@@ -36,7 +37,7 @@ export async function find_engine(database: SqlDatabase): Promise<AssistantStatu
   const engines: EngineSummary[] = provided.map(({ id, plugin_id, value }) => ({ id, plugin_id, label: value.label, model: value.model(), is_local: !is_hosted(value) }));
   const found = provided.find((each) => each.id === chosen);
   if (found) return { engine: engines.find((each) => each.id === chosen)!, problem: "", engines, running: found.value };
-  const problem = chosen ? `The ${chosen} engine is not running; turn its plugin on under Settings → Plugins.` : "No engine is set up; choose one under Settings → Engine.";
+  const problem = chosen ? `The ${chosen} engine is not running; turn its plugin on under Settings → Assistant → Engine.` : "No engine is set up; choose one under Settings → Assistant → Engine.";
   return { engine: null, problem, engines, running: null };
 }
 
@@ -100,7 +101,9 @@ export function engine_tools(context: ToolContext): EngineTools {
   // Other apps' text is screened by source: a hosted engine is not sent what it may not see, and only a source not
   // marked trusted makes the run's later changes wait; what is left is fenced either way.
   const run = async (name: string, args: unknown[]): Promise<string> => {
-    const value = await context.call(name, args);
+    // A search leaves out this conversation's own messages, the user's question among them.
+    const given = name === "search_index" ? [args[0], args[1] ?? null, args[2] ?? default_hits, context.conversation_id] : args;
+    const value = await context.call(name, given);
     if (!brings_outside_content(name)) return as_text(value);
     const screened = screen_result(context.database(), screen, name, args, value);
     if (taints(screen, screened.sources)) context.has_outside_content = true;
@@ -277,7 +280,13 @@ export async function start_run(database: SqlDatabase, context_id: string | null
 function note_decision(run: Run, name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id">): void {
   const call = run.state.tool_calls.find((each) => each.name === name && each.outcome === "pending");
   if (call) Object.assign(call, record);
-  else run.state.tool_calls.push({ id: `codex_${run.state.tool_calls.length + 1}`, name, arguments: {}, result: "", is_error: false, ...record });
+  else run.state.tool_calls.push({ id: `codex_${run.state.tool_calls.length + 1}`, name, arguments: {}, result: "", is_error: false, text_at: run.state.text.length, ...record });
+}
+
+// Each call's place in the text as kept, which loses the streamed text's leading spaces.
+export function placed_in(streamed: string, kept: string, calls: ToolCallRecord[]): ToolCallRecord[] {
+  const lead = streamed.length - streamed.trimStart().length;
+  return calls.map((call) => (call.text_at === undefined ? call : { ...call, text_at: Math.max(0, Math.min(kept.length, call.text_at - lead)) }));
 }
 
 async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: AssistantHost): Promise<void> {
@@ -303,7 +312,7 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
         state.notices.push(event.text);
         host.emit({ ...base, type: "notice", text: event.text });
       } else if (event.type === "tool_call") {
-        const call: ToolCallRecord = { id: event.id, name: event.name, arguments: event.arguments, result: "", is_error: false, outcome: "pending" };
+        const call: ToolCallRecord = { id: event.id, name: event.name, arguments: event.arguments, result: "", is_error: false, outcome: "pending", text_at: state.text.length };
         state.tool_calls.push(call);
         host.emit({ ...base, type: "tool_call", call: { ...call } });
       } else if (event.type === "tool_result") {
@@ -344,13 +353,14 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
   try {
     // A conversation deleted while its reply was written, on its own or with its last context, keeps nothing.
     if (!has_conversation(host.database(), conversation_id)) return;
+    const text = (final_text ?? state.text).trim();
     add_message(host.database(), {
       conversation_id,
       role: "assistant",
-      text: (final_text ?? state.text).trim(),
+      text,
       engine: state.engine,
       model: state.model,
-      tool_calls: state.tool_calls,
+      tool_calls: placed_in(state.text, text, state.tool_calls),
       error,
       error_detail,
       notices: state.notices,

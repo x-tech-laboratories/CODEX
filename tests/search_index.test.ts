@@ -34,6 +34,8 @@ interface FakeEmbedder {
   calls: string[][];
   model: { name: string };
   set_failing: (failing: boolean) => void;
+  // Runs before each call is answered, such as to hold it until the test lets it go.
+  before: { run?: (texts: string[]) => Promise<void> };
 }
 
 // An embedder plugin, provided as "fake-embedder", that counts what it was sent.
@@ -41,6 +43,7 @@ function fake_embedder(options: { hosted?: boolean } = {}): FakeEmbedder {
   const calls: string[][] = [];
   const model = { name: "words-1" };
   let failing = false;
+  const before: FakeEmbedder["before"] = {};
   const plugin = define_plugin<ContextPluginApi>({
     id: "tests.fake-embedder",
     name: "Fake embedder",
@@ -53,12 +56,13 @@ function fake_embedder(options: { hosted?: boolean } = {}): FakeEmbedder {
         is_local: () => options.hosted !== true,
         embed: async (texts) => {
           if (failing) throw new Error("the model is away");
+          await before.run?.(texts);
           calls.push(texts);
           return texts.map((text) => word_vector(text, 512));
         },
       }),
   });
-  return { plugin, calls, model, set_failing: (on) => (failing = on) };
+  return { plugin, calls, model, set_failing: (on) => (failing = on), before };
 }
 
 interface FakeNotes {
@@ -281,6 +285,43 @@ describe("indexing", () => {
     expect((await setup.fixture.calls.search_index("tyres")).map((hit) => hit.title)).toEqual(["Garage visit"]);
   });
 
+  it("clears a stale error as soon as a later attempt embeds, before the pass ends", async () => {
+    const setup = set_up();
+    seed(setup);
+    for (let at = 0; at < 20; at++) setup.fixture.calls.add_context(`Room ${at}`);
+    setup.embedder.set_failing(true);
+    await index_now();
+    expect((await setup.fixture.calls.get_index_state()).last_error).toBe("the model is away");
+
+    setup.embedder.set_failing(false);
+    const seen: string[] = [];
+    setup.embedder.before.run = async () => void seen.push((await setup.fixture.calls.get_index_state()).last_error);
+    await index_now();
+
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.slice(0, 2)).toEqual(["the model is away", ""]);
+    expect((await setup.fixture.calls.get_index_state())).toMatchObject({ last_error: "", pending: 0 });
+  });
+
+  it("ends the embedding in hand when the embedder's settings change, and goes round again with the new ones", async () => {
+    const setup = set_up();
+    seed(setup);
+    for (let at = 0; at < 20; at++) setup.fixture.calls.add_context(`Room ${at}`);
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    setup.embedder.before.run = () => held;
+    const pass = index_now();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    setup.fixture.calls.set_setting("embedder", "");
+    release();
+    await pass;
+    await settle_index();
+
+    expect(setup.embedder.calls).toHaveLength(1);
+    expect(await setup.fixture.calls.get_index_state()).toMatchObject({ embedder: null, last_error: "" });
+  });
+
   it("waits while a reply is being written before calling the embedder", async () => {
     const setup = set_up();
     seed(setup);
@@ -377,6 +418,30 @@ describe("searching", () => {
     expect(await ids("tiles", home)).toEqual([kitchen]);
     expect((await ids("the", null, 1)).length).toBe(1);
     await expect(setup.fixture.calls.search_index("x", "nowhere")).rejects.toThrow("There is no context nowhere.");
+  });
+
+  it("ranks items and contexts ahead of messages scoring close, and leaves out the asking conversation's messages for an engine", async () => {
+    const setup = set_up({ with_embedder: false });
+    const { kitchen } = seed(setup);
+    const asking = add_message(setup.fixture.database, { conversation_id: "asking", role: "user", text: "Where are the tiles?", sources: [] });
+    const other = add_message(setup.fixture.database, { conversation_id: "other", role: "assistant", text: "The tiles came on Monday.", sources: [] });
+    await index_now();
+
+    const found = await setup.fixture.calls.search_index("tiles");
+    expect(found[0]).toMatchObject({ kind: "context", id: kitchen });
+    expect(found.filter((hit) => hit.kind === "message").map((hit) => hit.id).sort()).toEqual([asking.id, other.id].sort());
+
+    const context: ToolContext = {
+      database: () => setup.fixture.database,
+      call: async (method, args) => (setup.fixture.calls as unknown as Record<string, (...args: unknown[]) => unknown>)[method]!(...args),
+      conversation_id: "asking",
+      presence: "conversation",
+      has_outside_content: false,
+    };
+    const answer = await engine_tools(context).call("search_index", { query: "tiles" });
+    expect(answer.result).toContain(other.id);
+    expect(answer.result).not.toContain(asking.id);
+    expect(answer.result).not.toContain("Where are the tiles?");
   });
 
   it("searches by words alone when the embedder cannot read the query", async () => {

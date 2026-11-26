@@ -15,7 +15,8 @@ engines and the action policy are back; the Inbox, background queue and knowledg
 code sits in [`legacy/`](legacy/README.md), where nothing builds or tests it.
 
 - **Contexts** nest, so Home holds Kitchen and Garden. Each has notes in Markdown and its items grouped by kind, each
-  with a note on why it is there and the other contexts that hold it too. **Move to…** and **Also add to…** on any
+  with a note on why it is there and the other contexts that hold it too; a task shows an empty circle while open and a
+  ticked one once done. **Move to…** and **Also add to…** on any
   item's menu move it to another context or put it in more; the conversations with the assistant are items too.
 - **Collectors** are plugins that bring items from other apps. Each searches its app, or takes items typed in by hand,
   or is sent items from elsewhere, and says what became of them: a refresh keeps new titles and states, and marks
@@ -34,8 +35,18 @@ and Markdown files up to 256 KB, an X-Tasks task's notes, a Trilium text or code
 and the conversations. It finds by words at once. To find by meaning too, run an embedding model, such as Ollama's
 (`ollama pull nomic-embed-text`), and under **Settings → Index** pick **OpenAI-compatible embeddings** as the
 embedder; its row holds the endpoint (`http://localhost:11434/v1` unless changed), the model, its dimensions (768 for
-nomic-embed-text) and an optional API key command. Embedding runs in the background and waits while the assistant
-writes a reply. A hosted embedder is never sent text from a source not marked **May be sent to a hosted engine**.
+nomic-embed-text), an optional query prefix and an optional API key command. Some models, such as Qwen3-Embedding,
+want an instruction before a search but not before what is searched; give it as the **Query prefix**, writing `\n`
+for a new line (`Instruct: Given a search query, retrieve relevant notes and tasks\nQuery: `). Changing it embeds
+nothing again. Embedding runs in the background and waits while the assistant writes a reply. A hosted embedder is
+never sent text from a source not marked **May be sent to a hosted engine**. Settings → Index shows the last error
+until a later attempt gets past it, and a change to the embedder's settings is tried at once.
+
+A document counts as found by meaning only when it stands out from how near everything else is to the same search,
+since every model rates unrelated text somewhat near and each on its own scale: a search whose best match does not
+stand clearly above the rest finds nothing by meaning, and words alone answer it. Items, contexts and entities rank
+ahead of messages that score about the same; the first page gathers a conversation's matching messages under the
+conversation, and the assistant's own search never finds the conversation it is answering in.
 
 The index is a file of its own (`codex-index.db` in the desktop app's profile, `<database>-index.db` beside the
 server's), never synced and never in backups. It is safe to delete, and **Rebuild** builds it again from nothing.
@@ -83,8 +94,9 @@ conversation out of the last context holding it deletes it, after asking; deleti
 no other context holds.
 
 Its face sleeps until an engine is set up, thinks while it writes, and smiles or frowns for a moment when a reply ends.
-Enter sends, Shift+Enter starts a new line, and **Stop** ends a reply early. Each tool call it made folds open to show
-its arguments and what came back. While a reasoning model thinks, a folded **Thinking…** row opens to show its thinking
+Enter sends, Shift+Enter starts a new line, and **Stop** ends a reply early. Each tool call it made shows where in the reply it
+was made, and folds open to show its arguments and what came back. Wide tables and code in a reply scroll sideways on
+their own. While a reasoning model thinks, a folded **Thinking…** row opens to show its thinking
 as it streams; the answer replaces it, and the thinking is never kept. When a reply fails, the pane says what happened
 and what to do in plain words, with the raw message folded under **Details**.
 
@@ -225,6 +237,7 @@ The admins are read from the accounts file `CODEX_PASSWORD_HASH_FILE` names, one
 
 The desktop app runs as two processes: a daemon that holds the data and does the work, and the window that shows it.
 The daemon keeps `codex.db` in the app's profile folder and serves the window on `$XDG_RUNTIME_DIR/codex/daemon.sock`.
+The window first opens over most of the screen and then keeps the size and place you leave it at.
 Closing the window leaves sync, backups, refreshing and the MCP server running. A tray icon lists the top-level
 contexts to open and brings the window back; **Quit completely** there or under **Settings → Desktop** stops the
 daemon too. The daemon tells you with a desktop notification when a refresh finds items gone from their apps. The app

@@ -28,7 +28,7 @@ import { context_href, context_menu } from "./actions.tsx";
 import { add_item_dialog } from "./AddItemDialog.tsx";
 import { follow_dialog, report_text } from "./FeedDialogs.tsx";
 import { add_to_contexts, move_to_context, remove_from_context, rename_conversation } from "./item_actions.tsx";
-import { kind_order, look_of } from "./kinds.tsx";
+import { kind_order, look_of, row_icon } from "./kinds.tsx";
 
 // ── Notes ────────────────────────────────────────────────────────────────────
 
@@ -216,10 +216,15 @@ function ItemActions({ context_id, item }: { context_id: string; item: ContextIt
   );
 }
 
+function RowIcon({ kind, status }: { kind: string; status: string }) {
+  const { icon, label, class_name } = row_icon(kind, status);
+  return <Icon icon={icon} {...(label ? { label } : {})} {...(class_name ? { className: class_name } : {})} />;
+}
+
 function ItemRow({ context_id, item }: { context_id: string; item: ContextItem }) {
   return (
     <li className={item.status === "missing" ? "item-row is-missing" : "item-row"} onContextMenu={(event) => open_context_menu(event, item_menu(context_id, item))}>
-      <Icon icon={look_of(item.kind).icon} />
+      <RowIcon kind={item.kind} status={item.status} />
       <ItemText context_id={context_id} item={item} />
       <ItemActions context_id={context_id} item={item} />
     </li>
