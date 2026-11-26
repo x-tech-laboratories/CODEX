@@ -116,9 +116,9 @@ Each request is a standalone run today; a follow-up such as "and the one before 
 
 ## How far apart from the harness?
 
-### Mail, events and the Inbox in a store of CODEX's own
+### Decided: CODEX owns its store, and mail leaves
 
-The engine is pluggable, but the event queue, the Inbox (`actions`) and the mail tables still live in SmartHarness's knowledge store, and resolving an Inbox item writes its mail outcome in the same transaction. Moving the mail tables alone would split that transaction across two databases, so they would move together with the queue and the Inbox, with a migration of existing databases. Open: whether that is worth it while every engine shares the knowledge store anyway, and whether a store without SmartHarness (a direct engine with no research) is wanted at all.
+Decided 2026-11-26 (doc 4): the knowledge graph, the event queue, the Inbox and the conversations move to a store of CODEX's own when X-Context's code comes in, and SmartHarness keeps a store only for itself. The mail tables do not move: mail goes to an application of its own that CODEX reads over MCP, so the mail code here is frozen until then.
 
 ## Other proposals
 
