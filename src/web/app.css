@@ -500,3 +500,12 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.mascot-button {
+  display: block;
+}
+
+.mood-note {
+  max-width: 18rem;
+  margin: 0;
+}
