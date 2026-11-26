@@ -29,10 +29,11 @@ import { settings_feature } from "./settings.ts";
 import { item_sources_setting } from "./sources/model.ts";
 import { hide_tokens, keep_tokens } from "./sources/records.ts";
 import { sources_feature } from "./sources/store.ts";
+import { tools_feature } from "./tools/store.ts";
 
 // ── Features ─────────────────────────────────────────────────────────────────
 
-export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature, jobs_feature, inbox_feature];
+export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature, jobs_feature, inbox_feature, tools_feature];
 
 export const sync_engine = create_sync_engine({ tables: features.flatMap((feature) => feature.tables), after_apply: forget_synced_changes });
 
@@ -73,7 +74,8 @@ const all_methods = {
     typeof sources_feature.methods &
     typeof blueprints_feature.methods &
     typeof jobs_feature.methods &
-    typeof inbox_feature.methods),
+    typeof inbox_feature.methods &
+    typeof tools_feature.methods),
   // Every setting, the ones never set at their defaults, with plugin keys and apps' tokens hidden from the page and other programs.
   get_settings: (database: SqlDatabase): Record<string, unknown> => {
     const settings: Record<string, unknown> = { ...setting_defaults, ...settings_feature.methods.get_settings(database) };

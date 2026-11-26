@@ -59,14 +59,14 @@ function history_section(settings: Record<string, unknown>, set_setting: (key: s
 const collectors_section: SettingsSection = {
   id: "plugins",
   heading: "Plugins",
-  hint: "Collectors bring items from other apps. Each keeps only a pointer and what it last saw; the item stays in its own app. Each also says whether its items may be sent to a hosted engine, and whether they are trusted.",
+  hint: "Collectors bring items from other apps. Each keeps only a pointer and what it last saw; the item stays in its own app. Each also says whether its items may be sent to a hosted engine, and whether they are trusted. Tool plugins, such as Web, give the assistant tools beside CODEX's own, each turned on or off on its own.",
   content: <CollectorRows />,
 };
 
 // ── Import and export ────────────────────────────────────────────────────────
 
 // The settings an imported file may set; anything else in it is ignored.
-const importable_settings = new Set(["refresh_minutes", "history.keep_days", "plugins", "engine", "action_policy", "source_marks", "hosted_log.keep_days", "embedder", "item_sources"]);
+const importable_settings = new Set(["refresh_minutes", "history.keep_days", "plugins", "engine", "action_policy", "source_marks", "hosted_log.keep_days", "embedder", "item_sources", "tool_plugins"]);
 
 function TransferRows() {
   const contexts_picker = useRef<HTMLInputElement>(null);

@@ -9,6 +9,7 @@ import { Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 import type { PolicyEntry, PolicyLevel } from "../../shared/policy/model.ts";
 import { attempt, calls, set_setting, use_data } from "../api.ts";
 import { EngineRows } from "../plugins.tsx";
+import { PluginToolLevels } from "../tools/ToolSettings.tsx";
 
 // ── Engine ───────────────────────────────────────────────────────────────────
 
@@ -91,12 +92,17 @@ function PolicyRow({ entry }: { entry: PolicyEntry }) {
 
 function PolicyRows() {
   const policy = use_data((api) => api.get_action_policy());
-  return <Loaded resource={policy}>{(entries) => entries.map((entry) => <PolicyRow key={entry.method} entry={entry} />)}</Loaded>;
+  return (
+    <>
+      <Loaded resource={policy}>{(entries) => entries.map((entry) => <PolicyRow key={entry.method} entry={entry} />)}</Loaded>
+      <PluginToolLevels />
+    </>
+  );
 }
 
 export const policy_section: SettingsSection = {
   id: "action-policy",
   heading: "Action policy",
-  hint: "How freely the assistant may make each kind of change. Ask me first keeps the change in the conversation until you approve it. Once a reply has read text from another app, such as a search or an item's title, every change it asks for waits for you, whatever its level.",
+  hint: "How freely the assistant may make each kind of change. Ask me first keeps the change in the conversation until you approve it. Once a reply has read text from another app, such as a search or an item's title, every change it asks for waits for you, whatever its level. Tools from plugins that change something are listed after CODEX's own; one that only reads runs at once.",
   content: <PolicyRows />,
 };

@@ -45,4 +45,12 @@ export interface HostedSend {
   withheld: SourceCount[];
   item_count: number;
   sent_at: string;
+  // A reply written by a hosted engine, or one use of a plugin tool that sends its arguments outside this machine.
+  kind: HostedSendKind;
+  // For a tool's use: the tool by its plugin's label and its own name, and how many arguments of how many characters it sent.
+  tool: string;
+  argument_count: number;
+  argument_chars: number;
 }
+
+export type HostedSendKind = "reply" | "tool";

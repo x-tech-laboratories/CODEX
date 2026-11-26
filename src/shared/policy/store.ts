@@ -14,6 +14,10 @@ import { assistant_host } from "../conversations/host.ts";
 import { add_message, list_messages, message_of, update_tool_call, type NewMessage } from "../conversations/messages.ts";
 import { has_conversation } from "../conversations/records.ts";
 import { define_feature } from "../feature.ts";
+import { record_tool_send } from "../privacy/store.ts";
+import { untrusted_block } from "../engines/untrusted.ts";
+import { is_plugin_tool_name, tool_source_of } from "../tools/model.ts";
+import { find_plugin_tool, run_tool } from "../tools/offered.ts";
 import { settings_feature } from "../settings.ts";
 import { migrations } from "./migrations/index.ts";
 import { default_level, is_policy_level, policy_levels, type PolicyEntry, type PolicyLevel, type Proposal, type ProposalStatus } from "./model.ts";
@@ -50,6 +54,23 @@ function add_event(database: SqlDatabase, event: NewMessage): void {
   if (has_conversation(database, event.conversation_id)) add_message(database, event);
 }
 
+function own_spec(method: string) {
+  const spec = offered_api[method];
+  if (!spec) throw new Error(`${method} is no longer offered.`);
+  return spec;
+}
+
+// A plugin tool the user approved runs with the arguments they saw, logged when it sends them outside; what it answers
+// is fenced, as the engine reads it in the event.
+async function approved_plugin_tool(database: SqlDatabase, proposal: Proposal): Promise<{ result: string; source: string }> {
+  const tool = await find_plugin_tool(database, proposal.method);
+  if (!tool) throw new Error(`${proposal.method} is no longer offered; its plugin or the tool is turned off.`);
+  if (tool.tool.sends_outside) {
+    record_tool_send(database, { run_id: proposal.evidence.run_id, conversation_id: proposal.conversation_id, engine: "Approved by you", model: "", tool: `${tool.label}: ${tool.tool.name}`, args: proposal.arguments });
+  }
+  return { result: untrusted_block(as_text(await run_tool(tool, proposal.arguments, new AbortController().signal))), source: tool_source_of(tool.key) };
+}
+
 // Approving runs the call as the user's own and records its result; rejecting records that it was not made.
 async function resolve_proposal(database: SqlDatabase, id: string, decision: "approve" | "reject"): Promise<Proposal> {
   const proposal = proposal_of(database, id);
@@ -65,11 +86,10 @@ async function resolve_proposal(database: SqlDatabase, id: string, decision: "ap
   // Marked first, so a second approval while this one runs is refused.
   settle_proposal(database, id, "approved", "");
   try {
-    const spec = offered_api[proposal.method];
-    if (!spec) throw new Error(`${proposal.method} is no longer offered.`);
     // Noted as it is made, so the user can undo it from the conversation.
     const mark = mark_before_change(host.database());
-    const result = as_text(await host.call(proposal.method, positional_args(spec, proposal.arguments)));
+    const plugin = is_plugin_tool_name(proposal.method) ? await approved_plugin_tool(host.database(), proposal) : null;
+    const result = plugin ? plugin.result : as_text(await host.call(proposal.method, positional_args(own_spec(proposal.method), proposal.arguments)));
     const undo = undo_of_change(host.database(), mark, proposal.summary);
     settle_proposal(host.database(), id, "approved", result);
     add_event(host.database(), {
@@ -77,7 +97,8 @@ async function resolve_proposal(database: SqlDatabase, id: string, decision: "ap
       role: "event",
       text: `Approved and done: ${proposal.summary}`,
       tool_calls: [{ ...call_record, result, is_error: false, outcome: "ran", applied_by: "user_approval", undo }],
-      sources: proposal.sources,
+      // A plugin tool's answer counts as its plugin's content, so a later run replayed this event reads it again.
+      sources: plugin ? [...new Set([...proposal.sources, plugin.source])].sort() : proposal.sources,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

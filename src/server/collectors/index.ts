@@ -1,5 +1,5 @@
 // Every plugin where the store runs on Node, the server or the desktop daemon: the bundled collectors, Files among
-// them, the bundled engines and embedder, Firefox bookmarks on the desktop alone, and any from the plugins folder.
+// them, the bundled engines, embedder and tool plugins, Firefox bookmarks on the desktop alone, and any from the plugins folder.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -8,13 +8,14 @@ import { load_plugin_folder } from "@x-tech-laboratories/x-libs/plugin_folder";
 import { network_plugins } from "../../shared/collectors/bundled.ts";
 import { embedder_plugins } from "../embedders/openai.ts";
 import { engine_plugins } from "../engines/index.ts";
+import { tool_plugins } from "../tools/web.ts";
 import { use_plugins, type ContextPlugin, type ContextPluginApi } from "../../shared/collectors/host.ts";
 import { bookmarks_plugin } from "./bookmarks.ts";
 import { files_plugin } from "./files.ts";
 
 // ── Plugins ──────────────────────────────────────────────────────────────────
 
-export const bundled_plugins: ContextPlugin[] = [files_plugin, ...network_plugins, ...engine_plugins, ...embedder_plugins];
+export const bundled_plugins: ContextPlugin[] = [files_plugin, ...network_plugins, ...engine_plugins, ...embedder_plugins, ...tool_plugins];
 
 // The ones that read what only the user's own computer has, such as Firefox's profile.
 export const desktop_plugins: ContextPlugin[] = [bookmarks_plugin];
