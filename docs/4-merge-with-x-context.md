@@ -30,6 +30,13 @@ the conversations no other context holds.*
    - **CODEX's own calls** (contexts, items, links, jobs, blueprints).
    - **The sources' MCP servers.**
    - **Tool plugins:** prebuilt tools installed like any other plugin, beside collector and engine plugins.
+     *Built 2026-11-27 (`src/shared/tools/`, described in doc 1): a `tools` provider whose tools are offered beside
+     CODEX's calls through the same wrapper, under the action policy (a change at `proposal` until set, set in Settings
+     → Action policy), fenced and lowering the run unless the plugin is marked "Trusted content". A tool that sends its
+     arguments outside is refused once the run has had a source not marked for hosted engines in front of it, unless
+     the plugin is marked "May be used after reading private sources", and each use is in the hosted log. Each tool can
+     be turned off, and the core set takes one only when the user ticks it. The bundled Web plugin reads public pages
+     behind an address guard and searches a SearXNG instance the user names.*
    - **Tools the engine writes:** a script saved by proposal, read by the user before its first use, and run in a sandbox where it can call only CODEX's tools.
 6. **Sources are other apps' MCP servers,** chosen during setup, each marked for whether its content may be sent to a hosted engine. The X-apps follow one shared convention for this (proposed for the Application Standard), so one collector reads them all.
    *Built 2026-11-26: the convention is the Application Standard's four item calls, and one collector reads every app
@@ -190,6 +197,11 @@ cosine, and a job's conversation is no longer the pane's default):
   Suggest links in its new shape (its graph in the instructions, four tools, six rounds) has not been run on a real
   model.
 - The Claude-subscription engine and the SmartHarness engine are not built.
+- Engine-written tools (decision 5's fourth place) are not built. No real model has used a plugin tool: a scripted fake
+  engine has, in tests and in the desktop app.
+- A tool plugin's results are not screened from hosted engines: they reach the engine that asked as they came, and a
+  later reply may replay them to any engine. A tool whose results are private would need a mark like a source's
+  "May be sent to a hosted engine".
 - No hosted model has been tried. A local 4B reasoning model (llama.cpp's server, 8,192 tokens of context, on a CPU)
   answered end to end on 2026-11-26, and again after the first fixes: tool calls, proposals, trusted sources and
   stopping worked. What the second run found (requests settling far under the context, a huge message costing every
