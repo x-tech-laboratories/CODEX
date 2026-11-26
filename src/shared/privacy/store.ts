@@ -10,6 +10,7 @@ import { text } from "../api_schemas.ts";
 import { open_plugin_host } from "../collectors/host.ts";
 import { blueprints_plugin_id } from "../blueprints/collector.ts";
 import { conversations_plugin_id } from "../conversations/collector.ts";
+import { findings_plugin_id } from "../interests/collector.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { settings_feature } from "../settings.ts";
 import { migrations } from "./migrations/index.ts";
@@ -27,7 +28,7 @@ async function list_source_marks(database: SqlDatabase): Promise<SourceMarkEntry
   // A collector marked on its own, such as each app the item calls read, is an entry of its own, named by its label.
   const by_key = new Map<string, { name: string; collectors: string[] }>();
   for (const collector of host.providers("collector")) {
-    if (collector.plugin_id === conversations_plugin_id || collector.plugin_id === blueprints_plugin_id) continue;
+    if (collector.plugin_id === conversations_plugin_id || collector.plugin_id === blueprints_plugin_id || collector.plugin_id === findings_plugin_id) continue;
     const key = mark_key_of(collector);
     const name = collector.value.marked_alone ? collector.value.label : (names.get(collector.plugin_id) ?? collector.plugin_id);
     by_key.set(key, { name, collectors: [...(by_key.get(key)?.collectors ?? []), collector.id] });

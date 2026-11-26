@@ -12,7 +12,7 @@ import { blueprint_collector } from "../blueprints/model.ts";
 import { contexts_feature } from "../contexts/store.ts";
 import type { ContextItem } from "../contexts/model.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
-import { local_screen, may_send, screen_entries, withheld_line, type Screen, type Screened } from "../privacy/screen.ts";
+import { item_sources, local_screen, may_send, screen_sourced, withheld_line, type Screen, type Screened } from "../privacy/screen.ts";
 import { conversation_collector, conversation_of_item } from "./model.ts";
 import { conversation_row } from "./records.ts";
 
@@ -77,9 +77,11 @@ function context_part(database: SqlDatabase, context_id: string, conversation_id
   // Blueprints are recalled on their own when they match, so they are not listed here.
   const held = context.items.filter((item) => item.collector !== conversation_collector && item.collector !== blueprint_collector);
   const others = context.items.filter((item) => item.collector === conversation_collector && conversation_of_item(item.id) !== conversation_id && item.status !== "missing");
-  // The newest items it may be sent, as many as the caps allow, and every one withheld, counted.
-  const chosen = new Set(capped(held.filter((item) => may_send(screen, item.collector)), item_line, listing_caps.items));
-  const screened = screen_entries(screen, held.filter((item) => chosen.has(item) || !may_send(screen, item.collector)), (item) => item.collector, (item) => item.id);
+  // The newest items it may be sent, as many as the caps allow, and every one withheld, counted; a finding carries the
+  // web results it was written from as well as its own collector.
+  const sendable = (item: ContextItem) => item_sources(item).every((source) => may_send(screen, source));
+  const chosen = new Set(capped(held.filter(sendable), item_line, listing_caps.items));
+  const screened = screen_sourced(screen, held.filter((item) => chosen.has(item) || !sendable(item)), item_sources, (item) => item.id);
   const listed = screened.value;
   const child_text = (child: (typeof children)[number]) => `"${child.name}" (id ${child.id})`;
   const listed_children = capped(children, child_text, listing_caps.children);

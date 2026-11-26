@@ -11,6 +11,7 @@ import { feed_key, item_id_of, type CollectorSummary, type Feed, type FoundItem 
 import { open_plugin_host } from "../collectors/host.ts";
 import { blueprint_collector } from "../blueprints/model.ts";
 import { conversation_collector } from "../conversations/model.ts";
+import { finding_collector } from "../interests/model.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { migrations } from "./migrations/index.ts";
 import type { CardPlace, ContextDetail, ContextItem, ContextSummary, ContextView, FollowedFeed, Item, KeptItem, RefreshReport, SeededFrom } from "./model.ts";
@@ -300,6 +301,7 @@ function add_item(database: SqlDatabase, context_ids: string[], collector: strin
   if (context_ids.length === 0) throw new Error("Pick at least one context.");
   if (collector === conversation_collector) throw new Error("A conversation is started in the Assistant pane; add_item_to_contexts puts one in more contexts.");
   if (collector === blueprint_collector) throw new Error("A blueprint is written with add_blueprint; add_item_to_contexts makes one apply in more contexts.");
+  if (collector === finding_collector) throw new Error("A finding is saved only by the Research interests job; add_item_to_contexts puts one in more contexts.");
   for (const context_id of context_ids) context_row(database, context_id);
   return in_transaction(database, () => {
     const item_id = keep_item(database, collector, found);

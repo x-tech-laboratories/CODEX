@@ -9,6 +9,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import type { Collector } from "../collectors/collector.ts";
 import { open_plugin_host } from "../collectors/host.ts";
 import { blueprint_collector } from "../blueprints/model.ts";
+import { finding_collector } from "../interests/model.ts";
 import { conversation_collector } from "../conversations/model.ts";
 import { settings_feature } from "../settings.ts";
 import { is_tool_source, tool_source_of } from "../tools/model.ts";
@@ -53,15 +54,16 @@ export interface Screen {
   withheld: Map<string, Set<string>>;
 }
 
-// CODEX's own conversations and blueprints as items: their titles are the user's words, a run is never shown a
-// conversation's exchanges, and a proposed blueprint carries the sources its run read as well (`item_sources`).
+// CODEX's own conversations, blueprints and findings as items: their titles are the user's words, a run is never shown
+// a conversation's exchanges, a proposed blueprint carries the sources its run read as well, and a finding always carries
+// the Web plugin's results it was written from (`item_sources`).
 const own_mark: SourceMark = { send_to_hosted: true, trusted: true };
 
 function make_screen(is_hosted: boolean, marks: Map<string, SourceMark>, labels: Map<string, string>): Screen {
   return {
     is_hosted,
     mark_of: (collector) => {
-      if (collector === conversation_collector || collector === blueprint_collector) return own_mark;
+      if (collector === conversation_collector || collector === blueprint_collector || collector === finding_collector) return own_mark;
       // A source not running now, a tool plugin removed since an answer drew on it among them, is unmarked.
       return marks.get(collector) ?? unmarked;
     },
@@ -98,14 +100,16 @@ export function has_read_private(screen: Screen): boolean {
   return [...screen.included.keys()].some((source) => !screen.mark_of(source).send_to_hosted);
 }
 
-// The sources a kept item carries: its collector, and for a blueprint written during a run, what that run had read.
+// The sources a kept item carries: its collector, and for a blueprint written during a run or a finding, what that run
+// had read; a finding that says nothing of it counts as carrying an unknown source.
 export function item_sources(item: { collector: string; detail: Record<string, string> }): string[] {
-  if (item.collector !== blueprint_collector || !item.detail.sources) return [item.collector];
+  if (item.collector === finding_collector && !item.detail.sources) return [item.collector, unrecorded_source];
+  if ((item.collector !== blueprint_collector && item.collector !== finding_collector) || !item.detail.sources) return [item.collector];
   try {
     const sources: unknown = JSON.parse(item.detail.sources);
     return Array.isArray(sources) ? [item.collector, ...sources.map(String)] : [item.collector, "*"];
   } catch {
-    return [item.collector, "*"];
+    return [item.collector, unrecorded_source];
   }
 }
 

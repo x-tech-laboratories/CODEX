@@ -3,7 +3,7 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { Circle, CircleCheckBig, ClipboardList, Mail, MessageSquare, ScrollText } from "lucide-react";
+import { Circle, CircleCheckBig, ClipboardList, Lightbulb, Mail, MessageSquare, ScrollText } from "lucide-react";
 import { FileIcon, FolderIcon, LinkIcon, NotesIcon, type IconGlyph } from "@x-tech-laboratories/x-libs/web/react/icons";
 
 // ── Kinds ────────────────────────────────────────────────────────────────────
@@ -25,10 +25,11 @@ const looks: Record<string, KindLook> = {
   link: { icon: LinkIcon, singular: "Link", plural: "Links" },
   conversation: { icon: MessageSquare, singular: "Conversation", plural: "Conversations" },
   blueprint: { icon: ScrollText, singular: "Blueprint", plural: "Blueprints" },
+  finding: { icon: Lightbulb, singular: "Finding", plural: "Findings" },
 };
 
 // The order kinds are grouped in on a context's page; any other kind comes after these.
-export const kind_order = ["task", "note", "email", "file", "folder", "link", "conversation", "blueprint"];
+export const kind_order = ["task", "note", "email", "file", "folder", "link", "conversation", "blueprint", "finding"];
 
 export function look_of(kind: string): KindLook {
   const name = kind.charAt(0).toUpperCase() + kind.slice(1);
