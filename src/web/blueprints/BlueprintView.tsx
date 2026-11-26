@@ -161,7 +161,7 @@ function Page({ blueprint, contexts }: { blueprint: Blueprint; contexts: Context
         {blueprint.contexts.length > 1 ? (
           <p className="small">In {blueprint.contexts.map((each) => each.name).join(", ")} and the contexts inside them.</p>
         ) : (
-          <Select<string> label="Where it applies" options={where_options} value={placed} on_change={(value) => void succeeds(() => calls().place_blueprint(blueprint.id, value || null))} />
+          <Select<string> bare label="Where it applies" options={where_options} value={placed} on_change={(value) => void succeeds(() => calls().place_blueprint(blueprint.id, value || null))} />
         )}
       </Section>
       <Section title="The blueprint" class_name="blueprint-editor">
