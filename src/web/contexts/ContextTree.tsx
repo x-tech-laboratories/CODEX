@@ -12,7 +12,7 @@ import { context_href, context_menu, new_context } from "./actions.tsx";
 
 // ── Tree ─────────────────────────────────────────────────────────────────────
 
-const collapsed_pref = "x-context-contexts-collapsed";
+const collapsed_pref = "codex-contexts-collapsed";
 
 function is_text_list(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");

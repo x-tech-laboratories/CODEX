@@ -1,4 +1,4 @@
-// Starts the X-Context web server on the database the config names.
+// Starts the CODEX web server on the database the config names.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -11,7 +11,7 @@ import { read_server_config } from "@x-tech-laboratories/x-libs/server/config";
 import { load_accounts } from "@x-tech-laboratories/x-libs/server/passwords";
 import { sqlite_backups, take_staged_restore } from "@x-tech-laboratories/x-libs/server/sqlite_backups";
 
-import { context_backup_naming, read_schedule } from "../shared/backups.ts";
+import { codex_backup_naming, read_schedule } from "../shared/backups.ts";
 import { needs_upgrade, open_store, sync_engine } from "../shared/store.ts";
 import { build_app } from "./app.ts";
 import { load_collectors } from "./collectors/index.ts";
@@ -27,13 +27,13 @@ interface ContextConfig {
 }
 
 const server_config = read_server_config({
-  program: "x-context",
-  summary: "Serves X-Context as a web app and syncs its devices.",
-  env_prefix: "X_CONTEXT",
+  program: "codex",
+  summary: "Serves CODEX as a web app and syncs its devices.",
+  env_prefix: "CODEX",
   default_port: 7770,
   secret: false,
   web_folder_default: join(import.meta.dirname, "../../out/web"),
-  options: { config: { variable: "X_CONTEXT_CONFIG", help: "the JSON config naming the database and the backups folder", placeholder: "<file>", required: true } },
+  options: { config: { variable: "CODEX_CONFIG", help: "the JSON config naming the database and the backups folder", placeholder: "<file>", required: true } },
 });
 
 const config = JSON.parse(readFileSync(server_config.values.config!, "utf8")) as ContextConfig;
@@ -59,7 +59,7 @@ const kept = sqlite_backups({
     mkdirSync(backups_folder, { recursive: true });
     return backups_folder;
   },
-  naming: context_backup_naming,
+  naming: codex_backup_naming,
   database: () => database,
   database_path: () => database_path,
   after_staging: () => void setTimeout(stop, answer_delay_ms),
@@ -84,7 +84,7 @@ const refreshing = keep_refreshing(() => database);
 
 const app = await build_app({
   database,
-  declared: load_accounts("X_CONTEXT_PASSWORD_HASH_FILE"),
+  declared: load_accounts("CODEX_PASSWORD_HASH_FILE"),
   web_folder: server_config.web_folder,
   backups: {
     list_backups: kept.list,
@@ -99,7 +99,7 @@ const app = await build_app({
   },
 });
 await app.listen({ host: server_config.host, port: server_config.port });
-console.info(`X-Context is serving http://${server_config.host}:${server_config.port}/`);
+console.info(`CODEX is serving http://${server_config.host}:${server_config.port}/`);
 
 function stop(): void {
   refreshing.stop();

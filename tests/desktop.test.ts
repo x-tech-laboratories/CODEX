@@ -45,8 +45,8 @@ describe("the tray menu", () => {
   it("lists the top-level contexts, then the commands", () => {
     const state: TrayState = { contexts: [context("a", "Garden"), context("b", "Beds", "a"), context("c", "Taxes")] };
 
-    expect(labels(state)).toEqual(["Garden", "Taxes", "—", "Show X-Context", "Quit", "Quit completely"]);
-    expect(tray_view(state, actions()).tooltip).toBe("X-Context");
+    expect(labels(state)).toEqual(["Garden", "Taxes", "—", "Show CODEX", "Quit", "Quit completely"]);
+    expect(tray_view(state, actions()).tooltip).toBe("CODEX");
   });
 
   it("opens the window on the context a row names", () => {
@@ -60,7 +60,7 @@ describe("the tray menu", () => {
   });
 
   it("shows only the commands when there are no contexts", () => {
-    expect(labels({ contexts: [] })).toEqual(["Show X-Context", "Quit", "Quit completely"]);
+    expect(labels({ contexts: [] })).toEqual(["Show CODEX", "Quit", "Quit completely"]);
   });
 });
 

@@ -44,9 +44,9 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
   const app = fastify({ forceCloseConnections: true });
   register_lenient_json_body(app);
   register_error_replies(app);
-  const accounts = new AccountStore({ database: options.database, app_name: "X-Context", declared: options.declared, token_prefix: "xf" });
+  const accounts = new AccountStore({ database: options.database, app_name: "CODEX", declared: options.declared, token_prefix: "cx" });
   // Backups reach the whole database, the accounts included, so only an admin may manage them.
-  await register_accounts(app, { accounts, cookie_name: "x_context_session", read_only_paths: ["/api/mcp"], needed: (_method, path) => (path.startsWith("/api/backup/") ? { role: accounts.top_role } : "any") });
+  await register_accounts(app, { accounts, cookie_name: "codex_session", read_only_paths: ["/api/mcp"], needed: (_method, path) => (path.startsWith("/api/backup/") ? { role: accounts.top_role } : "any") });
 
   const changes = new EventStream();
   const database = () => options.database;
@@ -58,12 +58,12 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
       register_context_calls(api, database, changes);
 
       api.get("/openapi.json", async () =>
-        openapi_document(context_api, { title: "X-Context", version, description: instructions, path_of: (method) => `/api/call/${method}`, is_read_only }),
+        openapi_document(context_api, { title: "CODEX", version, description: instructions, path_of: (method) => `/api/call/${method}`, is_read_only }),
       );
 
       // A change made through MCP is announced to every page, since no page made it.
       await register_mcp_route(api, {
-        name: "x-context",
+        name: "codex",
         version,
         instructions,
         api: context_api,

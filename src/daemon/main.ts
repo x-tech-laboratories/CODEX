@@ -1,4 +1,4 @@
-// The desktop app's daemon: everything X-Context does without a window, being the database, sync, backups, history, the
+// The desktop app's daemon: everything CODEX does without a window, being the database, sync, backups, history, the
 // MCP endpoint and the collectors' refreshes. The window reaches it over a Unix socket with the same calls a browser makes to the web server, and
 // closing the window leaves it running.
 
@@ -22,7 +22,7 @@ import { sqlite_backups } from "@x-tech-laboratories/x-libs/server/sqlite_backup
 import { create_sync_client, sync_device_methods } from "@x-tech-laboratories/x-libs/sync_client";
 import { file_sync_storage } from "@x-tech-laboratories/x-libs/sync_file_storage";
 
-import { context_backup_naming, read_schedule } from "../shared/backups.ts";
+import { codex_backup_naming, read_schedule } from "../shared/backups.ts";
 import { context_bridge } from "../shared/bridge.ts";
 import { read_desktop_settings, type DaemonMethods, type DesktopSettings } from "../shared/desktop.ts";
 import { mcp_instructions } from "../shared/mcp.ts";
@@ -35,15 +35,15 @@ import { keep_refreshing } from "../server/refreshing.ts";
 // ── Profile ──────────────────────────────────────────────────────────────────
 
 // The window starts it with these set; a run on another database has a socket of its own.
-const database_path = process.env.X_CONTEXT_DB;
+const database_path = process.env.CODEX_DB;
 if (!database_path) {
-  console.error("x-context daemon: X_CONTEXT_DB must name the database");
+  console.error("codex daemon: CODEX_DB must name the database");
   process.exit(2);
 }
-const socket_path = process.env.X_CONTEXT_SOCKET || daemon_socket_path({ app: "x-context", data_file: database_path });
-const version = process.env.X_CONTEXT_VERSION || "0.0.0";
+const socket_path = process.env.CODEX_SOCKET || daemon_socket_path({ app: "codex", data_file: database_path });
+const version = process.env.CODEX_VERSION || "0.0.0";
 // The built daemon sits in out/main, and resources/ beside out/ both in the source tree and in the package.
-const icon_path = process.env.X_CONTEXT_ICON || join(import.meta.dirname, "../../resources/icon.png");
+const icon_path = process.env.CODEX_ICON || join(import.meta.dirname, "../../resources/icon.png");
 
 const profile = dirname(database_path);
 const backups_folder = join(profile, "backups");
@@ -74,7 +74,7 @@ const kept = sqlite_backups({
     mkdirSync(backups_folder, { recursive: true });
     return backups_folder;
   },
-  naming: context_backup_naming,
+  naming: codex_backup_naming,
   database: () => database,
   database_path: () => database_path,
   close: () => database.close(),
@@ -92,7 +92,7 @@ open_store(database);
 
 await load_collectors(join(profile, "plugins"), true);
 // Tells the user when items vanished from their apps, one notice replacing the last.
-const notifier = new Notifier({ app_name: "X-Context", icons: { app: icon_path }, on_error: (message) => console.error(message) });
+const notifier = new Notifier({ app_name: "CODEX", icons: { app: icon_path }, on_error: (message) => console.error(message) });
 const refreshing = keep_refreshing(() => database, {
   on_change: announce_change,
   on_report: (report) => {
@@ -121,7 +121,7 @@ const sync = create_sync_client({
   database: () => database,
   storage: file_sync_storage({ file: join(profile, "sync.json"), back_up_before_download: async () => void (await kept.create()) }),
   data_name: "context data",
-  device_name: `X-Context on ${hostname()}`,
+  device_name: `CODEX on ${hostname()}`,
   on_remote_change: announce_change,
   on_status: (status) => changes.send(JSON.stringify(status), { event: "sync_status" }),
 });
@@ -130,7 +130,7 @@ const sync = create_sync_client({
 
 // Off until turned on in Settings; a change made through it reaches the open window and syncs like any other.
 const local_mcp = create_local_mcp({
-  name: "x-context",
+  name: "codex",
   version,
   instructions: mcp_instructions,
   api: context_api,
@@ -228,7 +228,7 @@ async function main(): Promise<void> {
     if (error instanceof DaemonRunningError) process.exit(0);
     throw error;
   }
-  console.log(`x-context daemon on ${socket_path}, using ${database_path}`);
+  console.log(`codex daemon on ${socket_path}, using ${database_path}`);
 
   sync.start();
   void local_mcp.start();

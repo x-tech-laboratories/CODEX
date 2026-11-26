@@ -195,7 +195,7 @@ async function list_collectors(database: SqlDatabase): Promise<CollectorSummary[
 // What the collector finds for the text, each with the contexts that already hold it.
 async function search_collector(database: SqlDatabase, collector: string, query: string): Promise<(FoundItem & { kept_in: string[] })[]> {
   const source = await collector_of(database, collector);
-  if (!source.search) throw new Error(`The ${source.label} collector cannot search; its items are sent to X-Context from elsewhere.`);
+  if (!source.search) throw new Error(`The ${source.label} collector cannot search; its items are sent to CODEX from elsewhere.`);
   const found = await source.search(query);
   const holders = holders_of(database, found.map((item) => item_id_of(collector, item.source_id)));
   return found.map((item) => ({ ...item, kept_in: (holders.get(item_id_of(collector, item.source_id)) ?? []).map((holder) => holder.id) }));
@@ -479,7 +479,7 @@ async function refresh_items(database: SqlDatabase, context_id: string | null = 
 // ── Import and export ────────────────────────────────────────────────────────
 
 export interface ContextsExport {
-  app: "x-context";
+  app: "codex";
   kind: "contexts";
   version: 1;
   exported_at: string;
@@ -496,7 +496,7 @@ export interface ContextsExport {
 function export_contexts(database: SqlDatabase): ContextsExport {
   const db = drizzle_of(database);
   return {
-    app: "x-context",
+    app: "codex",
     kind: "contexts",
     version: 1,
     exported_at: now(),
@@ -511,11 +511,14 @@ function export_contexts(database: SqlDatabase): ContextsExport {
   };
 }
 
+// The apps whose exports of contexts this one reads: its own, and X-Context's, which CODEX grew from.
+const importable_apps: readonly string[] = ["codex", "x-context"];
+
 // Adds every row of an export; a row already kept with the same id is replaced by the file's.
 function import_contexts(database: SqlDatabase, json: string): { contexts: number; items: number } {
-  const file = JSON.parse(json) as Partial<ContextsExport>;
-  if (file.app !== "x-context" || file.kind !== "contexts") throw new Error("This file is not an X-Context export of contexts.");
-  if ((file.version ?? 0) > 1) throw new Error("This file was made by a newer X-Context; update the app first.");
+  const file = JSON.parse(json) as Partial<Omit<ContextsExport, "app">> & { app?: string };
+  if (!importable_apps.includes(file.app ?? "") || file.kind !== "contexts") throw new Error("This file is not a CODEX export of contexts.");
+  if ((file.version ?? 0) > 1) throw new Error("This file was made by a newer CODEX; update the app first.");
   const tables = file.tables ?? { contexts: [], items: [], context_items: [] };
   in_transaction(database, () => {
     const db = drizzle_of(database);

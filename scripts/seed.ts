@@ -16,7 +16,7 @@ import { bind_methods, open_store } from "../src/shared/store.ts";
 
 const data_folder = resolve(process.argv[2] ?? "dev-data");
 const files_folder = join(data_folder, "sample-files");
-const database_path = join(data_folder, "context.db");
+const database_path = join(data_folder, "codex.db");
 
 rmSync(files_folder, { recursive: true, force: true });
 for (const suffix of ["", "-wal", "-shm"]) rmSync(`${database_path}${suffix}`, { force: true });
@@ -36,13 +36,13 @@ database.exec("PRAGMA journal_mode = WAL");
 open_store(database);
 const store = bind_methods(() => database, () => undefined);
 
-store.set_setting("plugins", { "x-context.files": { enabled: true, settings: { folders: files_folder, depth: 6 } } });
+store.set_setting("plugins", { "codex.files": { enabled: true, settings: { folders: files_folder, depth: 6 } } });
 
 const home = store.add_context("Home renovation", null);
 const kitchen = store.add_context("Kitchen", home);
 const garden = store.add_context("Garden", home);
 const taxes = store.add_context("Taxes 2026", null);
-const launch = store.add_context("X-Context launch", null);
+const launch = store.add_context("CODEX launch", null);
 store.add_context("Reading list", null);
 
 store.set_context_notes(home, "Kitchen first, then the garden once the weather turns.\n\n- Budget: keep under the quote\n- Ask about the boiler while the fitter is here");

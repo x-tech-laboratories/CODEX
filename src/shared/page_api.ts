@@ -14,12 +14,12 @@ import type { ContextMethods } from "./store.ts";
 
 // ── Names ────────────────────────────────────────────────────────────────────
 
-export const context_api_name = "x_context";
-export const device_api_name = "x_context_device";
-export const events_api_name = "x_context_events";
-export const certificates_api_name = "x_context_certificates";
-export const local_mcp_api_name = "x_context_local_mcp";
-export const desktop_api_name = "x_context_desktop";
+export const context_api_name = "codex";
+export const device_api_name = "codex_device";
+export const events_api_name = "codex_events";
+export const certificates_api_name = "codex_certificates";
+export const local_mcp_api_name = "codex_local_mcp";
+export const desktop_api_name = "codex_desktop";
 
 // ── Device calls ─────────────────────────────────────────────────────────────
 

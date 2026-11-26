@@ -42,14 +42,14 @@ describe("store", () => {
   it("hides a plugin's key from what it reads, and keeps the stored key when the hidden one comes back", () => {
     const database = open_database();
     const bound = bind_methods(() => database, () => undefined);
-    bound.set_setting("plugins", { "x-context.trilium": { enabled: true, settings: { address: "https://notes.example.org", token: "real-token" } } });
+    bound.set_setting("plugins", { "codex.trilium": { enabled: true, settings: { address: "https://notes.example.org", token: "real-token" } } });
 
     const shown = bound.get_settings().plugins as Record<string, { settings: Record<string, unknown> }>;
-    expect(shown["x-context.trilium"]!.settings).toEqual({ address: "https://notes.example.org", token: hidden_secret });
+    expect(shown["codex.trilium"]!.settings).toEqual({ address: "https://notes.example.org", token: hidden_secret });
 
-    bound.set_setting("plugins", { "x-context.trilium": { enabled: true, settings: { address: "https://other.example.org", token: hidden_secret } } });
+    bound.set_setting("plugins", { "codex.trilium": { enabled: true, settings: { address: "https://other.example.org", token: hidden_secret } } });
     const stored = JSON.parse((database.prepare("SELECT value FROM settings WHERE key = 'plugins'").get() as { value: string }).value);
-    expect(stored["x-context.trilium"].settings).toEqual({ address: "https://other.example.org", token: "real-token" });
+    expect(stored["codex.trilium"].settings).toEqual({ address: "https://other.example.org", token: "real-token" });
   });
 
   it("announces writes and not reads", () => {

@@ -9,7 +9,7 @@ import package_json from "../../../package.json" with { type: "json" };
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
-export const app_info: AppInfo = { id: "x-context", version: package_json.version };
+export const app_info: AppInfo = { id: "codex", version: package_json.version };
 
 // The setting holding every plugin's on or off and its own settings, synced like any other.
 export const plugins_setting = "plugins";

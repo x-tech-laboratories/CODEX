@@ -1,4 +1,4 @@
-// The desktop app's window: Electron's main process, which shows X-Context, keeps its tray icon and its login entry, and
+// The desktop app's window: Electron's main process, which shows CODEX, keeps its tray icon and its login entry, and
 // leaves the work to the daemon in src/daemon, reached over a Unix socket.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
@@ -26,22 +26,22 @@ import { tray_view, type TrayState } from "./tray_menu.ts";
 // ── Profile ──────────────────────────────────────────────────────────────────
 
 // Dev runs set this so they never touch the installed app's data.
-const is_own_profile = process.env.X_CONTEXT_USER_DATA === undefined;
-if (!is_own_profile) app.setPath("userData", join(process.cwd(), process.env.X_CONTEXT_USER_DATA!));
+const is_own_profile = process.env.CODEX_USER_DATA === undefined;
+if (!is_own_profile) app.setPath("userData", join(process.cwd(), process.env.CODEX_USER_DATA!));
 
 const profile = app.getPath("userData");
-const database_path = join(profile, "context.db");
+const database_path = join(profile, "codex.db");
 
 // Any other profile gets a daemon, socket and log of its own, so a dev or test run never reaches the user's daemon.
-const socket_path = daemon_socket_path({ app: "x-context", data_file: is_own_profile ? null : database_path });
-const log_file = is_own_profile ? daemon_log_path("x-context") : join(profile, "daemon.log");
+const socket_path = daemon_socket_path({ app: "codex", data_file: is_own_profile ? null : database_path });
+const log_file = is_own_profile ? daemon_log_path("codex") : join(profile, "daemon.log");
 
 // The built app sits in out/main, and resources/ beside out/ both in the source tree and in the package.
 const icon_path = join(import.meta.dirname, "../../resources/icon.png");
 
 // The command that starts this app again, which the login entry runs.
 const own_command = (args: string[]): string[] =>
-  launch_command({ launcher: process.env.X_CONTEXT_LAUNCHER, is_packaged: app.isPackaged, app_path: app.getAppPath(), args });
+  launch_command({ launcher: process.env.CODEX_LAUNCHER, is_packaged: app.isPackaged, app_path: app.getAppPath(), args });
 
 // ── Daemon ───────────────────────────────────────────────────────────────────
 
@@ -49,7 +49,7 @@ function ensure_daemon(): Promise<unknown> {
   return start_daemon({
     socket_path,
     script: join(import.meta.dirname, "daemon.js"),
-    env: { X_CONTEXT_DB: database_path, X_CONTEXT_SOCKET: socket_path, X_CONTEXT_VERSION: app.getVersion(), X_CONTEXT_ICON: icon_path },
+    env: { CODEX_DB: database_path, CODEX_SOCKET: socket_path, CODEX_VERSION: app.getVersion(), CODEX_ICON: icon_path },
     log_file,
   });
 }
@@ -84,7 +84,7 @@ async function apply_window_settings(): Promise<void> {
 function apply_autostart(settings: DesktopSettings): void {
   if (!is_own_profile) return;
   set_autostart(
-    { id: "x-context-daemon", name: "X-Context in the background", comment: "Sync and backups for X-Context", icon: icon_path, command: own_command(["--daemon"]) },
+    { id: "codex-daemon", name: "CODEX in the background", comment: "Sync and backups for CODEX", icon: icon_path, command: own_command(["--daemon"]) },
     settings.start_at_login && settings.keep_running_in_background,
   );
 }
@@ -128,7 +128,7 @@ const page = {
 function open_window(): BrowserWindow {
   return create_window(BrowserWindow, {
     ...page,
-    title: "X-Context",
+    title: "CODEX",
     icon: icon_path,
     // electron-vite emits an ESM preload as .mjs; loading .js here silently yields no bridge.
     preload: join(import.meta.dirname, "../preload/index.mjs"),
@@ -215,14 +215,14 @@ function start_app(): void {
     try {
       await ensure_daemon();
     } catch (error) {
-      dialog.showErrorBox("X-Context could not start", `${error instanceof Error ? error.message : String(error)}\n\nSee ${log_file}.`);
+      dialog.showErrorBox("CODEX could not start", `${error instanceof Error ? error.message : String(error)}\n\nSee ${log_file}.`);
       app.exit(1);
       return;
     }
     register_bridges();
     follow_daemon();
     await apply_window_settings().catch(() => undefined);
-    // A link the app was opened with, such as x-context://context/<id>, opens the window on its page.
+    // A link the app was opened with, such as codex://context/<id>, opens the window on its page.
     if (!starts_hidden(process.argv, tray.is_shown())) show_window(first_argument(process.argv, route_of_link) ?? undefined);
   });
 
@@ -238,7 +238,7 @@ function start_app(): void {
   });
 }
 
-// `x-context-desktop --daemon`, as the login entry runs it, starts only the daemon.
+// `codex-desktop --daemon`, as the login entry runs it, starts only the daemon.
 async function start_daemon_alone(): Promise<void> {
   try {
     await ensure_daemon();

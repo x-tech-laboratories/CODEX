@@ -10,7 +10,7 @@
 }:
 
 buildNpmPackage {
-  pname = "x-context-desktop";
+  pname = "codex-desktop";
   version = (lib.importJSON ../package.json).version;
   src = lib.cleanSource ../.;
 
@@ -31,33 +31,33 @@ buildNpmPackage {
     runHook preInstall
 
     npm prune --omit=dev --no-save --ignore-scripts
-    mkdir -p $out/lib/x-context-desktop
-    cp -r out package.json node_modules resources $out/lib/x-context-desktop/
-    install -Dm644 resources/icon.png $out/share/icons/hicolor/512x512/apps/x-context.png
-    makeWrapper ${lib.getExe electron_45} $out/bin/x-context-desktop \
-      --add-flags $out/lib/x-context-desktop \
+    mkdir -p $out/lib/codex-desktop
+    cp -r out package.json node_modules resources $out/lib/codex-desktop/
+    install -Dm644 resources/icon.png $out/share/icons/hicolor/512x512/apps/codex.png
+    makeWrapper ${lib.getExe electron_45} $out/bin/codex-desktop \
+      --add-flags $out/lib/codex-desktop \
       --unset ELECTRON_RUN_AS_NODE \
-      --set X_CONTEXT_LAUNCHER x-context-desktop
+      --set CODEX_LAUNCHER codex-desktop
 
     runHook postInstall
   '';
 
   desktopItems = [
     (makeDesktopItem {
-      name = "x-context";
-      desktopName = "X-Context";
+      name = "codex";
+      desktopName = "CODEX";
       comment = "Contexts that gather items from other apps";
-      exec = "x-context-desktop %U";
-      icon = "x-context";
+      exec = "codex-desktop %U";
+      icon = "codex";
       categories = [ "Utility" ];
-      # Opens x-context://<page> links, such as a reminder's, in the app.
-      mimeTypes = [ "x-scheme-handler/x-context" ];
+      # Opens codex://<page> links, such as a reminder's, in the app.
+      mimeTypes = [ "x-scheme-handler/codex" ];
     })
   ];
 
   meta = {
-    description = "X-Context as a desktop app with its own database";
+    description = "CODEX as a desktop app with its own database";
     license = lib.licenses.gpl3Plus;
-    mainProgram = "x-context-desktop";
+    mainProgram = "codex-desktop";
   };
 }

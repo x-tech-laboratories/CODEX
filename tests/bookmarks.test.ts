@@ -44,7 +44,7 @@ function make_places(folder: string): void {
 }
 
 beforeEach(() => {
-  profile = mkdtempSync(join(tmpdir(), "x-context-firefox-"));
+  profile = mkdtempSync(join(tmpdir(), "codex-firefox-"));
   make_places(profile);
 });
 

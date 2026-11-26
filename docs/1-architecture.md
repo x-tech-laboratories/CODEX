@@ -1,4 +1,8 @@
-# How X-Context is put together
+# How CODEX is put together
+
+CODEX runs on X-Context's code, which merged into it on 2026-11-26 ([doc 4](4-merge-with-x-context.md)). This doc
+describes what runs today. The pre-merge assistant's design is in `done/done-assistant-architecture.md`, and its code
+in `legacy/`, where nothing builds it.
 
 ## One page, two hosts
 
@@ -8,7 +12,7 @@ the host it runs on and hands the page a `PageApi` (`src/shared/page_api.ts`):
 | Host    | Where the data is                         | How a call travels                                                              | Sync                               |
 | ------- | ----------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------- |
 | web     | the server's SQLite file                  | `POST api/call/<method>` with the arguments as JSON                             | none; the browser is online        |
-| desktop | `context.db` in Electron's profile folder | IPC through the preload to the main process, then HTTP over the daemon's socket | X-Libs `sync_client` in the daemon |
+| desktop | `codex.db` in Electron's profile folder | IPC through the preload to the main process, then HTTP over the daemon's socket | X-Libs `sync_client` in the daemon |
 
 Views call `calls().<method>(...)` from `src/web/api.ts` and load with `use_data`, which reloads quietly whenever
 `data_watch` is bumped: after this page writes, and when another page or device changed something.
@@ -67,10 +71,21 @@ Thunderbird, and is tested.
 
 As in every X-app: `src/daemon/main.ts` is plain Node on Electron's own binary, owning the database, sync, backups,
 refreshing, missing-item notices and the local MCP endpoint, and serving the page's calls on
-`$XDG_RUNTIME_DIR/x-context/daemon.sock`. `src/main/index.ts` keeps the window, the tray (`src/main/tray_menu.ts`) and
+`$XDG_RUNTIME_DIR/codex/daemon.sock`. `src/main/index.ts` keeps the window, the tray (`src/main/tray_menu.ts`) and
 the login entry.
 
 ## History
 
 `src/shared/history/store.ts` keeps a version of a context, its row and its memberships, after every write through
 X-Libs `create_history`. Versions sync; writes that arrive by sync are recorded by the device that made them.
+
+## Where the assistant goes
+
+Doc 4 sets the order; the skeleton already fixes where each part lands.
+
+- **Its records are features:** conversations, the graph, jobs and blueprints each get a folder in `src/shared/`, with
+  tables, migrations, calls and specs, so they sync, keep History and are served over the API and MCP like contexts.
+- **Engines are plugins:** an engine is an X-Libs plugin providing an `engine`, as a collector is one providing a
+  `collector`, run by the daemon or the server, never by the page.
+- **Tools are the calls:** an engine reaches CODEX's data through the same calls `context_api` describes, so the action
+  policy is enforced once, in the store, for the page, MCP clients and engines alike.

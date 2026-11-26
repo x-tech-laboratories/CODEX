@@ -284,7 +284,7 @@ export const email_plugin = define_plugin<ContextPluginApi>({
     context.provide("collector", "email", {
       label: "Email",
       kinds: ["email"],
-      pushed_from: "In Thunderbird, install the X-Context add-on from the app's thunderbird folder, give it this server's address and a token, then use Add to context on any email.",
+      pushed_from: "In Thunderbird, install the CODEX add-on from the app's thunderbird folder, give it this server's address and a token, then use Add to context on any email.",
     }),
 });
 

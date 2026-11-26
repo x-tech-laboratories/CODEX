@@ -43,7 +43,7 @@ describe("settings", () => {
   });
 
   it("lists every collector with whether it is set up", async () => {
-    const calls = fake_calls({ plugins: { "x-context.trilium": { enabled: true, settings: { address: "https://notes.example.org", token: "hidden" } } } });
+    const calls = fake_calls({ plugins: { "codex.trilium": { enabled: true, settings: { address: "https://notes.example.org", token: "hidden" } } } });
     set_page_api({ host: "web", calls, device: null, on_change: () => () => undefined });
     render(<><SettingsView /><Dialogs /></>);
 

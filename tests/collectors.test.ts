@@ -165,7 +165,7 @@ describe("the Files collector", () => {
   });
 
   function tree(): string {
-    const root = mkdtempSync(join(tmpdir(), "x-context-files-"));
+    const root = mkdtempSync(join(tmpdir(), "codex-files-"));
     roots.push(root);
     mkdirSync(join(root, "Garden plans", "deep", "deeper"), { recursive: true });
     mkdirSync(join(root, "node_modules", "garden"), { recursive: true });

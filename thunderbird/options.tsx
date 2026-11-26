@@ -1,4 +1,4 @@
-// The add-on's options: the X-Context server it sends emails to and the token it signs in with, checked on saving.
+// The add-on's options: the CODEX server it sends emails to and the token it signs in with, checked on saving.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -49,10 +49,10 @@ function Options() {
         void save();
       }}
     >
-      <FormRow label="Server address" id="address" hint="Your X-Context server, such as https://context.example.org.">
+      <FormRow label="Server address" id="address" hint="Your CODEX server, such as https://context.example.org.">
         <input id="address" value={address} placeholder="https://context.example.org" onChange={(event) => set_address(event.target.value)} />
       </FormRow>
-      <FormRow label="Token" id="token" hint="Make one on your account page in X-Context, with changes allowed.">
+      <FormRow label="Token" id="token" hint="Make one on your account page in CODEX, with changes allowed.">
         <input id="token" type="password" value={token} autoComplete="off" onChange={(event) => set_token(event.target.value)} />
       </FormRow>
       <button type="submit" className="accent solid">

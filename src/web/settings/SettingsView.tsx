@@ -25,7 +25,7 @@ function general_section(settings: Record<string, unknown>, set_setting: (key: s
   return {
     id: "general",
     heading: "Refreshing",
-    hint: "X-Context asks each collector what became of its items, so titles and states stay current and items gone from their apps are marked missing.",
+    hint: "CODEX asks each collector what became of its items, so titles and states stay current and items gone from their apps are marked missing.",
     content: (
       <SettingRow label="Refresh every" hint="0 refreshes only when you ask.">
         <NumberField label="Refresh every" bare unit="minutes" min={0} value={Number(settings.refresh_minutes)} on_change={(minutes) => void set_setting("refresh_minutes", minutes ?? 30)} />
@@ -78,15 +78,15 @@ function TransferRows() {
     const text = await read_picked(event);
     if (text === null) return;
     const file = JSON.parse(text) as { app?: string; kind?: string; settings?: Record<string, unknown> };
-    if (file.app !== "x-context" || file.kind !== "settings" || !file.settings) return show_error(new Error("This file is not X-Context's settings."));
+    if (file.app !== "codex" || file.kind !== "settings" || !file.settings) return show_error(new Error("This file is not CODEX's settings."));
     for (const [key, value] of Object.entries(file.settings)) if (importable_settings.has(key)) await attempt(() => calls().set_setting(key, value));
     toast("Settings imported.", { tone: "good" });
   };
-  const save_contexts = () => attempt(async () => save_text(`x-context-contexts-${stamp()}.json`, JSON.stringify(await calls().export_contexts(), null, 2)));
+  const save_contexts = () => attempt(async () => save_text(`codex-contexts-${stamp()}.json`, JSON.stringify(await calls().export_contexts(), null, 2)));
   const save_settings = () =>
     attempt(async () => {
       const settings = await calls().get_settings();
-      save_text(`x-context-settings-${stamp()}.json`, JSON.stringify({ app: "x-context", kind: "settings", version: 1, exported_at: new Date().toISOString(), settings }, null, 2));
+      save_text(`codex-settings-${stamp()}.json`, JSON.stringify({ app: "codex", kind: "settings", version: 1, exported_at: new Date().toISOString(), settings }, null, 2));
     });
 
   return (
@@ -145,10 +145,10 @@ function Desktop() {
       <SettingRow label="Keep running in the background" hint="Sync, backups and the MCP server carry on with the window closed. Turned off, they stop shortly after the last window closes." as_label>
         <Switch label="Keep running in the background" checked={settings.keep_running_in_background} on_change={(on) => change("keep_running_in_background", on)} />
       </SettingRow>
-      <SettingRow label="Start at login" hint="Starts X-Context in the background when you log in, without opening its window." as_label>
+      <SettingRow label="Start at login" hint="Starts CODEX in the background when you log in, without opening its window." as_label>
         <Switch label="Start at login" checked={settings.start_at_login} disabled={!settings.keep_running_in_background} on_change={(on) => change("start_at_login", on)} />
       </SettingRow>
-      <SettingRow label="Quit completely" hint="Closes the window and stops X-Context in the background too, until you open it again.">
+      <SettingRow label="Quit completely" hint="Closes the window and stops CODEX in the background too, until you open it again.">
         <button type="button" onClick={() => void desktop.quit_completely().catch(show_error)}>Quit completely</button>
       </SettingRow>
     </>
@@ -159,7 +159,7 @@ function Desktop() {
 function data_category(): SettingsCategory[] {
   const { device, backups, backup_folder, certificates, local_mcp, desktop } = page();
   const sections: SettingsSection[] = [
-    ...(device ? [{ id: "sync", heading: "Sync", hint: "Keep this device's data alike with your X-Context server.", content: <>
+    ...(device ? [{ id: "sync", heading: "Sync", hint: "Keep this device's data alike with your CODEX server.", content: <>
       <SyncSettings device={device} certificates={certificates} subscribe={data_watch.subscribe} data_name="context data" placeholder="https://context.example.org/" />
       {certificates && <TrustedCertificates certificates={certificates} />}
     </> }] : []),
@@ -167,7 +167,7 @@ function data_category(): SettingsCategory[] {
       ? [{ id: "backups", heading: "Backups", hint: backup_folder ? "Copies of this device's data, kept in a folder you pick." : device ? "Copies of this device's data, kept beside it." : "Copies of the server's data, kept in its data folder. A restore restarts the server.", content: <Backups /> }]
       : []),
     ...(local_mcp
-      ? [{ id: "mcp", heading: "MCP server", hint: "Let AI assistants such as Claude Code reach this device's data without the server.", content: <LocalMcpSettings device={local_mcp} name="x-context" data_name="read and change your contexts and the items they hold" /> }]
+      ? [{ id: "mcp", heading: "MCP server", hint: "Let AI assistants such as Claude Code reach this device's data without the server.", content: <LocalMcpSettings device={local_mcp} name="codex" data_name="read and change your contexts and the items they hold" /> }]
       : []),
     ...(desktop ? [{ id: "desktop", heading: "Desktop", hint: "The tray icon, and what runs while the window is closed.", content: <Desktop /> }] : []),
   ];

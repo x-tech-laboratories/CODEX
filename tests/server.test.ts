@@ -64,10 +64,10 @@ describe("server", () => {
   });
 
   it("serves the built page beside the API", async () => {
-    const folder = mkdtempSync(join(tmpdir(), "x-context-web-"));
-    writeFileSync(join(folder, "index.html"), "<title>X-Context</title>");
+    const folder = mkdtempSync(join(tmpdir(), "codex-web-"));
+    writeFileSync(join(folder, "index.html"), "<title>CODEX</title>");
     await start(folder);
-    expect((await signed({ method: "GET", url: "/" })).body).toContain("X-Context");
+    expect((await signed({ method: "GET", url: "/" })).body).toContain("CODEX");
     expect((await signed({ method: "GET", url: "/api/missing" })).statusCode).toBe(404);
   });
 
@@ -123,7 +123,7 @@ describe("server", () => {
     const listed_contexts = await mcp("tools/call", { name: "list_contexts", arguments: {} });
     expect(JSON.parse((listed_contexts.content as { text: string }[])[0]!.text)).toContainEqual(expect.objectContaining({ id: context_id, name: "Garden" }));
 
-    const plugins = { "x-context.trilium": { enabled: true, settings: { address: "https://notes.example.org", token: "not-a-real-token" } } };
+    const plugins = { "codex.trilium": { enabled: true, settings: { address: "https://notes.example.org", token: "not-a-real-token" } } };
     await signed({ method: "POST", url: "/api/call/set_setting", payload: ["plugins", plugins] });
     const settings = await mcp("tools/call", { name: "get_settings", arguments: {} });
     const text = (settings.content as { text: string }[])[0]!.text;

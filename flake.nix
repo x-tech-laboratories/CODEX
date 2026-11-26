@@ -1,5 +1,5 @@
 {
-  description = "X-Context — contexts that gather tasks, notes, files, emails and links from the apps that keep them";
+  description = "CODEX — a personal knowledge base and assistant: contexts that gather items from the apps that keep them";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

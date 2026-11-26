@@ -56,7 +56,7 @@ function Picker({ loaded }: { loaded: Loaded }) {
     }
   };
 
-  if (loaded.contexts.length === 0) return <Empty title="No contexts yet" hint="Make one in X-Context first." />;
+  if (loaded.contexts.length === 0) return <Empty title="No contexts yet" hint="Make one in CODEX first." />;
   if (state === "sent") return <p role="status">Added to {picked.size === 1 ? "the context" : `${picked.size} contexts`}.</p>;
   return (
     <form
@@ -113,7 +113,7 @@ function Popup() {
   if (loaded === "not_set_up") {
     return (
       <div className="addon-form">
-        <p>Give the add-on your X-Context server and a token first.</p>
+        <p>Give the add-on your CODEX server and a token first.</p>
         <button type="button" className="accent solid" onClick={() => void browser.runtime.openOptionsPage()}>
           Open the options
         </button>

@@ -83,7 +83,7 @@ export async function read_bookmarks(profile: string): Promise<Bookmarks> {
   if (!sizes[0]) throw new Error(`Firefox's bookmarks were not found in ${profile}.`);
   const key = `${places}|${sizes.join("|")}`;
   if (kept?.key === key) return kept.bookmarks;
-  const folder = await mkdtemp(join(tmpdir(), "x-context-bookmarks-"));
+  const folder = await mkdtemp(join(tmpdir(), "codex-bookmarks-"));
   try {
     const copy = join(folder, "places.sqlite");
     await copyFile(places, copy);

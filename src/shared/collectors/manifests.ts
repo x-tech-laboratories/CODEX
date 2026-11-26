@@ -10,7 +10,7 @@ import { app_info } from "./collector.ts";
 // ── Collectors ───────────────────────────────────────────────────────────────
 
 function manifest(id: string, name: string, description: string, settings: PluginManifest["settings"] = []): PluginManifest {
-  return { id: `x-context.${id}`, name, version: app_info.version, app: app_info.id, description, settings };
+  return { id: `codex.${id}`, name, version: app_info.version, app: app_info.id, description, settings };
 }
 
 export const files_manifest = manifest("files", "Files", "Finds files and folders by name under the folders you list, and notices when one is moved away or deleted.", [
@@ -60,6 +60,6 @@ export const bookmarks_manifest = manifest(
 
 export const links_manifest = manifest("links", "Web links", "Keeps web pages and bookmarks by their address and title.");
 
-export const email_manifest = manifest("email", "Email", "Takes emails sent from Thunderbird with the X-Context add-on, keyed by their Message-ID so a moved email is still found.");
+export const email_manifest = manifest("email", "Email", "Takes emails sent from Thunderbird with the CODEX add-on, keyed by their Message-ID so a moved email is still found.");
 
 export const bundled_manifests = [files_manifest, bookmarks_manifest, x_tasks_manifest, trilium_manifest, links_manifest, email_manifest];

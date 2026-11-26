@@ -213,8 +213,19 @@ describe("import and export", () => {
     const other = open_methods();
     expect(other.import_contexts(file)).toEqual({ contexts: 1, items: 1 });
     expect(other.get_context(garden).items[0]).toMatchObject({ title: "Order seeds", note: "Before March" });
-    expect(() => other.import_contexts(JSON.stringify({ app: "x-tasks" }))).toThrow("not an X-Context export");
-    expect(() => other.import_contexts(JSON.stringify({ app: "x-context", kind: "contexts", version: 9 }))).toThrow("newer");
+    expect(() => other.import_contexts(JSON.stringify({ app: "x-tasks" }))).toThrow("not a CODEX export");
+    expect(() => other.import_contexts(JSON.stringify({ app: "codex", kind: "contexts", version: 9 }))).toThrow("newer");
+  });
+
+  it("reads an export X-Context made, so its contexts move over", () => {
+    const store = open_methods();
+    const garden = store.add_context("Garden", null);
+    store.add_item([garden], "fake", held.t1!, "Before March");
+    const file = JSON.stringify({ ...store.export_contexts(), app: "x-context" });
+
+    const other = open_methods();
+    expect(other.import_contexts(file)).toEqual({ contexts: 1, items: 1 });
+    expect(other.get_context(garden).items[0]).toMatchObject({ title: "Order seeds", note: "Before March" });
   });
 });
 

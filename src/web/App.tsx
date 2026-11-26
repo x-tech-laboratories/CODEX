@@ -20,7 +20,7 @@ import { sidebar_views, SidebarFoot } from "./Sidebar.tsx";
 
 // ── Sections ─────────────────────────────────────────────────────────────────
 
-const theme = theme_choice("x-context-theme");
+const theme = theme_choice("codex-theme");
 const brand_icon = "icon.svg";
 
 // Relative, so a server behind a proxy under a folder keeps it.
@@ -50,8 +50,8 @@ function SignedInApp() {
   if (account.state === "checking") return null;
   if (account.state === "signed_out") {
     return (
-      <Shell brand="X-Context" brand_icon={brand_icon} theme={theme} user={null}>
-        <SignInForm client={accounts} title="X-Context" icon={brand_icon} on_signed_in={refresh} />
+      <Shell brand="CODEX" brand_icon={brand_icon} theme={theme} user={null}>
+        <SignInForm client={accounts} title="CODEX" icon={brand_icon} on_signed_in={refresh} />
       </Shell>
     );
   }
@@ -70,7 +70,7 @@ function Pages({ me, on_sign_out }: { me: Me | null; on_sign_out?: () => void })
   const is_admin = me !== null && me.role === me.roles.at(-1);
 
   useEffect(() => {
-    document.title = `${label} · X-Context`;
+    document.title = `${label} · CODEX`;
   }, [label]);
 
   const view = () => {
@@ -83,7 +83,7 @@ function Pages({ me, on_sign_out }: { me: Me | null; on_sign_out?: () => void })
 
   return (
     <Shell
-      brand="X-Context"
+      brand="CODEX"
       brand_icon={brand_icon}
       views={sidebar_views}
       active={section}

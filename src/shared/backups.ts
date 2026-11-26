@@ -6,8 +6,8 @@ import { backup_naming, default_backup_schedule, type BackupSchedule } from "@x-
 
 // ── Backups ──────────────────────────────────────────────────────────────────
 
-// Names such as context-2026-11-10T09-30-00Z-auto.db.
-export const context_backup_naming = backup_naming("context", ".db");
+// Names such as codex-2026-11-10T09-30-00Z-auto.db.
+export const codex_backup_naming = backup_naming("codex", ".db");
 
 // A schedule saved on the device, the default where it is missing or damaged.
 export function read_schedule(saved: unknown): BackupSchedule {

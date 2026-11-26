@@ -1,8 +1,8 @@
 {
-  "name": "x-context",
-  "version": "0.1.0",
+  "name": "codex",
+  "version": "0.3.0",
   "private": true,
-  "description": "Contexts that gather tasks, notes, files, emails and links from the apps that keep them",
+  "description": "A personal knowledge base and assistant: contexts that gather tasks, notes, files, emails and links from the apps that keep them",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "main": "out/main/index.js",
@@ -10,9 +10,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev:server": "X_CONTEXT_CONFIG=${X_CONTEXT_CONFIG:-config.example.json} X_CONTEXT_PASSWORD_HASH_FILE=${X_CONTEXT_PASSWORD_HASH_FILE:-password.hash} node --watch src/server/main.ts",
+    "dev:server": "CODEX_CONFIG=${CODEX_CONFIG:-config.example.json} CODEX_PASSWORD_HASH_FILE=${CODEX_PASSWORD_HASH_FILE:-password.hash} node --watch src/server/main.ts",
     "dev:web": "vite",
-    "dev": "X_CONTEXT_USER_DATA=${X_CONTEXT_USER_DATA:-dev-data/desktop} electron-vite dev",
+    "dev": "CODEX_USER_DATA=${CODEX_USER_DATA:-dev-data/desktop} electron-vite dev",
     "build": "tsc -b && vite build",
     "build:desktop": "tsc -b && electron-vite build",
     "start": "NODE_ENV=production node src/server/main.ts",
@@ -34,7 +34,7 @@
     "@fastify/static": "^10.1.12",
     "@modelcontextprotocol/server": "^2.4.0",
     "@x-tech-laboratories/halon": "^0.33.0",
-    "@x-tech-laboratories/x-libs": "^0.79.0",
+    "@x-tech-laboratories/x-libs": "^0.81.0",
     "fastify": "^5.12.8",
     "lucide-react": "^1.80.0",
     "react": "^19.3.1",

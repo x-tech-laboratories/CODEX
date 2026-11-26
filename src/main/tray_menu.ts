@@ -33,7 +33,7 @@ export function tray_view(state: TrayState, actions: TrayActions): TrayView {
     .slice(0, most_contexts)
     .map((context): TrayRow => ({ kind: "item", label: context.name, run: () => actions.open_route(`#/context/${context.id}`) }));
   return {
-    tooltip: "X-Context",
-    rows: tray_groups(context_rows, app_rows({ app_name: "X-Context", show: actions.show, quit: actions.quit, quit_completely: actions.quit_completely })),
+    tooltip: "CODEX",
+    rows: tray_groups(context_rows, app_rows({ app_name: "CODEX", show: actions.show, quit: actions.quit, quit_completely: actions.quit_completely })),
   };
 }

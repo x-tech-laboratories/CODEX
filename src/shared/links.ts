@@ -1,11 +1,11 @@
-// Links such as x-context://context/<id>, which open the desktop app on that page from a notification or any other
+// Links such as codex://context/<id>, which open the desktop app on that page from a notification or any other
 // program.
 
 // ── Links ────────────────────────────────────────────────────────────────────
 
-export const link_scheme = "x-context";
+export const link_scheme = "codex";
 
-const link_pattern = /^x-context:\/\/([a-z0-9/_-]*)$/i;
+const link_pattern = /^codex:\/\/([a-z0-9/_-]*)$/i;
 
 // The link to a page, given its route such as "#/context/<id>".
 export function app_link(route: string): string {

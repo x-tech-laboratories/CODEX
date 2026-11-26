@@ -6,7 +6,7 @@ self:
   ...
 }:
 let
-  cfg = config.services.x-context;
+  cfg = config.services.codex;
   inherit (lib)
     literalExpression
     mkEnableOption
@@ -15,22 +15,22 @@ let
     types
     ;
 
-  state_directory = "/var/lib/x-context";
+  state_directory = "/var/lib/codex";
 
-  config_file = (pkgs.formats.json { }).generate "x-context.json" {
-    database = "${state_directory}/context.db";
+  config_file = (pkgs.formats.json { }).generate "codex.json" {
+    database = "${state_directory}/codex.db";
     backups_folder = "${state_directory}/backups";
   };
 in
 {
-  options.services.x-context = {
-    enable = mkEnableOption "X-Context, a web app of contexts gathering items from other apps, that its devices sync with";
+  options.services.codex = {
+    enable = mkEnableOption "CODEX, a web app of contexts gathering items from other apps, that its devices sync with";
 
     package = mkOption {
       type = types.package;
       default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
-      defaultText = literalExpression "x-context (from flake)";
-      description = "The X-Context package to use.";
+      defaultText = literalExpression "codex (from flake)";
+      description = "The CODEX package to use.";
     };
 
     host = mkOption {
@@ -53,7 +53,7 @@ in
 
     passwordHashFile = mkOption {
       type = types.str;
-      example = "/etc/x-context/password-hash";
+      example = "/etc/codex/password-hash";
       description = ''
         The accounts file: one `name:hash` line per admin, from `npm run hash-password`. Admins add other users on the
         Users page.
@@ -62,22 +62,22 @@ in
   };
 
   config = mkIf cfg.enable {
-    systemd.services.x-context = {
-      description = "X-Context";
+    systemd.services.codex = {
+      description = "CODEX";
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];
 
       environment = {
-        X_CONTEXT_CONFIG = toString config_file;
-        X_CONTEXT_HOST = cfg.host;
-        X_CONTEXT_PORT = toString cfg.port;
-        X_CONTEXT_PASSWORD_HASH_FILE = "%d/password-hash";
+        CODEX_CONFIG = toString config_file;
+        CODEX_HOST = cfg.host;
+        CODEX_PORT = toString cfg.port;
+        CODEX_PASSWORD_HASH_FILE = "%d/password-hash";
       };
 
       serviceConfig = {
         ExecStart = lib.getExe cfg.package;
         DynamicUser = true;
-        StateDirectory = "x-context";
+        StateDirectory = "codex";
         StateDirectoryMode = "0700";
         LoadCredential = [ "password-hash:${cfg.passwordHashFile}" ];
         Restart = "always";

@@ -1,4 +1,4 @@
-// What each part of X-Context, such as its contexts or settings, brings to the one database every device keeps: its tables,
+// What each part of CODEX, such as its contexts or settings, brings to the one database every device keeps: its tables,
 // which of them sync, and the calls the page makes on them.
 
 // ── Imports ──────────────────────────────────────────────────────────────────

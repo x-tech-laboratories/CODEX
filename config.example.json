@@ -1,4 +1,4 @@
 {
-  "database": "dev-data/context.db",
+  "database": "dev-data/codex.db",
   "backups_folder": "dev-data/backups"
 }

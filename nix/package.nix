@@ -7,7 +7,7 @@
 }:
 
 buildNpmPackage {
-  pname = "x-context";
+  pname = "codex";
   version = (lib.importJSON ../package.json).version;
   src = lib.cleanSource ../.;
 
@@ -19,19 +19,19 @@ buildNpmPackage {
 
   nativeBuildInputs = [ makeWrapper ];
 
-  # Node will not run .ts files from under a node_modules folder, so the app lives in lib/x-context.
+  # Node will not run .ts files from under a node_modules folder, so the app lives in lib/codex.
   installPhase = ''
     runHook preInstall
 
     npm prune --omit=dev --no-save --ignore-scripts
 
-    mkdir -p $out/lib/x-context/src $out/lib/x-context/out
-    cp -r package.json node_modules $out/lib/x-context/
-    cp -r out/web $out/lib/x-context/out/
-    cp -r src/server src/shared $out/lib/x-context/src/
+    mkdir -p $out/lib/codex/src $out/lib/codex/out
+    cp -r package.json node_modules $out/lib/codex/
+    cp -r out/web $out/lib/codex/out/
+    cp -r src/server src/shared $out/lib/codex/src/
 
-    makeWrapper ${lib.getExe nodejs_24} $out/bin/x-context \
-      --add-flags "--disable-warning=ExperimentalWarning $out/lib/x-context/src/server/main.ts" \
+    makeWrapper ${lib.getExe nodejs_24} $out/bin/codex \
+      --add-flags "--disable-warning=ExperimentalWarning $out/lib/codex/src/server/main.ts" \
       --set-default NODE_ENV production
 
     runHook postInstall
@@ -40,6 +40,6 @@ buildNpmPackage {
   meta = {
     description = "Contexts that gather tasks, notes, files, emails and links from the apps that keep them";
     license = lib.licenses.gpl3Plus;
-    mainProgram = "x-context";
+    mainProgram = "codex";
   };
 }

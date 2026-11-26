@@ -1,5 +1,5 @@
 // What the add-on does apart from Thunderbird: turn the email shown into an item, lay the contexts out as a tree of
-// rows, and call the X-Context server with the token set in the add-on's options.
+// rows, and call the CODEX server with the token set in the add-on's options.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -32,7 +32,7 @@ export async function call_server<Result>(settings: ServerSettings, method: stri
     headers: { "content-type": "application/json", authorization: `Bearer ${settings.token}` },
     body: JSON.stringify(args),
   });
-  if (response.status === 401 || response.status === 403) throw new Error("The server refused the token; make a new one on your account page in X-Context.");
+  if (response.status === 401 || response.status === 403) throw new Error("The server refused the token; make a new one on your account page in CODEX.");
   if (!response.ok) throw new Error((await response.text()) || `The server answered ${response.status}.`);
   if (response.status === 204) return undefined as Result;
   return (await response.json()) as Result;
@@ -63,7 +63,7 @@ export function email_item(message: ThunderbirdMessageHeader, body: string): Fou
   };
 }
 
-// The id X-Context gives the email, to ask which contexts hold it already.
+// The id CODEX gives the email, to ask which contexts hold it already.
 export function email_item_id(message: ThunderbirdMessageHeader): string {
   return `email:${bare_message_id(message.headerMessageId)}`;
 }

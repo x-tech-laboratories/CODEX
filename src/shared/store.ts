@@ -1,4 +1,4 @@
-// The one database every X-Context device keeps: every feature's tables brought up to date, sync set to stamp every
+// The one database every CODEX device keeps: every feature's tables brought up to date, sync set to stamp every
 // change, and every feature's calls in one table the page reaches through whichever host it runs on.
 
 // ── Imports ──────────────────────────────────────────────────────────────────

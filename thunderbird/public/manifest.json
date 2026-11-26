@@ -1,12 +1,12 @@
 {
   "manifest_version": 2,
-  "name": "X-Context",
-  "version": "0.1.0",
-  "description": "Adds the email you are reading to your X-Context contexts, keyed by its Message-ID so it is found wherever it is filed.",
+  "name": "CODEX",
+  "version": "0.3.0",
+  "description": "Adds the email you are reading to your CODEX contexts, keyed by its Message-ID so it is found wherever it is filed.",
   "author": "X-Tech Laboratories",
-  "homepage_url": "https://github.com/x-tech-laboratories/X-Context",
+  "homepage_url": "https://github.com/x-tech-laboratories/CODEX",
   "browser_specific_settings": {
-    "gecko": { "id": "x-context@x-tech-laboratories.github.io", "strict_min_version": "128.0" }
+    "gecko": { "id": "codex@x-tech-laboratories.github.io", "strict_min_version": "128.0" }
   },
   "icons": { "64": "icon-64.png" },
   "permissions": ["messagesRead", "storage"],
