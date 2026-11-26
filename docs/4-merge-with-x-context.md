@@ -140,7 +140,7 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 
 ## Known gaps
 
-As of 2026-11-26:
+As of 2026-11-26 (CODEX answers the four standard item calls since 2026-11-26, closing that gap):
 
 - No background job proposes links yet: rules and similarity run after each index pass, and an engine proposes only
   when the user asks with Suggest links.
@@ -155,8 +155,8 @@ As of 2026-11-26:
   (requests outgrowing the context, a large fixed prompt, unseen reasoning and raw provider errors) is fixed, but not
   yet tried on a real model again.
 - A generic collector for any app answering the standard item calls waits until more apps answer them.
-- CODEX does not yet answer the standard four item calls (`list_item_kinds`, `search_items`, `get_items`,
-  `list_item_changes`) itself, so other apps cannot read its conversations or contexts as items.
+- CODEX's own items (`codex://entity/<id>` among them) are not read by the index's `app_link` rule as links to
+  entities, and the graph gives an entity node no `uri`; the item calls' links open entities on the Graph page.
 - A device still on the shape before conversations were items deletes, after any write of its own, the messages of
   every conversation whose id is not a context's, and syncs those deletions; every device should be updated together.
 

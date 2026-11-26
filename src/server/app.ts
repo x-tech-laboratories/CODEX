@@ -56,6 +56,8 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
     read_only_paths: ["/api/mcp"],
     needed: (_method, path) => (path.startsWith("/api/backup/") ? { role: accounts.top_role } : "any"),
     call_of: calls_under("/api/call"),
+    // A read-only token may make the calls that only read, such as the item calls other apps use.
+    is_read_only,
     page_only,
   });
 
