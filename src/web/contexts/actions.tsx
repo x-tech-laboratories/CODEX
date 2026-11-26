@@ -83,7 +83,7 @@ export function rename_context(context: { id: string; name: string }): void {
 export function delete_context(context: { id: string; name: string }, on_deleted?: () => void): void {
   confirm_dialog({
     title: `Delete ${context.name}?`,
-    message: "The context and every context inside it go. The items stay in their own apps, and History can bring the context back.",
+    message: "The context and every context inside it go, with the conversations no other context holds. The items stay in their own apps, and History can bring the context back without those conversations.",
     confirm_label: "Delete",
     danger: true,
     run: async () => {
