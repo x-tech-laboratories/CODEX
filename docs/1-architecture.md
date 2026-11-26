@@ -542,9 +542,38 @@ resolver and a test-only `allow_address`, which only code can pass, so tests rea
 weakening it. `web_search` sends `GET <endpoint>/search?q=<query>&format=json` to the user's SearXNG instance and gives
 the first eight results' titles, addresses and snippets.
 
+The bundled `codex.mcp` plugin (`src/shared/mcp/`) turns each MCP server the user added into a tool plugin of its own.
+The servers are the synced setting `mcp_servers`, one of `user_only_settings`, a list of `{ id, name, transport,
+address, token, command, args, variables, enabled, tools, listed_at }`: `transport` is `http` (streamable HTTP at
+`address`, with `token` as a bearer token, hidden by `get_settings` and kept by `set_setting` when the hidden mark comes
+back, as the apps' tokens are) or `stdio` (`command` started with `args`, passing the variables of CODEX's own
+environment that `variables` names). The id is made once from the first name. `tools` is what the server listed when it
+was added or refreshed, each with its name, description (2,000 characters at most), `read_only` (the server's
+`readOnlyHint`) and input schema, so opening the plugin host starts no server. `mcp_plugin(database)`, which
+`open_plugin_host` adds beside the apps' plugin, provides `tools` under `mcp_<id>` for each server that is on, labelled
+with its name, without `own_words`, so its descriptions reach the engine fenced and clipped; a tool changes something
+unless it is read-only, and sends outside unless the server is a command or its address is a loopback one
+(`sends_outside` in `mcp/model.ts`). Its key for marks and tool choices is `codex.mcp/mcp_<id>`.
+
+The calls (`mcp/store.ts`): `list_mcp_servers` reads (tokens never, only `has_token`), and the page-only
+`add_mcp_server(fields)`, `change_mcp_server(id, fields)`, `refresh_mcp_server(id)` and `remove_mcp_server(id)` check
+the fields, list the tools before keeping a new or newly reached server (a server that cannot answer is not kept), and
+close a connection whose server changed or went. They reach servers through an `McpConnector` (`mcp/connector.ts`) set
+where the store runs by `load_collectors`, since a command needs Node: `src/server/tools/mcp_client.ts`, on the
+official SDK's client (`@modelcontextprotocol/client`). It keeps one connection a server, closed after two minutes
+unused; starts a command through the SDK's stdio transport, without a shell, with the SDK's safe variables (`HOME`,
+`LOGNAME`, `PATH`, `SHELL`, `TERM`, `USER`) and those named, keeping the last 600 characters of its stderr for errors;
+reaches an address over streamable HTTP with the token from an auth provider and same-origin redirects only; gives
+connecting and listing 20 seconds and a call 60; and closes a connection whose call failed, timed out or was stopped, so
+the next call starts afresh. Failures are plain words naming the server (not found, may not be run, could not be
+reached at host and port, refused the token, stopped with what it wrote, did not answer in time), never the token. A
+tool's answer is its text parts, a resource's text and the rest named in brackets; one marked `isError` fails the call.
+
 Settings: each tool plugin's row under Plugins shows its marks and each tool with its facts, an on switch and "Also
 offer to small models" (`src/web/tools/ToolSettings.tsx`); Action policy lists the plugin tools that change something
-after CODEX's own; the hosted log shows tool uses in words.
+after CODEX's own; the hosted log shows tool uses in words. MCP servers have a row each under Plugins
+(`src/web/mcp/McpServers.tsx`): its On switch, how it is reached, Save, its tools with Refresh, its marks and each
+tool's switches, and Remove, then **Add an MCP server…**.
 
 ### The pane
 

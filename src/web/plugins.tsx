@@ -14,17 +14,19 @@ import { app_info, plugins_setting } from "../shared/collectors/collector.ts";
 import { bundled_manifests } from "../shared/collectors/manifests.ts";
 import { embedder_manifests } from "../shared/embedders/manifests.ts";
 import { engine_manifests } from "../shared/engines/manifests.ts";
+import { mcp_manifest, mcp_plugin_id } from "../shared/mcp/model.ts";
 import { tool_manifests } from "../shared/tools/manifests.ts";
 import { calls } from "./api.ts";
 import { SourceMarks } from "./privacy/PrivacySettings.tsx";
 import { ItemSourceRows } from "./sources/ItemSources.tsx";
+import { McpServerRows } from "./mcp/McpServers.tsx";
 import { OtherToolPluginRows, ToolPluginSettings } from "./tools/ToolSettings.tsx";
 import { item_sources_plugin_id } from "../shared/sources/model.ts";
 
 // ── Host ─────────────────────────────────────────────────────────────────────
 
 // The page side of a collector, engine or tool plugin has only its settings; its work runs where the store does.
-const bundled_pages = [...bundled_manifests, ...engine_manifests, ...embedder_manifests, ...tool_manifests].map((manifest) => define_plugin({ ...manifest, start: () => undefined }));
+const bundled_pages = [...bundled_manifests, ...engine_manifests, ...embedder_manifests, ...tool_manifests, mcp_manifest].map((manifest) => define_plugin({ ...manifest, start: () => undefined }));
 
 let started: Promise<PluginHost> | null = null;
 
@@ -78,7 +80,7 @@ function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<st
         <SettingsDialogRow key={manifest.id} name={manifest.name} status={status_of(manifest, state, host.settings(manifest.id))} about={manifest.description}>
           <PluginSettings host={host} plugin_id={manifest.id} heading={null} />
           {with_marks && tool_ids.has(manifest.id) && state === "running" && <ToolPluginSettings plugin_id={manifest.id} />}
-          {with_marks && manifest.id !== item_sources_plugin_id && !tool_ids.has(manifest.id) && <SourceMarks plugin_id={manifest.id} />}
+          {with_marks && manifest.id !== item_sources_plugin_id && !tool_ids.has(manifest.id) && manifest.id !== mcp_plugin_id && <SourceMarks plugin_id={manifest.id} />}
         </SettingsDialogRow>
       ))}
     </>
@@ -90,7 +92,7 @@ const embedder_ids = new Set(embedder_manifests.map((manifest) => manifest.id));
 const tool_ids = new Set(tool_manifests.map((manifest) => manifest.id));
 
 // A row for each plugin but the engines and embedders, each opening its own dialog, then each tool plugin the page has
-// no manifest of, then the apps read through the item calls, each marked on its own in its dialog.
+// no manifest of, then the MCP servers and the apps read through the item calls, each marked on its own in its dialog.
 export function CollectorRows() {
   const host = use_page_plugins();
   const ids = host ? new Set(host.list().map((status) => status.manifest.id).filter((id) => !engine_ids.has(id) && !embedder_ids.has(id))) : null;
@@ -99,6 +101,7 @@ export function CollectorRows() {
     <>
       <Rows host={host} ids={ids} with_marks />
       <OtherToolPluginRows known={new Set(host.list().map((status) => status.manifest.id))} />
+      <McpServerRows />
       <ItemSourceRows />
     </>
   );

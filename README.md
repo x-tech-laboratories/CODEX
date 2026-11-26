@@ -244,6 +244,28 @@ reading only and sending outside:
   `GET <address>/search?q=<query>&format=json`, with no cookies or key, and gives the assistant the first eight
   results' titles, addresses and snippets. With no endpoint set the tool is not offered.
 
+**MCP servers** give the assistant the tools of any MCP server, through the bundled **MCP servers** plugin. Under
+**Settings → Plugins**, choose **Add an MCP server…**, give it a name, and either:
+
+- **A command on this computer (stdio):** the program that starts the server, by its full path or a name on the
+  `PATH`, its arguments one a line, and the names of any variables of CODEX's own it needs, such as `GITHUB_TOKEN`. It
+  is started without a shell, with only `HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM`, `USER` and the variables you name.
+  It runs where CODEX's data is: in the desktop app's daemon, or on the server, so on a NixOS server give the program by
+  its full path. A server that exits or stops answering gives a plain error, with the last of what it wrote, and never
+  stops CODEX; one left unused for two minutes is stopped and started again when next needed.
+- **An address (streamable HTTP):** where it answers MCP, such as `https://mcp.example.org/mcp`, and a bearer token if
+  it needs one, kept like a plugin's key: never shown again, and kept when you save without typing a new one.
+
+CODEX lists the server's tools as you add it (and on **Refresh**), so a server that does not answer is not added. A
+tool the server marks read-only runs at once; every other tool counts as changing something and asks you first until
+you set another level under **Action policy**. A command's tools, and those of a server on a loopback address, stay on
+this computer; any other server's tools send what they are given outside. Each server is a tool plugin of its own with
+its own **Trusted content** and **May be used after reading private sources**, can be turned off whole with its **On**
+switch, and each of its tools on its own. Its tools are named after it, such as `mcp_files__read_file`, so a server
+cannot take the place of CODEX's own calls, and what it says of its tools and what they give back reach the model fenced
+as outside data, its descriptions clipped. Adding, changing, refreshing and removing a server, above all the command it
+runs, are yours alone: only CODEX's own page can do them, and the servers sync only between your own devices.
+
 A tool plugin of your own is a folder plugin, like a collector, providing `tools`: a label and a list of tools, each a
 name, a plain-words description, a JSON Schema for its arguments, `changes` and `sends_outside`, answered by
 `call(name, args, signal)` with text. A tool that leaves either fact out is taken to change something and to send
@@ -251,7 +273,8 @@ outside; descriptions are shown to the engine fenced as outside data unless the 
 
 The assistant's settings, the marks, the engine and embedder in use, every plugin's settings, the tool plugins' marks,
 which of their tools are offered and at what level, and the apps read through the item calls can be changed only on
-CODEX's own page; a token or an MCP client can read them, with keys hidden, but not change them.
+CODEX's own page; a token or an MCP client can read them, with keys hidden, but not change them. The same holds for the
+MCP servers, their addresses, tokens and commands.
 
 ## Collectors
 

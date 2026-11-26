@@ -29,6 +29,10 @@ the conversations no other context holds.*
 5. **Tools belong to CODEX.** Every engine reaches CODEX's data through CODEX's own calls, the same ones served over MCP. Approval, the action policy and the rule that a run which read outside content cannot change anything are enforced there, once, for every engine. Tools come from four places, all under the same policy:
    - **CODEX's own calls** (contexts, items, links, jobs, blueprints).
    - **The sources' MCP servers.**
+     *Built 2026-11-27 as the bundled `codex.mcp` tool plugin (`src/shared/mcp/`, described in doc 1): the user adds any
+     MCP server in Settings, at an address over streamable HTTP with an optional bearer token or as a local command over
+     stdio, and its tools become plugin tools under the same rules, each server with its own marks; adding, changing
+     and removing servers, and the command a server runs, are the user's alone at the page.*
    - **Tool plugins:** prebuilt tools installed like any other plugin, beside collector and engine plugins.
      *Built 2026-11-27 (`src/shared/tools/`, described in doc 1): a `tools` provider whose tools are offered beside
      CODEX's calls through the same wrapper, under the action policy (a change at `proposal` until set, set in Settings
@@ -36,7 +40,7 @@ the conversations no other context holds.*
      arguments outside is refused once the run has had a source not marked for hosted engines in front of it, unless
      the plugin is marked "May be used after reading private sources", and each use is in the hosted log. Each tool can
      be turned off, and the core set takes one only when the user ticks it. The bundled Web plugin reads public pages
-     behind an address guard and searches a SearXNG instance the user names.*
+     behind an address guard and searches a SearXNG instance the user names. MCP servers are tool plugins too (above).*
    - **Tools the engine writes:** a script saved by proposal, read by the user before its first use, and run in a sandbox where it can call only CODEX's tools.
 6. **Sources are other apps' MCP servers,** chosen during setup, each marked for whether its content may be sent to a hosted engine. The X-apps follow one shared convention for this (proposed for the Application Standard), so one collector reads them all.
    *Built 2026-11-26: the convention is the Application Standard's four item calls, and one collector reads every app
@@ -198,7 +202,10 @@ cosine, and a job's conversation is no longer the pane's default):
   model.
 - The Claude-subscription engine and the SmartHarness engine are not built.
 - Engine-written tools (decision 5's fourth place) are not built. No real model has used a plugin tool: a scripted fake
-  engine has, in tests and in the desktop app.
+  engine has, in tests and in the desktop app, and only fake MCP servers have been added.
+- An MCP server's command runs wherever a reply is written, the desktop daemon or the server, since the servers sync
+  between the user's devices; a command that exists on one only fails plainly on the other. MCP servers that ask for
+  OAuth, prompts and resources are not supported; only tools, with a bearer token at most.
 - A tool plugin's results are not screened from hosted engines: they reach the engine that asked as they came, and a
   later reply may replay them to any engine. A tool whose results are private would need a mark like a source's
   "May be sent to a hosted engine".
