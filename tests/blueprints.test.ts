@@ -49,10 +49,6 @@ async function tools_of(fixture: Fixture, hosted = false, conversation_id = "tal
   return { context, tools: engine_tools(context) };
 }
 
-function json_of(result: string): unknown {
-  return JSON.parse(result.replace(/^<untrusted-data>\n?|\n?<\/untrusted-data>$/g, ""));
-}
-
 // ── The user's own ───────────────────────────────────────────────────────────
 
 describe("blueprints the user writes", () => {

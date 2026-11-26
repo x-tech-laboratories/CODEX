@@ -21,6 +21,7 @@ import { conversation_item_id, reply_parts, type AssistantStatus, type Conversat
 import type { Proposal } from "../../shared/policy/model.ts";
 import type { ChangeUndoState } from "../../shared/policy/undo.ts";
 import { attempt, calls, page, succeeds, use_data } from "../api.ts";
+import { BlueprintProposalCard } from "../blueprints/ProposalCard.tsx";
 import { add_to_contexts, delete_conversation, move_to_context, rename_conversation } from "../contexts/item_actions.tsx";
 import { open_conversation, take_wanted, wanted_watch } from "./selection.ts";
 import { Mascot } from "./Mascot.tsx";
@@ -331,6 +332,7 @@ function Switcher({ context_id, list, shown, on_pick }: { context_id: string | n
         { label: "Rename…", run: () => rename_conversation(shown) },
         { label: context_id ? "Move to…" : "Move to a context…", run: () => move_to_context({ id: conversation_item_id(shown.id), title: shown.title }, context_id, holders, (moved_to) => open_conversation(shown.id, [moved_to], null)) },
         { label: "Also add to…", run: () => add_to_contexts({ id: conversation_item_id(shown.id), title: shown.title }, holders) },
+        { label: "Save as blueprint", disabled: shown.is_running || shown.message_count === 0, run: () => void attempt(() => calls().save_as_blueprint(shown.id)) },
         { label: "Copy link", run: () => void navigator.clipboard.writeText(shown.link).then(() => toast("Link copied.")) },
         { label: "Delete…", danger: true, separator_before: true, run: () => delete_conversation(shown, () => on_pick(null)) },
       ]
@@ -446,9 +448,10 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
   const undo_list = use_data((api) => (shown_id ? api.list_change_undos(shown_id) : Promise.resolve([])), [shown_id]);
   const undos: Undos = new Map((undo_list.data ?? []).map((each) => [`${each.message_id}:${each.call_id}`, each]));
   const collectors = use_data((api) => api.list_collectors());
+  const blueprint_proposals = use_data((api) => (shown_id ? api.list_blueprint_proposals(shown_id) : Promise.resolve([])), [shown_id]);
   const label_of = (source: string) => collectors.data?.find((each) => each.id === source)?.label ?? source;
   const asked_text = (id: string) => data?.messages.find((message) => message.id === id)?.text ?? null;
-  const count = (data?.messages.length ?? 0) + waiting.length + (run ? 1 : 0);
+  const count = (data?.messages.length ?? 0) + waiting.length + (blueprint_proposals.data?.length ?? 0) + (run ? 1 : 0);
 
   // In braces, since a browser's scrollIntoView may give back a promise, which React would take for a cleanup.
   useEffect(() => {
@@ -481,6 +484,9 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
             {run && <Reply run={run} />}
             {waiting.map((proposal) => (
               <ProposalCard key={proposal.id} proposal={proposal} asked={asked_text(proposal.evidence.asked_by)} label_of={label_of} />
+            ))}
+            {!run && (blueprint_proposals.data ?? []).map((proposal) => (
+              <BlueprintProposalCard key={proposal.id} proposal={proposal} />
             ))}
           </>
         )}

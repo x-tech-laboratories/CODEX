@@ -9,6 +9,7 @@ import { FormRow } from "@x-tech-laboratories/x-libs/web/react/layout";
 import type { MenuItem } from "@x-tech-laboratories/x-libs/web/menus";
 
 import type { ContextSummary } from "../../shared/contexts/model.ts";
+import { new_blueprint } from "../blueprints/BlueprintView.tsx";
 import { attempt, calls, succeeds } from "../api.ts";
 
 // ── Routes ───────────────────────────────────────────────────────────────────
@@ -96,6 +97,7 @@ export function delete_context(context: { id: string; name: string }, on_deleted
 export function context_menu(context: ContextSummary, on_deleted?: () => void): MenuItem[] {
   return [
     { label: "New context inside", run: () => new_context(context.id) },
+    { label: "New blueprint…", run: () => new_blueprint(context) },
     { label: "Rename…", run: () => rename_context(context) },
     { label: context.is_archived ? "Bring back" : "Archive", run: () => void succeeds(() => calls().set_context_archived(context.id, !context.is_archived)) },
     { label: "Delete…", danger: true, separator_before: true, run: () => delete_context(context, on_deleted) },
