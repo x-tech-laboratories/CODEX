@@ -218,9 +218,13 @@ the index stores each document's sources, so `search_index` screens message hits
 is never sent them.
 
 The settings that keep the user in charge (`user_only_settings` in `page_api.ts`: `action_policy`, `source_marks`,
-`engine`, `embedder`, `hosted_log.keep_days` and `plugins`) are written only from the page: `is_page_only_call`
-refuses `set_setting` on any of them to a token on the server's API and to both MCP endpoints, as it refuses the
-page-only calls.
+`engine`, `embedder`, `hosted_log.keep_days` and `plugins`) are written only from the page: `is_user_only_setting_write`
+is the rule CODEX gives X-Libs `page_only_calls`, so the server's sign-in refuses `set_setting` on any of them to every
+token and both MCP endpoints refuse it, as they refuse the page-only calls. Sync honours the same list: the server's
+`register_sync_routes` takes a change to one of these rows (`device_only`) only from the user's own devices, a token
+the device sign-in made, and refuses the whole exchange, and any replace, to a program's token. Full tokens made
+before X-Libs 0.84.0 kept their kind cannot be told apart and count as devices; Your account marks each device's token,
+so an older program token can be revoked.
 
 ### Tools and the action policy
 
@@ -242,8 +246,8 @@ such an item in the open context's instructions. Every call that changes somethi
 Once a run has read outside content, every change it asks for becomes a proposal whatever its level. Approving
 (`resolve_proposal`) runs the call through the store as the page would, so History records it, and adds an event to the
 conversation saying the user approved it and what came back; rejecting adds one saying so. `resolve_proposal` and
-`set_action_level` (and the privacy feature's `set_source_mark`) answer only the page (`is_page_only` in `page_api.ts`): the server refuses them to a bearer token, the
-daemon takes them over its socket from the window, and neither MCP endpoint lists them (`program_api`). The engine reads those
+`set_action_level` (and the privacy feature's `set_source_mark`) answer only the page: `page_only_methods` in `page_api.ts` marks their specs `page_only` (X-Libs `api_spec`), so the server's sign-in refuses them to every bearer token, the
+daemon takes them over its socket from the window, neither MCP endpoint lists them, and the OpenAPI document marks them `x-page-only`. The engine reads those
 events at the start of the user's next message. The policy's own calls and the conversations' are never offered.
 
 ### The pane

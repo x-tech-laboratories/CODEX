@@ -3,7 +3,7 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import type { ApiSpec } from "@x-tech-laboratories/x-libs/api_spec";
+import { page_only_calls, type ApiSpec } from "@x-tech-laboratories/x-libs/api_spec";
 import { migrate, type SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { hide_secrets, keep_secrets, type PluginRecords } from "@x-tech-laboratories/x-libs/plugins";
 import { create_sync_engine } from "@x-tech-laboratories/x-libs/sync_engine";
@@ -15,7 +15,7 @@ import { contexts_feature } from "./contexts/store.ts";
 import { use_assistant_host, type AssistantHost } from "./conversations/host.ts";
 import { conversations_feature } from "./conversations/store.ts";
 import { forget_synced_changes, history_feature, install_history, record_history } from "./history/store.ts";
-import { is_page_only, is_page_only_call, is_read_only } from "./page_api.ts";
+import { is_read_only, is_user_only_setting_write, page_only_methods, page_only_refusal } from "./page_api.ts";
 import { policy_feature } from "./policy/store.ts";
 import { privacy_feature } from "./privacy/store.ts";
 import { search_feature } from "./search/store.ts";
@@ -82,13 +82,15 @@ export type ContextMethods = Bound<typeof all_methods>;
 
 export const method_names = Object.keys(all_methods) as (keyof ContextMethods & string)[];
 
-export { is_page_only, is_page_only_call, is_read_only };
+export { is_read_only };
 
-// What every call does and takes, for programs other than the page.
-export const context_api = Object.assign({}, ...features.map((feature) => feature.api)) as ApiSpec<ContextMethods>;
+// What every call does and takes, for programs other than the page, the calls only the user may make marked page-only.
+export const context_api = Object.fromEntries(
+  Object.entries(Object.assign({}, ...features.map((feature) => feature.api)) as ApiSpec<ContextMethods>).map(([method, spec]) => [method, page_only_methods.has(method) ? { ...spec, page_only: true } : spec]),
+) as ApiSpec<ContextMethods>;
 
-// What other programs reach through MCP: every call but those only the user at the page may make.
-export const program_api = Object.fromEntries(Object.entries(context_api).filter(([method]) => !is_page_only(method))) as ApiSpec<ContextMethods>;
+// The calls and setting writes only the user at the page may make, as the server's sign-in and both MCP endpoints refuse them.
+export const page_only = page_only_calls(context_api, { rule: is_user_only_setting_write, refusal: page_only_refusal });
 
 // The calls run on the database given; after each write the features catch up, the history records what it touched and
 // on_change tells the other pages and devices.

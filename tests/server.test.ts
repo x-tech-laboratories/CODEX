@@ -8,11 +8,13 @@ import type { FastifyInstance, InjectOptions } from "fastify";
 
 import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 import { hash_password } from "@x-tech-laboratories/x-libs/server/passwords";
+import { create_sync_client } from "@x-tech-laboratories/x-libs/sync_client";
+import type { SyncConfig } from "@x-tech-laboratories/x-libs/sync_protocol";
 
 import { build_app } from "../src/server/app.ts";
 import { use_plugins, type ContextPluginApi } from "../src/shared/collectors/host.ts";
 import { wait_for_runs } from "../src/shared/conversations/run.ts";
-import { is_page_only_call, method_names, open_store } from "../src/shared/store.ts";
+import { method_names, open_store, page_only, sync_engine } from "../src/shared/store.ts";
 import { user_only_settings } from "../src/shared/page_api.ts";
 import { register_context_calls } from "../src/server/calls.ts";
 import fastify from "fastify";
@@ -127,6 +129,9 @@ describe("server", () => {
     expect(document.paths["/api/call/get_context"]!.post).toMatchObject({ operationId: "get_context", tags: ["read"] });
     expect(document.paths["/api/call/add_item"]!.post.tags).toEqual(["change"]);
     expect(Object.keys(document.paths)).toHaveLength(method_names.length);
+    // The calls only the user at the page may make are marked so.
+    expect(document.paths["/api/call/resolve_proposal"]!.post).toMatchObject({ "x-page-only": true });
+    expect(document.paths["/api/call/add_item"]!.post).not.toHaveProperty("x-page-only");
   });
 
   it("serves every call as an MCP tool, keeping other services' keys out of what it reads", async () => {
@@ -282,13 +287,73 @@ describe("server", () => {
     open_store(database);
     const daemon = fastify();
     register_lenient_json_body(daemon);
-    register_context_calls(daemon, () => database, new EventStream(), () => true);
+    register_context_calls(daemon, () => database, new EventStream());
     app = daemon;
     const reply = await daemon.inject({ method: "POST", url: "/call/set_setting", payload: ["engine", "anthropic"] });
     expect(reply.statusCode).toBe(204);
     expect((await daemon.inject({ method: "POST", url: "/call/get_settings", payload: [] })).json()).toMatchObject({ engine: "anthropic" });
-    expect(is_page_only_call("set_setting", ["engine", "x"])).toBe(true);
-    expect(is_page_only_call("set_setting", ["refresh_minutes", 5])).toBe(false);
-    expect(is_page_only_call("set_source_mark", [])).toBe(true);
+    expect(page_only.is_page_only_call("set_setting", ["engine", "x"])).toBe(true);
+    expect(page_only.is_page_only_call("set_setting", ["refresh_minutes", 5])).toBe(false);
+    expect(page_only.is_page_only_call("set_source_mark", [])).toBe(true);
+  });
+});
+
+describe("sync and the user's own settings", () => {
+  // A device's copy of the data, kept in memory with its sign-in.
+  function device(): { database: DatabaseSync; client: ReturnType<typeof create_sync_client> } {
+    const database = new DatabaseSync(":memory:");
+    open_store(database);
+    let config: SyncConfig | null = null;
+    const storage = { read_config: () => config, write_config: (next: SyncConfig) => void (config = next), remove_config: () => void (config = null), back_up_before_download: () => undefined };
+    return { database, client: create_sync_client({ engine: sync_engine, database: () => database, storage, device_name: "CODEX on a test", event_stream_retry_ms: 60_000 }) };
+  }
+
+  function setting_of(database: DatabaseSync, key: string): unknown {
+    const row = database.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined;
+    return row === undefined ? undefined : JSON.parse(row.value);
+  }
+
+  it("refuses a protected setting pushed through the sync exchange by a program's token, and takes the rest", async () => {
+    await start();
+    const made = await as_page({ method: "POST", url: "/api/account/tokens", payload: { name: "script", read_only: false } });
+    const headers = { authorization: `Bearer ${made.json<{ token: string }>().token}` };
+    const { generation } = (await app.inject({ method: "GET", url: "/api/sync/snapshot", headers })).json() as { generation: string };
+    const row = (key: string, value: unknown) =>
+      ["_exists", "key", "value"].map((column) => ({ table: "settings", key, column, value: column === "_exists" ? 1 : column === "key" ? key : JSON.stringify(value), ts: Date.now(), site: "program" }));
+    const exchange = (changes: unknown[]) => app.inject({ method: "POST", url: "/api/sync/exchange", headers, payload: { site: "program", generation, cursor: 0, changes } });
+
+    for (const key of user_only_settings) {
+      const refused = await exchange([...row("refresh_minutes", 3), ...row(key, key === "action_policy" ? { rename_context: "background" } : "changed")]);
+      expect([key, refused.statusCode]).toEqual([key, 403]);
+    }
+    expect((await app.inject({ method: "POST", url: "/api/sync/replace", headers, payload: { changes: [] } })).statusCode).toBe(403);
+    const settings = (await signed({ method: "POST", url: "/api/call/get_settings", payload: [] })).json() as Record<string, unknown>;
+    expect(settings.engine).not.toBe("changed");
+    // A refused exchange takes none of its changes, the harmless ones beside a protected setting included.
+    expect(settings.refresh_minutes).not.toBe(3);
+    expect(settings.action_policy).not.toEqual({ rename_context: "background" });
+
+    expect((await exchange(row("refresh_minutes", 9))).statusCode).toBe(200);
+    expect(((await signed({ method: "POST", url: "/api/call/get_settings", payload: [] })).json() as Record<string, unknown>).refresh_minutes).toBe(9);
+  });
+
+  it("still syncs every setting both ways between the user's own devices", async () => {
+    await start();
+    const address = await app.listen({ port: 0, host: "127.0.0.1" });
+    const desktop = device();
+    const phone = device();
+
+    desktop.database.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("engine", JSON.stringify("anthropic"));
+    expect((await desktop.client.connect(address, { name: "root", password }, "upload")).state).toBe("idle");
+    expect((await phone.client.connect(address, { name: "root", password }, "download")).state).toBe("idle");
+    expect(setting_of(phone.database, "engine")).toBe("anthropic");
+
+    phone.database.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("action_policy", JSON.stringify({ rename_context: "auto" }));
+    expect((await phone.client.sync_now()).state).toBe("idle");
+    await desktop.client.sync_now();
+    expect(setting_of(desktop.database, "action_policy")).toEqual({ rename_context: "auto" });
+
+    desktop.client.stop();
+    phone.client.stop();
   });
 });

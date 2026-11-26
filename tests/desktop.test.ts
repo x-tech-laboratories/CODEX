@@ -3,10 +3,13 @@ import { DatabaseSync } from "node:sqlite";
 import fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
+import { calls_under, register_accounts } from "@x-tech-laboratories/x-libs/server/account_sign_in";
+import { AccountStore } from "@x-tech-laboratories/x-libs/server/account_store";
 import { EventStream } from "@x-tech-laboratories/x-libs/server/events";
+import { hash_password } from "@x-tech-laboratories/x-libs/server/passwords";
 
 import { register_context_calls } from "../src/server/calls.ts";
-import { open_store } from "../src/shared/store.ts";
+import { open_store, page_only } from "../src/shared/store.ts";
 import { desktop_setting_defaults, read_desktop_settings, starts_hidden } from "../src/shared/desktop.ts";
 import { tray_view, type TrayActions, type TrayState } from "../src/main/tray_menu.ts";
 import type { ContextSummary } from "../src/shared/contexts/model.ts";
@@ -73,7 +76,7 @@ describe("the data calls over HTTP", () => {
     const app = fastify();
     const database = new DatabaseSync(":memory:");
     open_store(database);
-    register_context_calls(app, () => database, new EventStream(), () => true);
+    register_context_calls(app, () => database, new EventStream());
 
     const started = await app.inject({ method: "POST", url: "/call/add_context", payload: ["Garden", null] });
 
@@ -86,17 +89,21 @@ describe("the data calls over HTTP", () => {
     const database = new DatabaseSync(":memory:");
     open_store(database);
     const window = fastify();
-    register_context_calls(window, () => database, new EventStream(), () => true);
+    register_context_calls(window, () => database, new EventStream());
+    // A program reaches the calls through the server, whose sign-in refuses a token what only the page may do.
     const program = fastify();
-    register_context_calls(program, () => database, new EventStream(), () => false);
+    const accounts = new AccountStore({ database: new DatabaseSync(":memory:"), app_name: "CODEX", declared: new Map([["root", hash_password("a long enough password")]]) });
+    await register_accounts(program, { accounts, cookie_name: "codex_session", call_of: calls_under("/api/call"), page_only });
+    await program.register(async (api) => register_context_calls(api, () => database, new EventStream()), { prefix: "/api" });
+    const headers = { authorization: `Bearer ${accounts.create_token("root", { name: "script", read_only: false }).token}` };
 
     const set = await window.inject({ method: "POST", url: "/call/set_action_level", payload: ["rename_context", "auto"] });
-    const refused = await program.inject({ method: "POST", url: "/call/set_action_level", payload: ["rename_context", "background"] });
+    const refused = await program.inject({ method: "POST", url: "/api/call/set_action_level", headers, payload: ["rename_context", "background"] });
 
     expect(set.statusCode).toBe(204);
     expect(refused.statusCode).toBe(403);
     expect(refused.body).toContain("Only you can do this");
-    const policy = await program.inject({ method: "POST", url: "/call/get_action_policy", payload: [] });
+    const policy = await program.inject({ method: "POST", url: "/api/call/get_action_policy", headers, payload: [] });
     expect((policy.json() as { method: string; level: string }[]).find((entry) => entry.method === "rename_context")!.level).toBe("auto");
     await window.close();
     await program.close();
