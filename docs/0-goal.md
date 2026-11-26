@@ -4,7 +4,7 @@ CODEX is a personable personal assistant that runs on the user's own computer. I
 
 **Built on a harness:** the reasoning, memory and research come from [SmartHarness](https://github.com/x-tech-laboratories/SmartHarness), which makes small local models capable through task trees, a knowledge store and background learning. CODEX adds what an assistant needs around it: a daemon that is always on, interfaces, event sources such as mail, an Inbox of proposed actions, a persona and a face.
 
-**Local and private:** the model runs on the user's hardware, and nothing is sent to a hosted model. CODEX uses whichever local model serves the user best, which need not be the small reference model the harness is measured with.
+**Local by default, hosted by choice:** the model runs on the user's hardware unless the user picks a hosted one, such as Claude or a GPT model, and that choice is made per job: requests can go to a hosted model while background work and mail stay local. Every run names the model it used. CODEX uses whichever model serves the user best, which need not be the small reference model the harness is measured with.
 
 **Asks before it acts:** CODEX proposes; the user approves. Drafts are never sent, and outside content cannot make it change anything unattended.
 

@@ -43,6 +43,8 @@ export type WorkbenchState = {
     clarifications: Clarification[];
     // True while the daemon is suspended and has freed the GPU.
     suspended: boolean;
+    // The model the current or last run used, as the daemon names it.
+    model: string;
 };
 
 export type Effect =
@@ -82,6 +84,7 @@ export function initial_state(): WorkbenchState {
         background_output: '',
         clarifications: [],
         suspended: false,
+        model: '',
     };
 }
 
@@ -335,11 +338,11 @@ function text(value: unknown): string {
 
 export function reduce_event(state: WorkbenchState, event: string, data: Record<string, unknown>): Reduction {
     switch (event) {
-        case 'run.started':
-            if (!state.running || state.run_id === null) {
-                return { state: begin_run(state, Number(data.run_id)), effects: [] };
-            }
-            return { state, effects: [] };
+        case 'run.started': {
+            const begun = !state.running || state.run_id === null ? begin_run(state, Number(data.run_id)) : state;
+            const model = text(data.model);
+            return { state: model ? { ...begun, model, status: `Running on ${model}` } : begun, effects: [] };
+        }
         case 'run.tree':
             return { state: show_task_tree(state, (data.nodes as TaskNode[]) ?? []), effects: [] };
         case 'run.progress':

@@ -26,10 +26,11 @@ import { ImapConnector } from '../assistant/imap.js';
 import { MailConnector } from '../assistant/mail.js';
 import { MailStore } from '../assistant/mailStore.js';
 import { ASSISTANT_EVENT_HANDLERS } from '../assistant/eventHandlers.js';
-import { ModelCache } from '@x-tech-laboratories/smartharness/model';
+import { localModelSource, ModelCache, type ModelSource } from '@x-tech-laboratories/smartharness/model';
 import { runNextJob, type BackgroundStep, type Job } from '@x-tech-laboratories/smartharness/scheduler';
 import { titleConversations } from '@x-tech-laboratories/smartharness/titles';
-import { backgroundModelKey, expandUser } from '@x-tech-laboratories/smartharness/settings';
+import { expandUser } from '@x-tech-laboratories/smartharness/settings';
+import { backgroundModelSource, mainModelSource } from '../assistant/models.js';
 import { assistantSettingsPath as defaultSettingsPath, saveAssistantSettings as saveSettings, validateAssistantSettings as validateSettings, type AssistantSettings as Settings } from '../assistant/settings.js';
 import { executeTaskTree, RunStopped, savedRunOptions, type ExecuteTaskTreeOptions } from '@x-tech-laboratories/smartharness/taskTree';
 import { LineReader } from '../main/daemonBridge.js';
@@ -185,6 +186,7 @@ export class ActiveRun {
         readonly id: number,
         readonly prompt: string,
         readonly owner: ClientConnection | null,
+        readonly modelSource: ModelSource,
     ) {}
 
     cancel(): void {
@@ -201,6 +203,7 @@ export class ActiveRun {
         return {
             run_id: this.id,
             prompt: this.prompt,
+            model: this.modelSource.label,
             tree: [...this.tree],
             progress: [...this.progress],
             outputs: { ...this.outputs },
@@ -398,12 +401,15 @@ export class HarnessDaemon {
             ['save_settings', method(['settings'], (_, params) => this.saveSettings(settingsObject(params.settings)))],
             [
                 'auto_size',
-                method(['model_path', 'gpu_layers', 'background_model_path', 'background_gpu_layers'], (_, params) =>
+                method(['model_path', 'gpu_layers', 'background_model_path', 'background_gpu_layers', 'model_provider', 'background_model_provider'], (_, params) =>
                     this.autoSize({
                         modelPath: text(params.model_path, 'model_path', ''),
                         gpuLayers: integer(params.gpu_layers, 'gpu_layers', -1),
                         backgroundModelPath: text(params.background_model_path, 'background_model_path', ''),
                         backgroundGpuLayers: integer(params.background_gpu_layers, 'background_gpu_layers', 0),
+                        modelProvider: params.model_provider === undefined ? undefined : text(params.model_provider, 'model_provider', 'local'),
+                        backgroundModelProvider:
+                            params.background_model_provider === undefined ? undefined : text(params.background_model_provider, 'background_model_provider', 'local'),
                     }),
                 ),
             ],
@@ -699,25 +705,42 @@ export class HarnessDaemon {
         return { settings: saved, path: this.settingsPath };
     }
 
-    // Suggest a context size and token limits for the models without applying them; a separate background model is sized on its own.
+    // Suggest a context size and token limits for the local models without applying them; a hosted model keeps the sizes set for it.
     async autoSize(
-        options: { modelPath?: string; gpuLayers?: number; backgroundModelPath?: string; backgroundGpuLayers?: number } = {},
+        options: {
+            modelPath?: string;
+            gpuLayers?: number;
+            backgroundModelPath?: string;
+            backgroundGpuLayers?: number;
+            modelProvider?: string;
+            backgroundModelProvider?: string;
+        } = {},
     ): Promise<Json> {
         const settings = this.getSettings();
         const modelPath = options.modelPath || settings.model_path;
         const gpuLayers = options.gpuLayers ?? -1;
         const backgroundGpuLayers = options.backgroundGpuLayers ?? 0;
-        const loaded = this.modelCache.has(modelPath, settings.context_size, gpuLayers);
-        const main = await this.dependencies.autoSize(modelPath, gpuLayers, loaded ? settings.context_size : null);
-        const choice: Json = { ...main, background_context_size: 0 };
+        let choice: Json;
+        if ((options.modelProvider ?? settings.model_provider) !== 'local') {
+            choice = {
+                context_size: settings.context_size,
+                max_tokens: settings.max_tokens,
+                background_max_tokens: settings.background_max_tokens,
+                explanation: 'A hosted model keeps the sizes set for it',
+            };
+        } else {
+            const loaded = this.modelCache.has(localModelSource(modelPath, settings.context_size, gpuLayers));
+            choice = { ...(await this.dependencies.autoSize(modelPath, gpuLayers, loaded ? settings.context_size : null)) };
+        }
+        choice.background_context_size = 0;
         const backgroundModelPath = (options.backgroundModelPath ?? '').trim();
-        if (backgroundModelPath) {
-            const [, loadedContext] = backgroundModelKey(settings);
-            const backgroundLoaded = this.backgroundModelCache.has(backgroundModelPath, loadedContext, backgroundGpuLayers);
+        if ((options.backgroundModelProvider ?? settings.background_model_provider) === 'local' && backgroundModelPath) {
+            const loadedContext = settings.background_context_size || settings.context_size;
+            const backgroundLoaded = this.backgroundModelCache.has(localModelSource(backgroundModelPath, loadedContext, backgroundGpuLayers));
             const background = await this.dependencies.autoSize(backgroundModelPath, backgroundGpuLayers, backgroundLoaded ? loadedContext : null);
             choice.background_context_size = background.context_size;
             choice.background_max_tokens = background.background_max_tokens;
-            choice.explanation = `${main.explanation}; background ${background.explanation}`;
+            choice.explanation = `${String(choice.explanation)}; background ${background.explanation}`;
         }
         return choice;
     }
@@ -770,11 +793,12 @@ export class HarnessDaemon {
         if (this.run !== null) {
             throw new Error('Another request is already running.');
         }
-        const run = new ActiveRun(this.nextRunId, prompt, connection);
+        // A resumed run keeps its saved options but runs on the model the settings name now.
+        const run = new ActiveRun(this.nextRunId, prompt, connection, mainModelSource(settings ?? this.getSettings()));
         this.nextRunId += 1;
         this.run = run;
         this.workerWakeup.set();
-        this.broadcast('run.started', { run_id: run.id, prompt });
+        this.broadcast('run.started', { run_id: run.id, prompt, model: run.modelSource.label });
         this.runTask = this.executeRun(run, settings, interactive, saved);
         return { run_id: run.id };
     }
@@ -859,6 +883,7 @@ export class HarnessDaemon {
             stageInputCallback: reportInput,
             treeCallback: reportTree,
             modelCache: this.modelCache,
+            modelSource: run.modelSource,
             signal: run.cancelRequested.signal,
             shouldStop: () => run.cancelled || this.stopping,
         };
@@ -1031,14 +1056,14 @@ export class HarnessDaemon {
         return this.run !== null;
     }
 
-    // Return the lock and cache background work uses, freeing a separate model it no longer needs.
-    async backgroundModel(settings: Settings): Promise<[AsyncLock, ModelCache]> {
-        const [path, contextSize, gpuLayers] = backgroundModelKey(settings);
-        if (path === settings.model_path && contextSize === settings.context_size && gpuLayers === settings.gpu_layers) {
+    // Return the lock, cache and model background work uses, freeing a separate model it no longer needs.
+    async backgroundModel(settings: Settings): Promise<[AsyncLock, ModelCache, ModelSource]> {
+        const source = backgroundModelSource(settings);
+        if (source.key === mainModelSource(settings).key) {
             await this.backgroundModelLock.withLock(() => this.backgroundModelCache.unload());
-            return [this.modelLock, this.modelCache];
+            return [this.modelLock, this.modelCache, source];
         }
-        return [this.backgroundModelLock, this.backgroundModelCache];
+        return [this.backgroundModelLock, this.backgroundModelCache, source];
     }
 
     async unloadIdleBackgroundModel(worked: boolean): Promise<void> {
@@ -1095,13 +1120,14 @@ export class HarnessDaemon {
                         settings.background_refresh_interval_hours,
                         settings.background_max_pending_jobs,
                     );
-                    const [modelLock, modelCache] = await this.backgroundModel(settings);
+                    const [modelLock, modelCache, modelSource] = await this.backgroundModel(settings);
                     const workerOptions: BackgroundOptions = {
                         onProgress: (message) => this.setBackgroundStatus(message),
                         onToken: (token) => this.appendBackgroundToken(token),
                         shouldPause: () => this.runIsActive() || this.suspended || this.stopping,
                         modelLock,
                         modelCache,
+                        modelSource,
                     };
                     // The machine probe needs no model, so it never takes the turn of the model work below.
                     this.backgroundJobRunning = true;

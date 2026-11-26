@@ -1,20 +1,15 @@
 // Read new mail from IMAP mailboxes over TLS as events, without ever storing the password.
-import { execFile } from 'node:child_process';
 import type { Duplex } from 'node:stream';
 import { connect } from 'node:tls';
-import { promisify } from 'node:util';
 import type { BackgroundOptions } from '@x-tech-laboratories/smartharness/background';
 import { KnowledgeStore } from '@x-tech-laboratories/smartharness/knowledge';
 import { MAIL_FILES_PER_POLL, MAX_MAIL_BYTES, parseMail } from './mail.js';
+import { readSecret, SecretCommandError } from './secretCommand.js';
 import type { AssistantSettings as Settings, ImapAccount } from './settings.js';
-
-const run = promisify(execFile);
 
 // A mailbox is asked for mail no more often than this, so an idle assistant does not hammer the server.
 export const IMAP_POLL_SECONDS = 120;
 const IMAP_TIMEOUT_MILLISECONDS = 30_000;
-const PASSWORD_TIMEOUT_MILLISECONDS = 10_000;
-const MAX_PASSWORD_CHARS = 1024;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // ============================================================================
@@ -147,14 +142,13 @@ const openTls: OpenSocket = (account) =>
 
 export type PasswordReader = (command: string[]) => Promise<string>;
 
-// Run the account's password command and take its first line; the program, not settings, holds the secret.
-const readPassword: PasswordReader = async ([program, ...args]) => {
-    const { stdout } = await run(program, args, { timeout: PASSWORD_TIMEOUT_MILLISECONDS, maxBuffer: MAX_PASSWORD_CHARS * 4, encoding: 'utf8' });
-    const password = stdout.split('\n')[0].replace(/\r$/, '');
-    if (!password || password.length > MAX_PASSWORD_CHARS) {
-        throw new ImapError('The password command gave no usable password.');
+// Run the account's password command; the program, not settings, holds the secret.
+const readPassword: PasswordReader = async (command) => {
+    try {
+        return await readSecret(command);
+    } catch (error) {
+        throw error instanceof SecretCommandError ? new ImapError('The password command gave no usable password.') : error;
     }
-    return password;
 };
 
 function imapDate(milliseconds: number): string {

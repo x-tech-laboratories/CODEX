@@ -14,8 +14,10 @@ long-term memory, the tools and their safety rules, and the evals; this one
 covers what the assistant adds: the daemon and its interfaces, mail, backups,
 installation and configuration.
 
-Models run through `node-llama-cpp` from a local GGUF file. Nothing is sent to
-a hosted model.
+By default models run through `node-llama-cpp` from a local GGUF file and
+nothing leaves the computer. A hosted model, such as Claude or a GPT model, is
+something you choose, for requests, for background work, or both; see
+[Hosted models](#hosted-models).
 
 See [docs/0-goal.md](docs/0-goal.md) for what the assistant is for.
 
@@ -267,6 +269,14 @@ another. Unknown keys are rejected.
 	"mail_imap_accounts": [],
 	"mail_draft_replies": true,
 	"mail_rule_proposal_threshold": 3,
+	"model_provider": "local",
+	"model_endpoint": "",
+	"model_name": "",
+	"model_api_key_command": [],
+	"background_model_provider": "local",
+	"background_model_endpoint": "",
+	"background_model_name": "",
+	"background_model_api_key_command": [],
 	"mcp_servers": []
 }
 ```
@@ -302,6 +312,32 @@ context that fits in memory, up to 32768 tokens, then gives a quarter of it to
 `max_tokens` and an eighth to `background_max_tokens`. With a separate
 background model, it sizes that model on its own device as well and sets
 `background_context_size` and `background_max_tokens` from it.
+
+### Hosted models
+
+`model_provider` picks where requests run: `local` (the GGUF file at
+`model_path`), `openai` (any OpenAI-compatible chat completions endpoint:
+OpenAI itself, or a server such as Ollama, vLLM or llama-server) or `anthropic`
+(Claude, through Anthropic's SDK). A hosted model needs `model_name`, such as
+`claude-opus-5-5`, `gpt-5` or `llama3.1`; `model_endpoint` is the server's
+address (`http://localhost:11434/v1` for Ollama), or empty for the provider's
+own. `model_api_key_command` is the program and arguments that print the key,
+as with an IMAP account's `password_command`; the key is read when the model
+loads and never stored. With no command, Anthropic's SDK looks for a key the
+usual way, such as `ANTHROPIC_API_KEY`, and the OpenAI client uses
+`OPENAI_API_KEY` or none for a local server. A hosted model keeps the
+`context_size` you set, and Auto size leaves it alone.
+
+The `background_model_` settings do the same for research, titling and mail.
+With `background_model_provider` `local` and no `background_model_path`,
+background work shares the main model, hosted or not; set a local
+`background_model_path` to keep mail and research on this computer while
+requests go to a hosted model. Everything a hosted model is asked, mail
+included when background work runs on it, is sent to that provider.
+
+Each run names its model in the `run.started` event (`model`) and in the
+window's status line. A request a hosted model declines fails with the reason
+the provider gives.
 
 The model's prompts ship with SmartHarness in its `share/prompts/`, and the
 assistant's own (mail triage and drafted replies) in `share/assistant/prompts/`,
@@ -382,7 +418,10 @@ request starts, and it is unloaded after five minutes without background work.
 | `src/assistant/mailStore.ts`                         | The mail tables beside the knowledge store: triage outcomes, drafts and sender rules                        |
 | `src/assistant/eventHandlers.ts`                     | The event handlers the daemon runs: the harness's own plus mail                                             |
 | `src/assistant/identity.ts`                          | CODEX's names for the harness's folders and instructions file, set when imported                    |
-| `src/assistant/settings.ts`                          | The assistant's settings: the harness's plus mail, and where the files live                                 |
+| `src/assistant/settings.ts`                          | The assistant's settings: the harness's plus mail and model providers, and where the files live            |
+| `src/assistant/models.ts`                            | Which model requests and background work run on, local or hosted, as SmartHarness model sources           |
+| `src/assistant/openaiModel.ts`, `src/assistant/anthropicModel.ts` | Hosted models behind an OpenAI-compatible endpoint and Anthropic's Messages API                |
+| `src/assistant/secretCommand.ts`                     | Reading a password or API key from a command, so settings never hold it                                    |
 | `src/assistant/prompts.ts`, `share/assistant/prompts/` | The assistant's own prompts                                                                               |
 | `src/daemon/daemon.ts`                               | The daemon: model, runs, background worker, and socket server                                               |
 | `src/daemon/backups.ts`                              | Daily backups of the knowledge database, and restoring one                                                  |
