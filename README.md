@@ -268,7 +268,11 @@ conversation, with it in the pane.
 
 These work as in every X-app. A browser signs in with a name and password; **Your account** changes the password, turns
 on a second factor and makes tokens; an admin adds users on **Users**. The desktop app syncs with a server from
-**Settings → This device → Sync**, and every copy backs itself up daily, keeping the last 14. Every change to a
+**Settings → This device → Sync**, and every copy backs itself up daily, keeping the last 14. The server's backups are
+an admin's to manage, but restoring one, deleting one or changing the schedule is done only on the page, signed in
+with a password: every token is refused them, an admin's and a device's included, and MCP offers no backup call, since
+a restored backup could rewrite the settings only you may change. Listing backups and taking one stay open to an
+admin's token. Every change to a
 context, its name, notes and the items it holds, is kept under **History**, where any version can be restored and a
 deleted context brought back; a refresh is left out, since it changes only what the apps said.
 

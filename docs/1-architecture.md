@@ -413,7 +413,13 @@ token and both MCP endpoints refuse it, as they refuse the page-only calls. Sync
 `register_sync_routes` takes a change to one of these rows (`device_only`) only from the user's own devices, a token
 the device sign-in made, and refuses the whole exchange, and any replace, to a program's token. Full tokens made
 before X-Libs 0.84.0 kept their kind cannot be told apart and count as devices; Your account marks each device's token,
-so an older program token can be revoked.
+so an older program token can be revoked. Backups honour the same rule: the server serves them at `/api/backup/<method>`
+through X-Libs' call table, for an admin, and a hook on that route (`user_only_backup_calls` in `page_api.ts`:
+`restore_backup`, `remove_backup` and `set_backup_schedule`) refuses them, by the route's decoded name, to every
+request not made by a session or the trusted proxy, so no token, an admin's or a device's included, can restore a
+crafted backup over the settings above, delete backups or schedule fewer kept. Listing, taking a backup and reading the
+schedule stay open to an admin's token. No backup call is in the api spec, so neither MCP endpoint offers one, and
+the desktop daemon serves its backups only over its socket to the window.
 
 ### Tools and the action policy
 
