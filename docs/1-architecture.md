@@ -137,7 +137,16 @@ Once a run has read outside content, every change it asks for becomes a proposal
 conversation saying the user approved it and what came back; rejecting adds one saying so. The engine reads those
 events at the start of the user's next message. The policy's own calls and the conversations' are never offered.
 
+### The pane
+
+`src/web/assistant/` is the Shell's `side_pane`, titled Assistant, its open state kept by `use_side_pane`. At its head
+is RoboBuddy's face (`Mascot.tsx`, moods in `mascot.ts`: asleep with no engine or no store, thinking while a reply is
+written, happy or sad for three seconds when one ends) and the engine and model answering. `use_conversation` loads
+the open context's conversation and lays the streamed events over it until the kept answer arrives. Tool calls are
+folded rows; waiting proposals are cards with Approve and Reject; the message box sends on Enter. Settings gains an
+Assistant category: Engine (which engine answers, and each engine plugin's own settings in its row) and Action
+policy (each change's level, the two riskier levels badged).
+
 ### Still to come
 
-The window's right pane with the mascot (the next step), the Inbox and background queue, the knowledge graph, jobs and
-blueprints, in doc 4's order.
+The Inbox and background queue, the knowledge graph, jobs and blueprints, in doc 4's order.

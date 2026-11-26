@@ -23,7 +23,7 @@ export interface Fixture {
 }
 
 // A scripted engine plugin, provided as "fake", answering with whatever the test's script yields.
-export function start_fixture(options: { choose_engine?: boolean } = {}): Fixture {
+export function start_fixture(options: { choose_engine?: boolean; on_event?: (event: ConversationEvent) => void; on_announce?: () => void } = {}): Fixture {
   const database = new DatabaseSync(":memory:");
   open_store(database);
   const events: ConversationEvent[] = [];
@@ -47,8 +47,12 @@ export function start_fixture(options: { choose_engine?: boolean } = {}): Fixtur
       }),
   });
   use_plugins([...network_plugins, fake]);
-  start_assistant({ database: () => database, announce: () => (announcements += 1), emit: (event) => events.push(event) });
-  const calls = bind_methods(() => database, () => (announcements += 1));
+  const announce = () => {
+    announcements += 1;
+    options.on_announce?.();
+  };
+  start_assistant({ database: () => database, announce, emit: (event) => (events.push(event), options.on_event?.(event)) });
+  const calls = bind_methods(() => database, announce);
   if (options.choose_engine !== false) calls.set_setting("engine", "fake");
   return { database, calls, events, requests, announced: () => announcements, set_script: (next) => (script = next) };
 }

@@ -79,7 +79,7 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 ## Order of work
 
 1. **Engine interface:** replace the interim one (`legacy/src/engine/engine.ts`, which has the task tree's signature) with conversation in, CODEX's tools in, events out. The hosted model adapters (`legacy/src/assistant/*Model.ts`, `models.ts`) and the direct loop carry over. *Done 2026-11-26: `src/shared/engines/engine.ts`, with the Anthropic and OpenAI-compatible engine plugins on the ported direct loop; the legacy files are deleted.*
-2. **Skeleton and conversation:** X-Context's code moves in (done 2026-11-26: it is `src/`, under CODEX's name, and the old code is in `legacy/`); conversations per context; the right pane with the mascot; engines as plugins. Needs a three-pane shell in X-Libs. *Conversations, engines as plugins and the action policy for them done 2026-11-26.*
+2. **Skeleton and conversation:** X-Context's code moves in (done 2026-11-26: it is `src/`, under CODEX's name, and the old code is in `legacy/`); conversations per context; the right pane with the mascot; engines as plugins. Needs a three-pane shell in X-Libs. *Done 2026-11-26: conversations, engines as plugins, the action policy for them, and the right pane with RoboBuddy's face, on X-Libs' `side_pane`.*
 3. **Inbox and background queue** ported onto the new store, with the action policy.
 4. **Index and graph:** content extraction, embeddings, fused search, entities, links, proposals, the graph view.
 5. **Workspace:** an editor per kind of item, writing back through collectors.

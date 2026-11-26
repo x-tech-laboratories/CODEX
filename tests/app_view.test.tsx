@@ -73,7 +73,8 @@ describe("the page", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { level: 1, name: "Garden" })).toBeTruthy();
-    const headings = screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
+    const main = document.querySelector<HTMLElement>(".main-pane")!;
+    const headings = within(main).getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
     expect(headings).toEqual(["Notes", "Tasks · 1", "Links · 1"]);
     expect(screen.getByRole("link", { name: "Order seeds" }).getAttribute("href")).toBe("x-tasks://task/t1");
     expect(screen.getByText("Done")).toBeTruthy();

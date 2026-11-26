@@ -1,6 +1,6 @@
-// The page's side of the plugins: a row in Settings for each collector, whose dialog holds its on or off and its
-// settings. On or off and each plugin's settings are the same synced records the store's side reads, so a collector
-// turned off here stops everywhere.
+// The page's side of the plugins: a row in Settings for each collector and each engine, whose dialog holds its on or off
+// and its settings. On or off and each plugin's settings are the same synced records the store's side reads, so a
+// plugin turned off here stops everywhere.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -12,12 +12,13 @@ import { Skeleton } from "@x-tech-laboratories/x-libs/web/react/states";
 
 import { app_info, plugins_setting } from "../shared/collectors/collector.ts";
 import { bundled_manifests } from "../shared/collectors/manifests.ts";
+import { engine_manifests } from "../shared/engines/manifests.ts";
 import { calls } from "./api.ts";
 
 // ── Host ─────────────────────────────────────────────────────────────────────
 
-// The page side of a collector has only its settings; its work runs where the store does.
-const bundled_pages = bundled_manifests.map((manifest) => define_plugin({ ...manifest, start: () => undefined }));
+// The page side of a collector or engine has only its settings; its work runs where the store does.
+const bundled_pages = [...bundled_manifests, ...engine_manifests].map((manifest) => define_plugin({ ...manifest, start: () => undefined }));
 
 let started: Promise<PluginHost> | null = null;
 
@@ -52,15 +53,17 @@ function use_page_plugins(): PluginHost | null {
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
-// "Not set up" while a server address or key is empty, so a collector that finds nothing says why.
+// "Not set up" while a server address, key or model is empty, so a collector that finds nothing, or an engine that
+// cannot answer, says why.
 export function status_of(manifest: PluginManifest, state: string, values: Record<string, unknown>): string {
   if (state === "off") return "Off";
   if (state !== "running") return "Not running";
-  return (manifest.settings ?? []).some((field) => field.type === "text" && (field.secret || field.key === "address") && values[field.key] === "") ? "Not set up" : "On";
+  const needed = (key: string, secret = false) => secret || key === "address" || key === "model";
+  return (manifest.settings ?? []).some((field) => field.type === "text" && needed(field.key, field.secret) && values[field.key] === "") ? "Not set up" : "On";
 }
 
-function Rows({ host }: { host: PluginHost }) {
-  const statuses = use_plugins(host);
+function Rows({ host, ids }: { host: PluginHost; ids: Set<string> }) {
+  const statuses = use_plugins(host).filter(({ manifest }) => ids.has(manifest.id));
   return (
     <>
       {statuses.map(({ manifest, state }) => (
@@ -72,8 +75,17 @@ function Rows({ host }: { host: PluginHost }) {
   );
 }
 
-// A row for each collector, each opening its own dialog.
+const engine_ids = new Set(engine_manifests.map((manifest) => manifest.id));
+
+// A row for each plugin but the engines, each opening its own dialog.
 export function CollectorRows() {
   const host = use_page_plugins();
-  return host ? <Rows host={host} /> : <Skeleton lines={2} />;
+  const ids = host ? new Set(host.list().map((status) => status.manifest.id).filter((id) => !engine_ids.has(id))) : null;
+  return host && ids ? <Rows host={host} ids={ids} /> : <Skeleton lines={2} />;
+}
+
+// A row for each engine, each opening its own dialog with the engine's model, endpoint and key command.
+export function EngineRows() {
+  const host = use_page_plugins();
+  return host ? <Rows host={host} ids={engine_ids} /> : <Skeleton lines={2} />;
 }

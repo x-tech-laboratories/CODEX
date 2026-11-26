@@ -1,5 +1,5 @@
-// Settings: how often items refresh, history, the collector plugins, import and export, sync with a server on a device,
-// backups, and the desktop app's tray and background running.
+// Settings: how often items refresh, history, the assistant's engine and action policy, the collector plugins, import
+// and export, sync with a server on a device, backups, and the desktop app's tray and background running.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -17,6 +17,7 @@ import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
 import type { DesktopSettings } from "../../shared/desktop.ts";
 import { attempt, calls, data_watch, page, set_setting, show_error, use_settings } from "../api.ts";
 import { read_picked, save_text } from "../files.ts";
+import { engine_section, policy_section } from "../assistant/AssistantSettings.tsx";
 import { CollectorRows } from "../plugins.tsx";
 
 // ── General ──────────────────────────────────────────────────────────────────
@@ -61,7 +62,7 @@ const collectors_section: SettingsSection = {
 // ── Import and export ────────────────────────────────────────────────────────
 
 // The settings an imported file may set; anything else in it is ignored.
-const importable_settings = new Set(["refresh_minutes", "history.keep_days", "plugins"]);
+const importable_settings = new Set(["refresh_minutes", "history.keep_days", "plugins", "engine", "action_policy"]);
 
 function TransferRows() {
   const contexts_picker = useRef<HTMLInputElement>(null);
@@ -185,6 +186,7 @@ export function SettingsView() {
           <SettingsPage
             categories={[
               { heading: "General", sections: [general_section(values, set_setting), history_section(values, set_setting), collectors_section, transfer_section] },
+              { heading: "Assistant", sections: [engine_section(values), policy_section] },
               ...data_category(),
             ]}
           />
