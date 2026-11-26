@@ -142,11 +142,93 @@ describe("the Inbox", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Pick Rename the context “Kitchen” to “Cooking”." }));
     fireEvent.click(screen.getByRole("checkbox", { name: /Pick Replace the notes/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Approve or set aside" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve or set aside the ticked" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/approve or accept 2 proposals/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Yes, all of them" }));
     await waitFor(() => expect(fixture.calls.get_inbox_count()).toBe(0));
     expect(fixture.calls.get_context(kitchen)).toMatchObject({ name: "Cooking", notes: "Clean." });
   });
+
+  it("rejects several at once and sets runs aside, through each feature's own calls", async () => {
+    const fixture = open_page();
+    fixture.calls.set_setting("background.enabled", true);
+    const maker = { engine: "fake", model: "fake-model", sources: [] };
+    fixture.calls.propose_blueprint("Sort the mail", "When sorting mail.", "1. Read.", null, maker);
+    const kept = fixture.calls.add_blueprint("Sow", "When sowing.", "1. Sow.");
+    fixture.calls.propose_blueprint_change(kept, "1. Sow thinly.", "Thinner.", undefined, undefined, maker);
+    await fixture.calls.propose_entity("person", "Ada", [], null, maker);
+    const id = fixture.calls.add_job({ title: "Tidy", instruction: "Tidy.", context_id: null, schedule: every_day, only_when_changed: false, limits: { max_rounds: 4, max_tokens: 10_000, max_runs_per_day: 6 } });
+    fixture.set_script(async function* () {
+      yield { type: "error", message: "The engine could not answer." };
+    });
+    await fixture.calls.run_job_now(id);
+    await wait_for_job();
+    render(
+      <>
+        <InboxPage />
+        <Dialogs />
+      </>,
+    );
+    expect(await screen.findByText("Failed: Tidy")).toBeTruthy();
+    expect(screen.getByText("What would change")).toBeTruthy();
+    for (const box of screen.getAllByRole("checkbox")) fireEvent.click(box);
+    fireEvent.click(screen.getByRole("button", { name: "Reject the ticked" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/reject 3 proposals/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reject all of them" }));
+    await waitFor(() => expect(fixture.calls.get_inbox_count()).toBe(1));
+    expect(fixture.calls.get_blueprint(kept).body).toBe("1. Sow.");
+
+    const run = (await screen.findByText("Failed: Tidy")).closest("li")!;
+    fireEvent.click(within(run).getByRole("button", { name: "Set aside" }));
+    await waitFor(() => expect(fixture.calls.get_inbox_count()).toBe(0));
+    expect(await screen.findByText("Nothing waits for you")).toBeTruthy();
+  });
 });
+
+describe("the Jobs page's other states", () => {
+  it("says when another device runs background work, removes a job after asking, and sets a unit and limits", async () => {
+    const fixture = open_page();
+    fixture.calls.set_setting("background.enabled", true);
+    fixture.calls.add_job({ title: "Tidy", instruction: "Tidy.", context_id: null, schedule: every_day, only_when_changed: false, limits: { max_rounds: 4, max_tokens: 10_000, max_runs_per_day: 2 } });
+    render(
+      <>
+        <JobsPage focus={null} />
+        <Dialogs />
+        <ContextMenus />
+      </>,
+    );
+    expect(await screen.findByText(/this device does not run it/)).toBeTruthy();
+    fixture.calls.set_background_device(true);
+
+    fireEvent.click(screen.getByRole("button", { name: /New job/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Often" } });
+    fireEvent.change(within(dialog).getByLabelText("What it does"), { target: { value: "Look." } });
+    fireEvent.change(within(dialog).getByLabelText("Unit"), { target: { value: "hours" } });
+    fireEvent.change(within(dialog).getByLabelText("Rounds a run"), { target: { value: "3" } });
+    fireEvent.click(within(dialog).getByRole("switch", { name: "Only when something changed" }));
+    fireEvent.submit(dialog.querySelector("form")!);
+    await waitFor(() => expect(fixture.calls.list_jobs().find((job) => job.title === "Often")).toMatchObject({ when: "every hour", only_when_changed: true }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "More for Tidy" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Remove…" }));
+    const confirm = await screen.findByRole("dialog");
+    fireEvent.click(within(confirm).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(fixture.calls.list_jobs().map((job) => job.title)).toEqual(["Often"]));
+  });
+});
+
+describe("one job with no runs", () => {
+  it("says it has not run, and where background work runs", async () => {
+    const fixture = open_page();
+    fixture.calls.set_setting("background.enabled", true);
+    fixture.calls.set_background_device(true);
+    const id = fixture.calls.add_job({ title: "Tidy", instruction: "Tidy.", context_id: null, schedule: every_day, only_when_changed: false, limits: { max_rounds: 4, max_tokens: 10_000, max_runs_per_day: 2 } });
+    render(<JobsPage focus={id} />);
+    expect(await screen.findByText("It has not run yet.")).toBeTruthy();
+    expect(screen.getByText(/Background work runs on this device \(Test laptop\)/)).toBeTruthy();
+  });
+});
+

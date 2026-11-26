@@ -163,10 +163,10 @@ function List({ entries }: { entries: InboxEntry[] }) {
       {chosen.length > 0 && (
         <SelectionBar count={chosen.length} total={entries.length} on_clear={clear} on_select_all={() => set_picked(new Set(entries.map((entry) => entry.key)))}>
           <button type="button" className="accent solid" onClick={() => ask_then(chosen, true, clear)}>
-            Approve or set aside
+            Approve or set aside the ticked
           </button>
           <button type="button" disabled={proposals.length === 0} onClick={() => ask_then(proposals, false, clear)}>
-            Reject
+            Reject the ticked
           </button>
         </SelectionBar>
       )}

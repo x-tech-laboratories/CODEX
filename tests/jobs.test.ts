@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { wait_for_runs } from "../src/shared/conversations/run.ts";
 import type { JobFields } from "../src/shared/jobs/model.ts";
-import { check_jobs, context_mark, use_job_host, wait_for_job } from "../src/shared/jobs/runner.ts";
+import { check_jobs, context_mark, job_running, keep_running_jobs, use_job_host, wait_for_job } from "../src/shared/jobs/runner.ts";
 import { checked_schedule, describe_schedule, is_due, next_due } from "../src/shared/jobs/schedule.ts";
 import { page_only_methods, user_only_settings } from "../src/shared/page_api.ts";
 import { bind_methods } from "../src/shared/store.ts";
@@ -355,4 +355,91 @@ describe("the Inbox", () => {
     expect(fixture.calls.dismiss_job_runs([run.id])).toBe(0);
     expect(fixture.calls.get_inbox_count()).toBe(3);
   });
+
+  it("names who made each proposal and what a change to a blueprint or a run at its limit is", async () => {
+    const fixture = with_jobs();
+    turn_on(fixture);
+    const garden = fixture.calls.add_context("Garden");
+    const seeds = fixture.calls.add_item([garden], "links", { source_id: "https://example.org/seeds", kind: "link", title: "Seeds" });
+    const program = bind_methods(() => fixture.database, () => undefined, "program");
+    program.add_graph_link(`context:${garden}`, `item:${seeds}`, "about");
+    program.add_entity("topic", "Sowing");
+    const blueprint = fixture.calls.add_blueprint("Sow", "When sowing.", "1. Sow.");
+    fixture.calls.propose_blueprint_change(blueprint, "1. Sow thinly.", "Thinner.", undefined, undefined, { engine: "fake", model: "fake-model", sources: [] });
+    const id = fixture.calls.add_job(job_of(null, { limits: { max_rounds: 4, max_tokens: 1000, max_runs_per_day: 6 } }));
+    fixture.set_script(async function* () {
+      yield { type: "usage", input_tokens: 2000, output_tokens: 10 };
+      yield { type: "done", text: "Never." };
+    });
+    fixture.clock.now = Date.now() + minute;
+    await fixture.calls.run_job_now(id);
+    await wait_for_job();
+
+    const inbox = fixture.calls.list_inbox();
+    expect(inbox.find((entry) => entry.kind === "link")).toMatchObject({ made_by: "a program", route: `#/graph/${encodeURIComponent(`context:${garden}`)}` });
+    expect(inbox.find((entry) => entry.kind === "entity")).toMatchObject({ title: "New topic: Sowing", made_by: "a program" });
+    expect(inbox.find((entry) => entry.kind === "blueprint_change")).toMatchObject({ title: "Change to the blueprint “Sow”", detail: "Thinner.", route: `#/blueprint/${blueprint}` });
+    expect(inbox.find((entry) => entry.kind === "job_run")).toMatchObject({ title: "Stopped at a limit: Tidy the kitchen" });
+  });
 });
+
+describe("the job calls an engine proposes", () => {
+  it("say a change and a removal in plain words, and the runner checks on a timer until stopped", async () => {
+    const fixture = with_jobs();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    const id = fixture.calls.add_job(job_of(kitchen));
+    fixture.set_script(async function* (request) {
+      await request.tools.call("change_job", { id, fields: { context_id: null, only_when_changed: true, limits: { max_rounds: 2 }, schedule: { kind: "every", every: 0, unit: "hours" } } });
+      await request.tools.call("change_job", { id: "nothing", fields: { title: "Other" } });
+      await request.tools.call("remove_job", { id });
+      yield { type: "done", text: "Proposed." };
+    });
+    const { conversation_id } = await fixture.calls.send_message(kitchen, "Change the job");
+    await wait_for_runs();
+    expect(fixture.calls.list_proposals(conversation_id).map((proposal) => proposal.summary)).toEqual([
+      'Change the job “Tidy the kitchen”: on the schedule {"kind":"every","every":0,"unit":"hours"}, in no context, only when its context changed, within {"max_rounds":2}.',
+      "Change the job that does not exist (nothing): “Other”.",
+      "Remove the job “Tidy the kitchen”; its runs and conversation stay.",
+    ]);
+
+    turn_on(fixture);
+    fixture.clock.now += 2 * hour;
+    const running = keep_running_jobs({ database: () => fixture.database, device: "Timer", now: () => fixture.clock.now }, 5);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    await wait_for_job();
+    expect(fixture.calls.list_job_runs(id)[0]).toMatchObject({ device: "Timer", outcome: "done" });
+    expect(job_running()).toBeNull();
+    await running.stop();
+    expect(() => check_jobs()).toThrow("Jobs run only where the store runs");
+  });
+});
+
+describe("a run that cannot start", () => {
+  it("is kept as failed with why, and the user writing in the job's conversation makes a running job give way", async () => {
+    const fixture = with_jobs();
+    turn_on(fixture);
+    const id = fixture.calls.add_job(job_of(null));
+    fixture.calls.set_setting("engine", "");
+    await fixture.calls.run_job_now(id);
+    await wait_for_job();
+    expect(fixture.calls.get_job(id).runs[0]).toMatchObject({ outcome: "error", note: "No engine is set up; choose one under Settings → Assistant → Engine." });
+
+    fixture.calls.set_setting("engine", "fake");
+    fixture.set_script(async function* (_request, signal) {
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve()));
+      yield { type: "done", text: "Stopped." };
+    });
+    fixture.clock.now += hour;
+    await fixture.calls.run_job_now(id);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const conversation_id = fixture.calls.get_job(id).conversation_id;
+    fixture.set_script(async function* () {
+      yield { type: "done", text: "Here." };
+    });
+    await fixture.calls.send_message(null, "I am here", conversation_id);
+    await wait_for_runs();
+    expect(fixture.calls.get_job(id).runs[0]!.outcome).toBe("gave_way");
+    expect(fixture.calls.get_conversation(conversation_id).messages.at(-1)!.text).toBe("Here.");
+  });
+});
+
