@@ -284,4 +284,4 @@ user's at the page after reading the command):
 - **Wrong links trusted:** every model-made link is a proposal with its evidence until accepted.
 - **Hosted engines see personal data:** the per-source mark in decision 6, and a log of what was sent (both built).
 - **Background cost:** budgets per job, and no model call when nothing changed (built 2026-11-27).
-- **Mood that flatters:** the limits under "Mood and curiosity".
+- **Mood that flatters:** the limits under "Mood and curiosity" (enforced in code and tests since 2026-11-27).

@@ -87,7 +87,7 @@ function MoodRows({ settings }: { settings: Record<string, unknown> }) {
         <Switch label="Mood colours the tone of replies" checked={tone} disabled={!enabled} on_change={(on) => void succeeds(() => set_setting(mood_settings.tone, on))} />
       </SettingRow>
       <SettingRow label="Now" hint={state.data ? mood_summary(state.data) : ""}>
-        <span className="muted small">{state.data && state.data.enabled && state.data.mood !== "neutral" ? `fading, ${Math.round(state.data.strength * 100)}%` : ""}</span>
+        <span className="muted small">{state.data && state.data.enabled && state.data.mood !== "neutral" ? `${Math.round(state.data.strength * 100)}% strong` : ""}</span>
       </SettingRow>
       <h4>Dates to remember</h4>
       <DateRows />
@@ -99,7 +99,7 @@ export function mood_section(settings: Record<string, unknown>): SettingsSection
   return {
     id: "mood",
     heading: "Mood",
-    hint: "The assistant's face can show a small mood: celebrating your birthday, sad with you about a loss, curious when background work finds something, mildly concerned when a job fails. It fades within the hour, never changes what the assistant may do, and never sends you anything.",
+    hint: "The assistant's face can show a small mood: celebrating your birthday, sad with you about a loss, curious when background work finds something, mildly concerned when a job fails. A reply's mood fades within the hour or two and a date's lasts its day; it never changes what the assistant may do, and never sends you anything.",
     content: <MoodRows settings={settings} />,
   };
 }
