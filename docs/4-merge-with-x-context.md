@@ -95,7 +95,12 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 1. **Engine interface:** replace the interim one (`legacy/src/engine/engine.ts`, which has the task tree's signature) with conversation in, CODEX's tools in, events out. The hosted model adapters (`legacy/src/assistant/*Model.ts`, `models.ts`) and the direct loop carry over. *Done 2026-11-26: `src/shared/engines/engine.ts`, with the Anthropic and OpenAI-compatible engine plugins on the ported direct loop; the legacy files are deleted.*
 2. **Skeleton and conversation:** X-Context's code moves in (done 2026-11-26: it is `src/`, under CODEX's name, and the old code is in `legacy/`); conversations per context; the right pane with the mascot; engines as plugins. Needs a three-pane shell in X-Libs. *Done 2026-11-26: conversations, engines as plugins, the action policy for them, and the right pane with RoboBuddy's face, on X-Libs' `side_pane`.*
 3. **Inbox and background queue** ported onto the new store, with the action policy.
-4. **Index and graph:** content extraction, embeddings, fused search, entities, links, proposals, the graph view.
+4. **Index and graph:** content extraction, embeddings, fused search, entities, links, proposals, the graph view. *Index
+   built 2026-11-26 (`src/shared/search/`, described in doc 1): content read through an optional `content` on each
+   collector and held only in a local index file beside the database, never synced or backed up; FTS5 and vectors from
+   an `embedder` plugin, fused by reciprocal rank and scoped to a context and those inside it; only changed documents
+   indexed again, embedding in the background and waiting for replies; the engine searches it as a tool under the
+   source marks. The graph part (entities, links, their proposals and the graph view) is not built.*
 5. **Workspace:** an editor per kind of item, writing back through collectors.
 6. **Jobs and blueprints.**
 7. **Self-maintenance:** jobs chosen by what changed, each with a budget, skipped when there is nothing to do.
@@ -103,6 +108,16 @@ RoboBuddy is the face. The mood is a small state the user can see and switch off
 9. **SmartHarness as an engine:** conversation history and CODEX's tools in the task tree; a recorded set of real assistant jobs as the eval, with a hosted engine as the baseline. SmartHarness takes over one class of job at a time once it matches the baseline there.
 
 **Sources to start with:** X-Tasks and Trilium, read-only until the bugs are ironed out.
+
+## Known gaps
+
+As of 2026-11-26:
+
+- Proposals carry no evidence and no undo beyond History.
+- A reply's tool-call rows show above its text instead of where in the reply each call was made.
+- The Claude-subscription engine and the SmartHarness engine are not built.
+- No real hosted or local model has answered yet; only fakes have.
+- A generic collector for any app answering the standard item calls waits until more apps answer them.
 
 ## Later, as separate projects
 

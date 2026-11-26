@@ -69,6 +69,9 @@ export interface Collector {
   pushed_from?: string;
   // The groups a context can follow, and the items each holds now.
   feeds?: { list: () => Promise<Feed[]>; items: (feed_id: string) => Promise<FoundItem[]> };
+  // Each item's text as plain words, by source id, for the local search index alone; an id left out has none it can
+  // give cheaply, such as a picture. Only read, never written back, and never kept in the store.
+  content?: (source_ids: string[]) => Promise<Record<string, string>>;
 }
 
 // A collector as the page and other programs see it.

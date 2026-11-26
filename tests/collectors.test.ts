@@ -6,10 +6,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { create_plugin_host, type Plugin, type SettingValues } from "@x-tech-laboratories/x-libs/plugins";
 
-import { bare_message_id, email_plugin, email_uri, shorten, trilium_plugin, web_address, x_tasks_feeds, x_tasks_in_feed, x_tasks_plugin } from "../src/shared/collectors/bundled.ts";
+import { bare_message_id, email_plugin, email_uri, html_text, shorten, trilium_plugin, web_address, x_tasks_feeds, x_tasks_in_feed, x_tasks_plugin } from "../src/shared/collectors/bundled.ts";
 import { app_info, type Collector } from "../src/shared/collectors/collector.ts";
 import type { ContextPluginApi } from "../src/shared/collectors/host.ts";
-import { files_plugin, find_files, folders_of, look_up_files } from "../src/server/collectors/files.ts";
+import { files_plugin, find_files, folders_of, look_up_files, most_content_bytes, read_text_files } from "../src/server/collectors/files.ts";
 import { status_of } from "../src/web/plugins.tsx";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -212,5 +212,54 @@ describe("a collector's status in Settings", () => {
     expect(status_of(trilium_plugin, "running", { address: "https://notes.example.org", token: "x" })).toBe("On");
     expect(status_of(trilium_plugin, "off", {})).toBe("Off");
     expect(status_of(trilium_plugin, "failed", {})).toBe("Not running");
+  });
+});
+
+// ── Content for the index ────────────────────────────────────────────────────
+
+describe("each collector's text for the index", () => {
+  it("reads plain text and Markdown files under the size cap, skipping every other file", async () => {
+    const folder = mkdtempSync(join(tmpdir(), "codex-content-"));
+    try {
+      writeFileSync(join(folder, "plan.md"), "# Kitchen\nTiles first.");
+      writeFileSync(join(folder, "notes.TXT"), "Grout is grey.");
+      writeFileSync(join(folder, "photo.png"), "not text");
+      writeFileSync(join(folder, "fake.txt"), "text\u0000with a nul");
+      writeFileSync(join(folder, "huge.md"), "x".repeat(most_content_bytes + 1));
+      mkdirSync(join(folder, "folder.md"));
+      const paths = ["plan.md", "notes.TXT", "photo.png", "fake.txt", "huge.md", "folder.md", "gone.md"].map((name) => join(folder, name));
+      expect(await read_text_files(paths)).toEqual({ [join(folder, "plan.md")]: "# Kitchen\nTiles first.", [join(folder, "notes.TXT")]: "Grout is grey." });
+      const collector = await collector_of(files_plugin, { folders: folder });
+      expect(Object.keys(await collector.content!([join(folder, "plan.md")]))).toEqual([join(folder, "plan.md")]);
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it("gives an X-Task's notes, leaving out tasks with none and tasks gone", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => answer(tasks)));
+    const collector = await collector_of(x_tasks_plugin, { address: "https://tasks.example.org", token: "t0k" });
+    expect(await collector.content!(["t1", "t2", "gone"])).toEqual({ t1: "From the catalogue" });
+  });
+
+  it("reads a Trilium text note as words and a code note as it is, read-only, skipping other notes", async () => {
+    const notes: Record<string, { type: string; body: string }> = {
+      n1: { type: "text", body: "<h1>Kitchen</h1><p>Tiles &amp; grout&nbsp;first.</p><ul><li>Grey</li><li>&#x263A; &#65;</li></ul><script>x()</script>" },
+      n2: { type: "code", body: "print('hi')" },
+      n3: { type: "image", body: "" },
+      n4: { type: "text", body: "" },
+    };
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(init?.method ?? "GET").toBe("GET");
+      const [, id, content] = /\/etapi\/notes\/([^/]+)(\/content)?$/.exec(url)!;
+      const note = notes[id!];
+      if (!note) return answer({}, 404);
+      if (id === "n4" && content) return new Response("", { status: 500 });
+      return content ? new Response(note.body) : answer({ noteId: id, title: id, type: note.type });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const collector = await collector_of(trilium_plugin, { address: "https://notes.example.org", token: "etapi" });
+    expect(await collector.content!(["n1", "n2", "n3", "n4", "gone"])).toEqual({ n1: "Kitchen\n\nTiles & grout first.\n\nGrey\n\n☺ A", n2: "print('hi')" });
+    expect(html_text("a&bogus;b")).toBe("a&bogus;b");
   });
 });

@@ -8,6 +8,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { feed_key, item_id_of, type Feed, type FoundItem } from "../collectors/collector.ts";
 import type { ContextDetail, KeptItem, RefreshReport } from "../contexts/model.ts";
 import { contexts_feature } from "../contexts/store.ts";
+import type { SearchHit } from "../search/model.ts";
 import { may_send, screen_entries, type Screen, type Screened } from "./screen.ts";
 
 // ── Screeners ────────────────────────────────────────────────────────────────
@@ -70,6 +71,19 @@ function screen_report(_database: SqlDatabase, screen: Screen, _args: unknown[],
   return { ...problems, value: { ...report, problems: problems.value } };
 }
 
+// Items found come from their collectors; contexts and messages are what the user and the assistant wrote in CODEX.
+function screen_hits(_database: SqlDatabase, screen: Screen, _args: unknown[], value: unknown): Screened<unknown> {
+  const hits = value as SearchHit[];
+  const items = screen_entries(
+    screen,
+    hits.filter((hit) => hit.kind === "item"),
+    (hit) => hit.collector,
+    (hit) => hit.id,
+  );
+  const kept = new Set(items.value);
+  return { ...items, value: hits.filter((hit) => hit.kind !== "item" || kept.has(hit)) };
+}
+
 // Every offered call that can answer with other apps' text; a test holds this to the calls the policy says bring it.
 export const result_screeners: Record<string, Screener> = {
   get_context: screen_context,
@@ -80,6 +94,7 @@ export const result_screeners: Record<string, Screener> = {
   list_feed_group_news: screen_group_news,
   refresh_items: screen_report,
   follow_feed: screen_report,
+  search_index: screen_hits,
 };
 
 // The answer as the engine may read it. A call with no screener is held back whole from a hosted engine unless every

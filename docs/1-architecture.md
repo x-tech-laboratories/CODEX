@@ -60,6 +60,40 @@ Plugin keys are kept in the synced `plugins` setting. `get_settings` hides them 
 `src/server/refreshing.ts` refreshes every item once `refresh_minutes` have passed, checking each minute, on the server
 and in the desktop daemon. A refresh writes only the `items` table, which History does not watch.
 
+## The search index
+
+`src/shared/search/` keeps a search index in a SQLite file of its own beside the store's database (`codex-index.db`
+in the desktop profile, `<database>-index.db` on the server): never synced, never in backups, and rebuilt from the
+store and the sources whenever it is lost. It is a derived cache, so it is reached with plain SQL rather than through
+Drizzle, which FTS5 and vector blobs need. The server and the daemon open it and start `keep_indexing`.
+
+- **Documents** (`documents.ts`): every context (name, notes), every item some context holds (title, snippet, the
+  user's notes on it) and every user and assistant message. An item's text from its app comes from the collector's
+  optional `content(source_ids)`, read only when what its app said of the item (title, snippet, address, state,
+  facts) changed, and kept only in the index. Files gives plain text and Markdown files up to 256 KB, X-Tasks a task's
+  notes, Trilium a text note's words or a code note's text through ETAPI.
+- **Change detection** (`indexer.ts`): each document's text is hashed; a pass writes only documents whose hash changed
+  (FTS5 row, overlapping pieces of 1200 characters with 200 of overlap, and no vectors), updates where an unchanged
+  one sits, and removes documents gone. A pass runs at start, a moment after any write (the search feature's
+  `after_write`) and every minute, catching what came by sync.
+- **Embedders** are a third plugin provider beside `collector` and `engine` (`src/shared/embedders/embedder.ts`):
+  label, `model()`, `dimensions()`, optional `is_local()`, and `embed(texts)`. The bundled one
+  (`src/server/embedders/openai.ts`) posts to an OpenAI-compatible `/embeddings` endpoint, Ollama's on this computer
+  by default, with an optional key command. The `embedder` setting names the one in use, none by default. Vectors are
+  kept as Float32 blobs scaled to length one, tagged with the embedder and model; vectors of any other are let go, so
+  changing either embeds everything again. Embedding runs in batches of 16 in the background, waits while a reply is
+  written (`conversations/activity.ts`), and calls nothing when no piece waits. A hosted embedder is never sent an
+  item from a source not marked for hosted engines.
+- **Search** (`search.ts`): FTS5 by bm25 (title weighted over text, every word as a prefix, any word when not all
+  match) and cosine over the vectors in process, the query embedded by the same embedder; each list's best 50 fused
+  by reciprocal rank (k = 60). A vector hit counts only above a cosine of 0.3 and within three quarters of the
+  nearest. A context given scopes it to that context and every context inside it.
+- **Calls** (`store.ts`): `search_index(query, context_id?, limit?)` gives items, contexts and messages with an
+  excerpt and where each is; `get_index_state` the counts, pending and withheld pieces, the embedder and the last
+  error; `rebuild_index` starts again from nothing. The engine is offered `search_index`, screened by source like
+  every other read (PR A's withholding and trust). The first page's search uses it, and Settings → Index shows the
+  state, the embedder and Rebuild.
+
 ## The Thunderbird add-on
 
 `thunderbird/` is a WebExtension built by `vite.thunderbird.config.ts`. Its popup reads the email shown, lists the

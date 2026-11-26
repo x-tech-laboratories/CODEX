@@ -22,7 +22,21 @@ code sits in [`legacy/`](legacy/README.md), where nothing builds or tests it.
   by their handle and resize from their corner (or move with the arrow keys, and resize with Shift and the arrows).
   **Grouped** puts a card per kind instead, such as one holding every task and one every link, each listing its items.
   Where each card sits is kept with the context, for each view, and syncs, but leaves no version in History.
-- **The first page** searches every item kept, and shows each context with what is inside it.
+- **The first page** searches everything kept, and shows each context with what is inside it.
+
+## Search
+
+The search on the first page, and the assistant's `search_index` tool, look through a search index CODEX keeps beside
+its data: every item in a context with your notes on it and, where its app can give it cheaply, its text (plain text
+and Markdown files up to 256 KB, an X-Tasks task's notes, a Trilium text or code note), every context's name and notes,
+and the conversations. It finds by words at once. To find by meaning too, run an embedding model, such as Ollama's
+(`ollama pull nomic-embed-text`), and under **Settings → Index** pick **OpenAI-compatible embeddings** as the
+embedder; its row holds the endpoint (`http://localhost:11434/v1` unless changed), the model, its dimensions (768 for
+nomic-embed-text) and an optional API key command. Embedding runs in the background and waits while the assistant
+writes a reply. A hosted embedder is never sent text from a source not marked **May be sent to a hosted engine**.
+
+The index is a file of its own (`codex-index.db` in the desktop app's profile, `<database>-index.db` beside the
+server's), never synced and never in backups. It is safe to delete, and **Rebuild** builds it again from nothing.
 
 ## The assistant
 
@@ -39,6 +53,8 @@ and fill in its settings.
 | ------ | -------- |
 | Anthropic | the model (`claude-opus-5-5` unless changed), the context size, and an API key command |
 | OpenAI-compatible | the endpoint, ending in `/v1` (empty for OpenAI's own), the model's name there, the context size, and an API key command |
+
+Embedders, which give the search index its sense of meaning, are plugins too; see [Search](#search).
 
 The **API key command** is a program whose first line of output is the key, such as `pass show anthropic/api-key`. It
 runs each time the engine answers, where CODEX's data is (the desktop app's daemon, or the server), and the key is kept
@@ -83,7 +99,8 @@ locked, and what it brings syncs to the server and other devices like anything e
 
 A collector of your own is a plugin in a subfolder of the plugins folder (`plugins_folder` in the server's config, or
 `plugins/` in the desktop app's profile) whose `package.json` names its built server entry under
-`"x-plugin": { "server": "dist/server.js" }`. It provides a `collector` as `src/shared/collectors/collector.ts` describes.
+`"x-plugin": { "server": "dist/server.js" }`. It provides a `collector` as `src/shared/collectors/collector.ts` describes, an `engine` as
+`src/shared/engines/engine.ts` does, or an `embedder` as `src/shared/embedders/embedder.ts` does.
 Plugins run with the app's full rights and are not sandboxed, so install only plugins you trust.
 
 ## Following
@@ -214,7 +231,8 @@ src/
   main/        Electron main process: the window, the tray icon and the login entry, passing calls to the daemon
   preload/     the desktop page's bridge
   web/         the React page: contexts/, assistant/, settings/, history/ and hosts/ for web and desktop
-  shared/      the store every host runs: contexts/, collectors/, engines/, conversations/, policy/, history/ and settings
+  shared/      the store every host runs: contexts/, collectors/, engines/, embedders/, conversations/, policy/, privacy/,
+               search/, history/ and settings
 thunderbird/   the Thunderbird add-on: its popup, options and manifest
 scripts/       seed.ts for sample data, icons.ts for the icons
 tests/         one *.test.ts per behaviour

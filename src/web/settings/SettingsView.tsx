@@ -1,5 +1,6 @@
-// Settings: how often items refresh, history, the assistant's engine and action policy, the collector plugins, import
-// and export, sync with a server on a device, backups, and the desktop app's tray and background running.
+// Settings: how often items refresh, history, the assistant's engine and action policy, the collector plugins, the
+// search index, import and export, sync with a server on a device, backups, and the desktop app's tray and background
+// running.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,7 @@ import { read_picked, save_text } from "../files.ts";
 import { engine_section, policy_section } from "../assistant/AssistantSettings.tsx";
 import { CollectorRows } from "../plugins.tsx";
 import { hosted_log_section } from "../privacy/PrivacySettings.tsx";
+import { index_section } from "../search/IndexSettings.tsx";
 
 // ── General ──────────────────────────────────────────────────────────────────
 
@@ -63,7 +65,7 @@ const collectors_section: SettingsSection = {
 // ── Import and export ────────────────────────────────────────────────────────
 
 // The settings an imported file may set; anything else in it is ignored.
-const importable_settings = new Set(["refresh_minutes", "history.keep_days", "plugins", "engine", "action_policy", "source_marks", "hosted_log.keep_days"]);
+const importable_settings = new Set(["refresh_minutes", "history.keep_days", "plugins", "engine", "action_policy", "source_marks", "hosted_log.keep_days", "embedder"]);
 
 function TransferRows() {
   const contexts_picker = useRef<HTMLInputElement>(null);
@@ -186,7 +188,7 @@ export function SettingsView() {
         {(values) => (
           <SettingsPage
             categories={[
-              { heading: "General", sections: [general_section(values, set_setting), history_section(values, set_setting), collectors_section, transfer_section] },
+              { heading: "General", sections: [general_section(values, set_setting), history_section(values, set_setting), collectors_section, index_section(values), transfer_section] },
               { heading: "Assistant", sections: [engine_section(values), policy_section, hosted_log_section(values, set_setting)] },
               ...data_category(),
             ]}

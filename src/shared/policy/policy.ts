@@ -7,6 +7,7 @@ import type { MethodSpec } from "@x-tech-laboratories/x-libs/api_spec";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { contexts_feature } from "../contexts/store.ts";
+import { search_feature } from "../search/store.ts";
 import { is_read_only } from "../page_api.ts";
 import { settings_feature } from "../settings.ts";
 import { default_level, is_policy_level, type PolicyLevel } from "./model.ts";
@@ -19,9 +20,12 @@ export const policy_setting = "action_policy";
 // Contexts calls left out: moving data in or out whole, and how a page lays its cards out.
 const not_offered = new Set(["export_contexts", "import_contexts", "set_context_view", "set_card_places"]);
 
-// Only the contexts, items, collectors and feeds calls; never accounts, settings, plugins, sync, backups, History, the
-// conversations or this policy.
-export const offered_api: Record<string, MethodSpec> = Object.fromEntries(Object.entries(contexts_feature.api as Record<string, MethodSpec>).filter(([name]) => !not_offered.has(name)));
+// Only the contexts, items, collectors and feeds calls, and the search; never accounts, settings, plugins, sync,
+// backups, History, the conversations or this policy.
+export const offered_api: Record<string, MethodSpec> = {
+  ...Object.fromEntries(Object.entries(contexts_feature.api as Record<string, MethodSpec>).filter(([name]) => !not_offered.has(name))),
+  search_index: search_feature.api.search_index as MethodSpec,
+};
 
 export function is_offered(method: string): boolean {
   return Object.hasOwn(offered_api, method);

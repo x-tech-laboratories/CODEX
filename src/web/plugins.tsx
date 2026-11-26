@@ -12,6 +12,7 @@ import { Skeleton } from "@x-tech-laboratories/x-libs/web/react/states";
 
 import { app_info, plugins_setting } from "../shared/collectors/collector.ts";
 import { bundled_manifests } from "../shared/collectors/manifests.ts";
+import { embedder_manifests } from "../shared/embedders/manifests.ts";
 import { engine_manifests } from "../shared/engines/manifests.ts";
 import { calls } from "./api.ts";
 import { SourceMarks } from "./privacy/PrivacySettings.tsx";
@@ -19,7 +20,7 @@ import { SourceMarks } from "./privacy/PrivacySettings.tsx";
 // ── Host ─────────────────────────────────────────────────────────────────────
 
 // The page side of a collector or engine has only its settings; its work runs where the store does.
-const bundled_pages = [...bundled_manifests, ...engine_manifests].map((manifest) => define_plugin({ ...manifest, start: () => undefined }));
+const bundled_pages = [...bundled_manifests, ...engine_manifests, ...embedder_manifests].map((manifest) => define_plugin({ ...manifest, start: () => undefined }));
 
 let started: Promise<PluginHost> | null = null;
 
@@ -79,11 +80,12 @@ function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<st
 }
 
 const engine_ids = new Set(engine_manifests.map((manifest) => manifest.id));
+const embedder_ids = new Set(embedder_manifests.map((manifest) => manifest.id));
 
-// A row for each plugin but the engines, each opening its own dialog.
+// A row for each plugin but the engines and embedders, each opening its own dialog.
 export function CollectorRows() {
   const host = use_page_plugins();
-  const ids = host ? new Set(host.list().map((status) => status.manifest.id).filter((id) => !engine_ids.has(id))) : null;
+  const ids = host ? new Set(host.list().map((status) => status.manifest.id).filter((id) => !engine_ids.has(id) && !embedder_ids.has(id))) : null;
   return host && ids ? <Rows host={host} ids={ids} with_marks /> : <Skeleton lines={2} />;
 }
 
@@ -91,4 +93,10 @@ export function CollectorRows() {
 export function EngineRows() {
   const host = use_page_plugins();
   return host ? <Rows host={host} ids={engine_ids} /> : <Skeleton lines={2} />;
+}
+
+// A row for each bundled embedder, each opening its own dialog with its endpoint, model, dimensions and key command.
+export function EmbedderRows() {
+  const host = use_page_plugins();
+  return host ? <Rows host={host} ids={embedder_ids} /> : <Skeleton lines={1} />;
 }

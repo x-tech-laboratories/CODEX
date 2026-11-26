@@ -22,6 +22,7 @@ import { screen_result } from "../privacy/results.ts";
 import { counts_of, local_screen, open_screen, taints, withheld_line, type Screen } from "../privacy/screen.ts";
 import { record_hosted_send } from "../privacy/store.ts";
 import { settings_feature } from "../settings.ts";
+import { reply_ended, reply_started } from "./activity.ts";
 import { assistant_host, type AssistantHost } from "./host.ts";
 import { screened_instructions } from "./instructions.ts";
 import { add_message, list_messages } from "./messages.ts";
@@ -188,6 +189,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   const state: RunState = { run_id: new_id(), engine: found.engine.label, model: found.engine.model, started_at: new Date().toISOString(), text: "", tool_calls: [] };
   const run: Run = { conversation_id, screen, abort: new AbortController(), state, done: Promise.resolve() };
   runs.set(conversation_id, run);
+  reply_started();
   const tools = engine_tools({
     database: host.database,
     call: host.call,
@@ -252,6 +254,7 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
   for (const call of state.tool_calls) if (call.outcome === "pending") call.outcome = "failed";
   // Gone before the pages hear of the end, so a page loading the conversation then finds the message and no run.
   runs.delete(conversation_id);
+  reply_ended();
   if (run.screen.is_hosted) {
     try {
       const { screen } = run;

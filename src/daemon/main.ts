@@ -32,6 +32,7 @@ import { bind_methods, is_page_only, is_read_only, needs_upgrade, open_store, pr
 import { register_context_calls } from "../server/calls.ts";
 import { load_collectors } from "../server/collectors/index.ts";
 import { keep_refreshing } from "../server/refreshing.ts";
+import { keep_indexing, open_index } from "../shared/search/indexer.ts";
 
 // ── Profile ──────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,14 @@ const refreshing = keep_refreshing(() => database, {
     void notifier.show({ key: "missing", title: "Items gone", body: `${items} no longer in its app; it is marked missing in its contexts.`, icon: "app" });
   },
 });
+
+// ── Search index ─────────────────────────────────────────────────────────────
+
+// A file of its own beside the database, never synced or backed up, and rebuilt from the store if it is deleted.
+const index = new DatabaseSync(join(profile, "codex-index.db"));
+index.exec("PRAGMA journal_mode = WAL");
+open_index(index);
+const indexing = keep_indexing({ database: () => database, index: () => index });
 
 // The schedule belongs to this device, so it is kept beside the database rather than in the synced settings.
 const schedule_file = join(profile, "backup-schedule.json");
@@ -219,6 +228,7 @@ async function main(): Promise<void> {
     clearInterval(unused_timer);
     stop_all_runs();
     refreshing.stop();
+    void indexing.stop().then(() => index.close());
     sync.stop();
     backing_up.stop();
     void daemon
