@@ -7,11 +7,11 @@ project or an area of your life, such as a kitchen renovation or this year's tax
 files, emails and links that belong to it, from the apps that keep them. CODEX never keeps the items themselves: each
 is a pointer with what was last seen of it, and it opens in its own app.
 
-**The assistant is being ported back.** CODEX was an assistant on [SmartHarness](https://github.com/x-tech-laboratories/SmartHarness)
-until version 0.2.1; from 0.3.0 it is built on the code of X-Context, which merged into it. The engines, hosted models,
-Inbox, mascot, background queue and knowledge view return one by one on this skeleton, as
-[docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) sets out. Until then the old assistant's code sits in
-[`legacy/`](legacy/README.md), where nothing builds or tests it.
+**The assistant is coming back.** CODEX was an assistant on [SmartHarness](https://github.com/x-tech-laboratories/SmartHarness)
+until version 0.2.1; from 0.3.0 it is built on the code of X-Context, which merged into it. The conversation pane, its
+engines and the action policy are back; the Inbox, background queue and knowledge view return one by one, as
+[docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) sets out. Until then the rest of the old assistant's
+code sits in [`legacy/`](legacy/README.md), where nothing builds or tests it.
 
 - **Contexts** nest, so Home holds Kitchen and Garden. Each has notes in Markdown and its items grouped by kind, each
   with a note on why it is there and the other contexts that hold it too.
@@ -23,6 +23,40 @@ Inbox, mascot, background queue and knowledge view return one by one on this ske
   **Grouped** puts a card per kind instead, such as one holding every task and one every link, each listing its items.
   Where each card sits is kept with the context, for each view, and syncs, but leaves no version in History.
 - **The first page** searches every item kept, and shows each context with what is inside it.
+
+## The assistant
+
+The **Assistant** pane on the right, opened and closed from the robot button in the top bar, holds a conversation with
+CODEX about the context that is open, or a general one on the first page. Its face sleeps until an engine is set up,
+thinks while it writes, and smiles or frowns for a moment when a reply ends. Enter sends, Shift+Enter starts a new
+line, **Stop** ends a reply early, and the bin clears the conversation. Each tool call it made folds open to show its
+arguments and what came back.
+
+**Setting up an engine,** under **Settings → Assistant → Engine**: pick the engine under **Answering**, then open its row
+and fill in its settings.
+
+| Engine | Settings |
+| ------ | -------- |
+| Anthropic | the model (`claude-opus-5-5` unless changed), the context size, and an API key command |
+| OpenAI-compatible | the endpoint, ending in `/v1` (empty for OpenAI's own), the model's name there, the context size, and an API key command |
+
+The **API key command** is a program whose first line of output is the key, such as `pass show anthropic/api-key`. It
+runs each time the engine answers, where CODEX's data is (the desktop app's daemon, or the server), and the key is kept
+nowhere: not in the database, a log or what the page reads. On a NixOS server the service has no home folder and a
+bare `PATH`, so give the command by its full path.
+
+**A local model** needs no key: run an OpenAI-compatible server such as Ollama (`ollama serve`, then
+`ollama pull qwen3`) or llama.cpp's `llama-server -m model.gguf --port 8080 --jinja`, choose **OpenAI-compatible**, and
+give its endpoint (`http://localhost:11434/v1` for Ollama, `http://localhost:8080/v1` for llama-server), the model's
+name and its context size. The model has to support tool calls to read or change your contexts.
+
+**What it can do:** read and change contexts and their items, search the collectors and follow feeds, through the same
+calls the API and MCP serve; never your settings, plugins, accounts, sync, backups or History. Each kind of change has
+a level under **Settings → Assistant → Action policy**: **Never**, **Ask me first** (the default for every change),
+**Allowed while I'm in the conversation**, or **Allowed, even in the background** (for background jobs to come; none
+exist yet). A change that has to ask shows as a card in the conversation with **Approve** and **Reject**. Once a reply
+has read text that came from another app, such as an item's title or a search, every change it asks for waits for you,
+whatever its level, since that text could carry someone else's instructions.
 
 ## Collectors
 
@@ -140,9 +174,8 @@ such as a Trilium token, are left out of what the API and MCP read.
 
 ## Not yet
 
-- **The assistant's pane:** engines, conversations and the action policy are in the store and its API
-  (`send_message`, `get_conversation`, `resolve_proposal`); the window's pane with the mascot, the Inbox and the
-  knowledge graph come next, in the order [docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) gives.
+- **More of the assistant:** the Inbox, background jobs, the knowledge graph and blueprints, in the order
+  [docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) gives.
 - **Android.** Collectors need Node, so a phone app would show what is kept but search nothing; it waits for collectors
   that run on the server alone.
 - **CSV export.** Contexts export and import as JSON only so far.
@@ -172,8 +205,8 @@ src/
   daemon/      the desktop app's daemon: its database, the page's calls, sync, backups, refreshing and MCP
   main/        Electron main process: the window, the tray icon and the login entry, passing calls to the daemon
   preload/     the desktop page's bridge
-  web/         the React page: contexts/, settings/, history/ and hosts/ for web and desktop
-  shared/      the store every host runs: contexts/, collectors/, history/ and settings
+  web/         the React page: contexts/, assistant/, settings/, history/ and hosts/ for web and desktop
+  shared/      the store every host runs: contexts/, collectors/, engines/, conversations/, policy/, history/ and settings
 thunderbird/   the Thunderbird add-on: its popup, options and manifest
 scripts/       seed.ts for sample data, icons.ts for the icons
 tests/         one *.test.ts per behaviour

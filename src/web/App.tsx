@@ -6,11 +6,13 @@ import { Fragment, useEffect } from "react";
 import { create_accounts_client, type Me } from "@x-tech-laboratories/x-libs/web/accounts";
 import { AccountView, UsersView } from "@x-tech-laboratories/x-libs/web/react/accounts";
 import { SyncCertificatePrompt } from "@x-tech-laboratories/x-libs/web/react/certificates";
-import { Shell, use_route } from "@x-tech-laboratories/x-libs/web/react/shell";
+import { Shell, use_route, use_side_pane } from "@x-tech-laboratories/x-libs/web/react/shell";
+import { Bot } from "lucide-react";
 import { SignInForm, use_account } from "@x-tech-laboratories/x-libs/web/react/sign_in";
 import { theme_choice } from "@x-tech-laboratories/x-libs/web/theme";
 
 import { data_watch, page } from "./api.ts";
+import { AssistantPane } from "./assistant/AssistantPane.tsx";
 import { ContextTree } from "./contexts/ContextTree.tsx";
 import { ContextView } from "./contexts/ContextView.tsx";
 import { HomeView } from "./contexts/HomeView.tsx";
@@ -68,6 +70,7 @@ function Pages({ me, on_sign_out }: { me: Me | null; on_sign_out?: () => void })
   const label = own_labels[section] ?? "Contexts";
   const view_key = route.parts.join("/");
   const is_admin = me !== null && me.role === me.roles.at(-1);
+  const [assistant_open, set_assistant_open] = use_side_pane("codex-assistant-open", true);
 
   useEffect(() => {
     document.title = `${label} · CODEX`;
@@ -95,6 +98,18 @@ function Pages({ me, on_sign_out }: { me: Me | null; on_sign_out?: () => void })
       user_href="#/account"
       on_logout={on_sign_out}
       settings={{ href: "#/settings", active: section === "settings" }}
+      tools={
+        <button type="button" className="icon" aria-pressed={assistant_open} aria-label="Assistant" title="Assistant" onClick={() => set_assistant_open(!assistant_open)}>
+          <Bot size={18} />
+        </button>
+      }
+      side_pane={{
+        title: "Assistant",
+        open: assistant_open,
+        on_open_change: set_assistant_open,
+        width: { default_width: 380, min: 300, max: 720, storage_key: "codex-assistant-width" },
+        content: <AssistantPane context_id={context_id} />,
+      }}
     >
       <Fragment key={view_key}>{view()}</Fragment>
     </Shell>
