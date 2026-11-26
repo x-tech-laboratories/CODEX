@@ -13,6 +13,7 @@ import { describe_error } from "@x-tech-laboratories/x-libs/web/errors";
 
 import type { CollectorSummary, FoundItem } from "../../shared/collectors/collector.ts";
 import { blueprint_collector } from "../../shared/blueprints/model.ts";
+import { finding_collector } from "../../shared/interests/model.ts";
 import { conversation_collector } from "../../shared/conversations/model.ts";
 import { attempt, calls, use_data } from "../api.ts";
 import { look_of } from "./kinds.tsx";
@@ -126,8 +127,8 @@ function Pane({ collector, context_id, on_done }: { collector: CollectorSummary;
 }
 
 function AddItemDialog({ context_id, context_name, on_close }: { context_id: string; context_name: string; on_close: () => void }) {
-  // Conversations are started in the Assistant pane, not added here.
-  const collectors = use_data(async (api) => (await api.list_collectors()).filter((each) => each.id !== conversation_collector && each.id !== blueprint_collector));
+  // Conversations are started in the Assistant pane, blueprints written on their page and findings saved by research, not added here.
+  const collectors = use_data(async (api) => (await api.list_collectors()).filter((each) => each.id !== conversation_collector && each.id !== blueprint_collector && each.id !== finding_collector));
   const [picked, set_picked] = useState<string | null>(null);
 
   return (
