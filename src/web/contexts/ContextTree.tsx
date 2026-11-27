@@ -6,6 +6,7 @@ import { open_context_menu } from "@x-tech-laboratories/x-libs/web/react/menus";
 import { use_pref } from "@x-tech-laboratories/x-libs/web/react/prefs";
 import { Tree } from "@x-tech-laboratories/x-libs/web/react/tree";
 
+import { global_context_id } from "../../shared/contexts/model.ts";
 import type { ContextSummary } from "../../shared/contexts/model.ts";
 import { calls, succeeds, use_data } from "../api.ts";
 import { context_href, context_menu, new_context } from "./actions.tsx";
@@ -33,7 +34,7 @@ export function ContextTree({ active_id }: { active_id: string | null }) {
           </button>
         </span>
       </div>
-      {contexts.status === "loaded" && list.length === 0 && <p className="muted context-tree-empty">No contexts yet. Make one for each project or area you keep things for.</p>}
+      {contexts.status === "loaded" && list.length <= 1 && <p className="muted context-tree-empty">Global holds everything. Make a context inside it for each project or area you keep things for.</p>}
       <Tree<ContextSummary>
         items={list}
         label="Contexts"
@@ -45,6 +46,8 @@ export function ContextTree({ active_id }: { active_id: string | null }) {
         selected_id={active_id}
         on_select={(context) => (window.location.hash = context_href(context.id).slice(1))}
         allow_inside
+        // Global stays the root: it is never dragged, and nothing goes beside it.
+        can_drop={(dragged, target, placement) => dragged.id !== global_context_id && (target.id !== global_context_id || placement === "inside")}
         on_move={(context, move) => void succeeds(() => calls().move_context(context.id, move.parent_id, move.position))}
         on_context_menu={(event, context) => open_context_menu(event, context_menu(context))}
       />

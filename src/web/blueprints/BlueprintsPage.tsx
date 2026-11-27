@@ -10,6 +10,7 @@ import { Empty, Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 import { ScrollText } from "lucide-react";
 
 import { blueprint_route, type BlueprintSummary } from "../../shared/blueprints/model.ts";
+import { global_context_id } from "../../shared/contexts/model.ts";
 import { use_data } from "../api.ts";
 import { context_href } from "../contexts/actions.tsx";
 import { new_blueprint, StatusBadge } from "./BlueprintView.tsx";
@@ -62,8 +63,9 @@ export function BlueprintsPage() {
       <Loaded resource={data}>
         {({ all, proposals }) => {
           const kept = all.filter((each) => each.status !== "proposed");
-          const global = kept.filter((each) => each.contexts.length === 0);
-          const placed = kept.filter((each) => each.contexts.length > 0);
+          const applies_everywhere = (each: (typeof kept)[number]) => each.contexts.length === 0 || each.contexts.every((place) => place.id === global_context_id);
+          const global = kept.filter(applies_everywhere);
+          const placed = kept.filter((each) => !applies_everywhere(each));
           return (
             <>
               {proposals.length > 0 && (

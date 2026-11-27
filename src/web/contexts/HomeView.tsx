@@ -1,4 +1,4 @@
-// The first page: a search across everything kept, by words and meaning, and each top-level context with what is inside it.
+// The first page: a search across everything kept, by words and meaning, and each context directly under Global with what is inside it.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -10,6 +10,7 @@ import { AddIcon, Icon, type IconGlyph } from "@x-tech-laboratories/x-libs/web/r
 import { Card, Cards, PageHeading, Section } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Empty, Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 
+import { global_context_id } from "../../shared/contexts/model.ts";
 import type { ContextSummary } from "../../shared/contexts/model.ts";
 import { blueprint_collector, blueprint_of_item, blueprint_route } from "../../shared/blueprints/model.ts";
 import { conversation_of_item, conversation_route } from "../../shared/conversations/model.ts";
@@ -83,7 +84,7 @@ function Places({ where }: { where: SearchHit["where"] }) {
 // A conversation with the messages in it that matched, each with who wrote it and the words around the match.
 function ConversationHit({ entry }: { entry: FoundConversation }) {
   const { conversation, messages } = entry;
-  const where = entry.where.length === 0 ? [{ id: "", name: "In no context" }] : entry.where;
+  const where = entry.where.length === 0 ? [{ id: global_context_id, name: "Global" }] : entry.where;
   return (
     <li className="item-row">
       <Icon icon={MessageSquare} />
@@ -118,7 +119,7 @@ function ConversationHit({ entry }: { entry: FoundConversation }) {
 // One thing found: its title, opening in its app or on its context's page, the words around the match and where it is.
 function Hit({ hit }: { hit: SearchHit }) {
   const icon = hit.kind === "item" ? look_of(hit.item_kind).icon : hit_icons[hit.kind];
-  const where = hit.kind === "message" && hit.where.length === 0 ? [{ id: "", name: "In no context" }] : hit.where;
+  const where = hit.kind === "message" && hit.where.length === 0 ? [{ id: global_context_id, name: "Global" }] : hit.where;
   const title =
     hit.kind === "item" && hit.collector === blueprint_collector ? (
       <a href={blueprint_route(blueprint_of_item(hit.id) ?? "")}>{hit.title}</a>
@@ -165,8 +166,8 @@ function Found({ query }: { query: string }) {
 // ── Contexts ─────────────────────────────────────────────────────────────────
 
 function ContextCards({ contexts }: { contexts: ContextSummary[] }) {
-  const top = contexts.filter((context) => context.parent_id === null);
-  if (top.length === 0) return <Empty title="No contexts yet" hint="Make one for each project or area of your life, then add the tasks, notes, files, emails and links that belong to it." />;
+  const top = contexts.filter((context) => context.parent_id === global_context_id);
+  if (top.length === 0) return <Empty title="No contexts yet" hint="Global holds everything. Make a context inside it for each project or area of your life, then add the tasks, notes, files, emails and links that belong to it." />;
   const inside = (id: string) => contexts.filter((context) => context.parent_id === id);
   return (
     <Cards>

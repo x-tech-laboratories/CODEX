@@ -10,6 +10,11 @@ export function context_or_global(id: string | null | undefined): string {
   return id || global_context_id;
 }
 
+// The contexts with Global first, as pickers list them.
+export function global_first<Context extends { id: string }>(contexts: Context[]): Context[] {
+  return [...contexts.filter((context) => context.id === global_context_id), ...contexts.filter((context) => context.id !== global_context_id)];
+}
+
 // The scope an id names for calls that cover everything in Global: null for Global, the id for any other context.
 export function scope_of(id: string | null | undefined): string | null {
   return !id || id === global_context_id ? null : id;

@@ -10,6 +10,7 @@ import { GraphView as GraphDrawing } from "@x-tech-laboratories/x-libs/web/react
 import { FormRow, Section, SelectionBar } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 
+import { global_context_id } from "../../shared/contexts/model.ts";
 import { entity_kinds, link_types, type EntityKind, type GraphFilter, type GraphLink, type GraphNode, type GraphProposals, type GraphStatus, type GraphView as GraphViewData, type LinkType } from "../../shared/graph/model.ts";
 import { calls, succeeds, use_data } from "../api.ts";
 import { drawn, type_name, type_text } from "./look.ts";
@@ -194,7 +195,7 @@ export function GraphPanel({ context_id, focus = null, with_search = false, labe
   };
   const tools = (
     <>
-      {context_id !== null && <Switch label="Show everything" show_label checked={everything} on_change={set_everything} />}
+      {context_id !== null && context_id !== global_context_id && <Switch label="Show everything" show_label checked={everything} on_change={set_everything} />}
       {node_kinds.map(([kind, text]) => (
         <label key={kind} className="check">
           <input

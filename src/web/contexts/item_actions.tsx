@@ -8,14 +8,16 @@ import { pick_list_dialog, type PickableList } from "@x-tech-laboratories/x-libs
 
 import { blueprint_collector } from "../../shared/blueprints/model.ts";
 import { conversation_collector } from "../../shared/conversations/model.ts";
+import { global_first } from "../../shared/contexts/model.ts";
 import { attempt, calls, succeeds } from "../api.ts";
 import { NameDialog } from "./actions.tsx";
 
 // ── Contexts ─────────────────────────────────────────────────────────────────
 
+// Every context to pick from, Global first as the root and catch-all.
 async function pickable_contexts(holders: string[]): Promise<PickableList[]> {
   const contexts = await calls().list_contexts(false);
-  return contexts.map((context) => ({ id: context.id, name: context.name, holds: holders.includes(context.id) }));
+  return global_first(contexts).map((context) => ({ id: context.id, name: context.name, holds: holders.includes(context.id) }));
 }
 
 async function new_context(name: string): Promise<string> {
@@ -38,7 +40,7 @@ export function add_to_contexts(item: { id: string; title: string }, holders: st
   });
 }
 
-// Moves an item out of one context into the one picked, or, for a conversation in no context, into it.
+// Moves an item out of one context into the one picked, or, for one in no context, into it.
 export function move_to_context(item: { id: string; title: string }, from_context: string | null, holders: string[], on_moved?: (context_id: string) => void): void {
   const move = async (context_id: string) => {
     if (from_context) await calls().move_item(from_context, item.id, context_id);
@@ -98,7 +100,7 @@ export function remove_from_context(context_id: string, item: { id: string; titl
   if (item.collector === blueprint_collector && other_holders === 0) {
     confirm_dialog({
       title: `Delete ${item.title}?`,
-      message: "This is the last context it applies in; taking it out deletes it, as it would otherwise apply everywhere. History keeps its versions.",
+      message: "This is the last context it applies in, so taking it out deletes it; to have it apply everywhere, move it to Global instead. History keeps its versions.",
       confirm_label: "Delete",
       busy_label: "Deleting…",
       danger: true,
