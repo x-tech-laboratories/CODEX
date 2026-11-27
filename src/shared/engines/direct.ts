@@ -33,6 +33,8 @@ export interface ChatRequest {
   on_text?: (text: string) => void;
   // Each piece of a reasoning model's thinking as it streams in, before its answer.
   on_reasoning?: (text: string) => void;
+  // A JSON schema the reply must follow, for an engine whose steps answer in JSON, such as SmartHarness's decisions.
+  json_schema?: Record<string, unknown>;
 }
 
 export interface ChatCompletion {

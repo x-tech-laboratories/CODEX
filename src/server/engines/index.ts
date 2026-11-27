@@ -37,7 +37,7 @@ function tool_set_of(value: unknown): ToolSet {
 }
 
 // An error event with every copy of the key taken out, should a provider quote it back.
-function without_key(event: EngineEvent, api_key: string): EngineEvent {
+export function without_key(event: EngineEvent, api_key: string): EngineEvent {
   if (event.type !== "error" || api_key.length < 4) return event;
   const hide = (text: string) => text.split(api_key).join("[hidden]");
   return { ...event, message: hide(event.message), ...(event.detail === undefined ? {} : { detail: hide(event.detail) }) };

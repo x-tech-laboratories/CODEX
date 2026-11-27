@@ -84,8 +84,43 @@ export const openai_manifest: PluginManifest = {
   ],
 };
 
-export const engine_manifests = [anthropic_manifest, openai_manifest];
+function whole(key: string, label: string, hint: string, default_value: number, min: number, max: number): SettingField {
+  return { key, label, hint, type: "number", default: default_value, min, max, step: 1 };
+}
+
+// SmartHarness works each message as a tree of small tasks on a model behind an OpenAI-compatible endpoint. Its plugin
+// starts off, and while it is experimental its name says so.
+export const smartharness_manifest: PluginManifest = {
+  id: "codex.smartharness",
+  name: "SmartHarness (experimental)",
+  version: app_info.version,
+  app: app_info.id,
+  enabled_by_default: false,
+  description:
+    "Experimental. Answers through SmartHarness's task tree, which splits each message into small tasks with one narrow step per model call, so a small local model does better. It uses a model behind an OpenAI-compatible endpoint, such as a llama.cpp server or Ollama you already run, acts only through CODEX's tools under the action policy, and keeps nothing of its own. A reply takes many model calls.",
+  settings: [
+    {
+      key: "endpoint",
+      label: "Endpoint",
+      hint: "The address the model's OpenAI-compatible API answers on, ending in /v1, such as a llama.cpp server or Ollama on this machine. Empty is OpenAI's own, which is hosted.",
+      type: "text",
+      default: "",
+      placeholder: "http://localhost:8080/v1",
+    },
+    { key: "model", label: "Model", hint: "The model's name on that endpoint.", type: "text", default: "", placeholder: "qwen3-4b" },
+    context_size(8192),
+    whole("max_tokens", "Longest step", "The most tokens one step of the task tree may write; it must leave room for the step's input within the context size.", 2048, 256, 32_768),
+    whole("max_task_depth", "Levels of subtasks", "How many levels of subtasks may sit under a message's own task; 0 works each message as one task.", 2, 0, 6),
+    whole("max_task_nodes", "Most tasks", "The most tasks one reply may take, its own task included. Each takes three to six model calls.", 12, 1, 60),
+    whole("max_tool_calls", "Tool calls a task", "The most calls to CODEX's tools one task may make.", 5, 1, 10),
+    tool_set,
+    key_command("pass show openai/api-key"),
+  ],
+};
+
+export const engine_manifests = [anthropic_manifest, openai_manifest, smartharness_manifest];
 
 // The id each bundled engine is provided under, which the engine setting names.
 export const anthropic_engine_id = "anthropic";
 export const openai_engine_id = "openai";
+export const smartharness_engine_id = "smartharness";
