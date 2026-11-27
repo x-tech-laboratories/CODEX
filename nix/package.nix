@@ -15,8 +15,10 @@ buildNpmPackage {
   # Read from package-lock.json, so there is no deps hash to keep in step with it.
   npmDeps = importNpmLock {
     npmRoot = ../.;
-    # The lock names RoboBuddy, a git dependency the page bundles, by ssh, which needs a key; the same commit comes over https.
+    # The lock names the git dependencies, RoboBuddy (which the page bundles) and SmartHarness, by ssh, which needs a key;
+    # the same commits come over https.
     fetcherOpts."node_modules/@x-tech-laboratories/robobuddy".url = "https://github.com/x-tech-laboratories/RoboBuddy.git";
+    fetcherOpts."node_modules/@x-tech-laboratories/smartharness".url = "https://github.com/x-tech-laboratories/SmartHarness.git";
   };
   npmConfigHook = importNpmLock.npmConfigHook;
   # npm unpacks a git dependency through its cache, so the cache must be writable.
