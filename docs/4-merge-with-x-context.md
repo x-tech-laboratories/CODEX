@@ -161,7 +161,8 @@ a run built to hold no private data: told only the topic and its earlier finding
 two tools and `save_finding`, with no context, history, blueprint or mood, which a test holds to that exact list and
 that request. Findings are items of CODEX's own in "The assistant's interests", carrying the web as their source so they
 stay fenced and screened; the digest lists them, search finds them, a new one leaves the mood mildly curious, and a run
-may propose one interest.*
+may propose one interest. Since 2026-11-27 a proposed interest is in the Inbox too, accepted there only through the same
+dialog showing the exact topic, never ticked with others; a mood still never makes an entry.*
 
 ## Order of work
 
@@ -217,7 +218,8 @@ mark, without which a hosted engine is not offered its tools and is sent nothing
 self-maintenance loop is built and one device, chosen in a synced setting, does all background work; that mark starts
 on for the bundled Web plugin alone, so a remote MCP server holding private data is not sent to a hosted engine until
 the user marks it; a local MCP server's command runs only on the device that added it, and moving it to another is the
-user's at the page after reading the command):
+user's at the page after reading the command; a proposed interest is in the Inbox, accepted there only through its
+dialog):
 
 - No real model has run a background job: a scripted fake engine has, in tests and in the desktop app. How a real model
   keeps to a job's instruction with nobody to ask, and how many rounds and tokens real jobs need, is unknown.
@@ -295,8 +297,6 @@ user's at the page after reading the command):
 - The topic is sent as accepted, but what the engine types into each search is its own choice; the run holds nothing
   private to put there, and each search is in the hosted log like any other use of a tool that sends outside.
 - A finding taken out of every context stays as an item in no context, as items do; its interest no longer counts it.
-- Interests are not in the Inbox: a proposed one waits under Settings → Assistant → Interests, and the reply that
-  proposed it says so.
 
 ## Later, as separate projects
 

@@ -156,6 +156,34 @@ describe("interests", () => {
   });
 });
 
+describe("interests in the Inbox", () => {
+  it("list each proposed one, by whoever proposed it and from which conversation, and none the user added or decided", async () => {
+    const fixture = start_fixture();
+    fixture.set_script(async function* (request) {
+      await request.tools.call("propose_interest", { topic: "Growing tomatoes in a cold greenhouse", reason: "The user grows tomatoes." });
+      yield { type: "done", text: "Proposed." };
+    });
+    const { conversation_id } = await fixture.calls.send_message(null, "My tomatoes never ripen in the greenhouse.");
+    await wait_for_runs();
+    const by_program = fixture.calls.propose_interest("Rain barrels", "").id;
+    fixture.calls.add_interest("Compost heaps", "Mine.");
+    const dropped = fixture.calls.propose_interest("Kitchen tiles", "").id;
+    fixture.calls.set_interest_state(dropped, "dropped");
+
+    const entries = fixture.calls.list_inbox().filter((entry) => entry.kind === "interest");
+    expect(entries.map((entry) => [entry.title, entry.made_by, entry.detail, entry.route])).toEqual([
+      ["Interest: Rain barrels", "you", "", "#/settings"],
+      ["Interest: Growing tomatoes in a cold greenhouse", "the assistant, fake · fake-model", "The user grows tomatoes.", "#/settings"],
+    ]);
+    expect(entries[1]).toMatchObject({ key: `interest:${entries[1]!.id}`, conversation_id, conversation_title: "My tomatoes never ripen in the greenhouse.", interest: { state: "proposed", topic: "Growing tomatoes in a cold greenhouse" } });
+    expect(fixture.calls.get_inbox_count()).toBe(2);
+
+    fixture.calls.accept_interest(entries[1]!.id, "Tomatoes in a cold greenhouse");
+    fixture.calls.set_interest_state(by_program, "paused");
+    expect(fixture.calls.get_inbox_count()).toBe(0);
+  });
+});
+
 describe("the interests as an engine reads them", () => {
   it("withhold from a hosted engine one proposed by a run that read a source not marked for it", async () => {
     const fixture = start_fixture();

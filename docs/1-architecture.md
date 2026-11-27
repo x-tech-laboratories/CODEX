@@ -786,11 +786,15 @@ and the last skip) and The assistant's jobs (their switch and caps).
 
 `src/shared/inbox/` reads, and keeps nothing: `list_inbox()` gives every waiting proposal of the policy (with its
 evidence and conversation), every proposed graph link and entity, every proposed blueprint and blueprint change, and
-every job run that ended in an error or at a limit and was not set aside, and each daily digest not set aside, newest first, each with plain words, who
-made it, the conversation and job it came from and the route that opens it; `get_inbox_count()` counts them. The
-**Inbox** page (`src/web/inbox/`) decides in place through the features' own page-only calls (`resolve_proposal`,
-`accept_graph_proposals`, `reject_graph_proposals`, `accept_blueprint_proposals`, `reject_blueprint_proposals`) and
-`dismiss_job_runs`, and ticked entries together after a confirmation. The sidebar's Inbox entry carries the count in its
+every proposed interest (kind `interest`, carrying the interest), every job run that ended in an error or at a limit
+and was not set aside, and each daily digest not set aside, newest first, each with plain words, who made it, the
+conversation and job it came from and the route that opens it; `get_inbox_count()` counts them. The **Inbox** page
+(`src/web/inbox/`) decides in place through the features' own page-only calls (`resolve_proposal`,
+`accept_graph_proposals`, `reject_graph_proposals`, `accept_blueprint_proposals`, `reject_blueprint_proposals`,
+`set_interest_state`) and `dismiss_job_runs`, and ticked entries together after a confirmation. An interest has no tick
+box and is never decided with others: its **Accept…** opens the interests' own dialog (`open_topic_dialog`), showing the
+exact topic as an editable field, and calls `accept_interest` from there; **Drop** sets it dropped. A mood never makes
+an entry (a test holds it). The sidebar's Inbox entry carries the count in its
 label, and the tray an Inbox row and tooltip with it.
 
 ### Mood
@@ -857,7 +861,8 @@ an interest, made by the engine with the web as its source. The run's `applied` 
 lists them, and the maintenance loop's `note_finding_mood` leaves the mood mildly curious. The identity lines tell the
 engine when to propose an interest and to mention a finding only when it bears on what the user asks.
 
-Settings → Assistant → Interests (`src/web/interests/InterestSettings.tsx`) lists each interest with its state, who
+A proposed interest is listed in the Inbox too (see "The Inbox"). Settings → Assistant → Interests
+(`src/web/interests/InterestSettings.tsx`) lists each interest with its state, who
 made it, why and its findings, with Accept… (a dialog showing the exact topic as an editable field and what it is sent
 to), Pause and Drop, then Add an interest… and Most accepted at once.
 

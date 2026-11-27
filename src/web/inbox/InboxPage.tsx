@@ -1,11 +1,12 @@
 // The Inbox: everything that waits on the user, newest first, each opening its conversation or thing, with Approve and
 // Reject (or Accept and Reject, or Set aside for a run that ended badly) in place, and several decided at once after
-// asking. Deciding goes through the same page-only calls as everywhere else.
+// asking. A proposed interest is accepted only in its own dialog, after reading the exact topic, so it is never ticked.
+// Deciding goes through the same page-only calls as everywhere else.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
-import { CalendarClock, Inbox as InboxGlyph, Newspaper, ScrollText, Shapes, Waypoints } from "lucide-react";
+import { CalendarClock, Inbox as InboxGlyph, Lightbulb, Newspaper, ScrollText, Shapes, Waypoints } from "lucide-react";
 import { Chip, Chips } from "@x-tech-laboratories/x-libs/web/react/badges";
 import { confirm_dialog } from "@x-tech-laboratories/x-libs/web/react/dialog";
 import { Icon, type IconGlyph } from "@x-tech-laboratories/x-libs/web/react/icons";
@@ -20,22 +21,29 @@ import { open_conversation } from "../assistant/selection.ts";
 import { Evidence } from "../assistant/AssistantPane.tsx";
 import { calls, show_error, use_data } from "../api.ts";
 import { ProposalText } from "../blueprints/ProposalCard.tsx";
+import { open_topic_dialog } from "../interests/InterestSettings.tsx";
 
 // ── Deciding ─────────────────────────────────────────────────────────────────
 
-const icons: Record<InboxKind, IconGlyph> = { change: MessageSquare, link: Waypoints, entity: Shapes, blueprint: ScrollText, blueprint_change: ScrollText, job_run: CalendarClock, digest: Newspaper };
+const icons: Record<InboxKind, IconGlyph> = { change: MessageSquare, link: Waypoints, entity: Shapes, blueprint: ScrollText, blueprint_change: ScrollText, interest: Lightbulb, job_run: CalendarClock, digest: Newspaper };
 
 // Entries that are only read, then set aside: a run that ended badly, and the daily digest.
 const read_only_kinds: InboxKind[] = ["job_run", "digest"];
 
-// The words on an entry's two buttons: a change is approved, a proposal accepted, a run or digest set aside.
+// Entries decided one at a time only: an interest is accepted in a dialog showing the exact topic sent to a search engine.
+const one_at_a_time_kinds: InboxKind[] = ["interest"];
+
+// The words on an entry's two buttons: a change is approved, a proposal accepted, an interest accepted after reading it
+// or dropped, a run or digest set aside.
 function words_of(kind: InboxKind): { yes: string; no: string | null } {
   if (kind === "change") return { yes: "Approve", no: "Reject" };
+  if (kind === "interest") return { yes: "Accept…", no: "Drop" };
   if (read_only_kinds.includes(kind)) return { yes: "Set aside", no: null };
   return { yes: "Accept", no: "Reject" };
 }
 
 // Decides the entries given, yes or no, by kind, through each feature's page-only calls; gives back how many were decided.
+// An interest is only dropped here; accepting one goes through its dialog.
 export async function decide(entries: InboxEntry[], yes: boolean): Promise<number> {
   const of = (kinds: InboxKind[]) => entries.filter((entry) => kinds.includes(entry.kind)).map((entry) => entry.id);
   let decided = 0;
@@ -50,6 +58,10 @@ export async function decide(entries: InboxEntry[], yes: boolean): Promise<numbe
   }
   const blueprints = of(["blueprint", "blueprint_change"]);
   if (blueprints.length) decided += (yes ? await calls().accept_blueprint_proposals(blueprints) : await calls().reject_blueprint_proposals(blueprints)).decided.length;
+  for (const id of yes ? [] : of(["interest"])) {
+    await calls().set_interest_state(id, "dropped");
+    decided++;
+  }
   const runs = of(read_only_kinds);
   if (runs.length && yes) decided += await calls().dismiss_job_runs(runs);
   return decided;
@@ -79,13 +91,17 @@ function EntryRow({ entry, picked, on_pick }: { entry: InboxEntry; picked: boole
   const [busy, set_busy] = useState(false);
   const words = words_of(entry.kind);
   const run = async (yes: boolean) => {
+    if (yes && entry.kind === "interest" && entry.interest) {
+      open_topic_dialog(entry.interest);
+      return;
+    }
     set_busy(true);
     await decide_and_tell([entry], yes);
     set_busy(false);
   };
   return (
     <li className="item-row inbox-row">
-      <input type="checkbox" aria-label={`Pick ${entry.title}`} checked={picked} onChange={(event) => on_pick(event.target.checked)} />
+      {one_at_a_time_kinds.includes(entry.kind) ? <span className="inbox-no-pick" /> : <input type="checkbox" aria-label={`Pick ${entry.title}`} checked={picked} onChange={(event) => on_pick(event.target.checked)} />}
       <Icon icon={icons[entry.kind]} />
       <div className="item-text">
         <div className="item-title">
@@ -165,14 +181,15 @@ function ask_then(entries: InboxEntry[], yes: boolean, after: () => void): void 
 
 function List({ entries }: { entries: InboxEntry[] }) {
   const [picked, set_picked] = useState<Set<string>>(new Set());
-  const chosen = entries.filter((entry) => picked.has(entry.key));
+  const pickable = entries.filter((entry) => !one_at_a_time_kinds.includes(entry.kind));
+  const chosen = pickable.filter((entry) => picked.has(entry.key));
   const pick = (key: string, on: boolean) => set_picked((before) => new Set(on ? [...before, key] : [...before].filter((each) => each !== key)));
   const clear = () => set_picked(new Set());
   const proposals = chosen.filter((entry) => !read_only_kinds.includes(entry.kind));
   return (
     <>
       {chosen.length > 0 && (
-        <SelectionBar count={chosen.length} total={entries.length} on_clear={clear} on_select_all={() => set_picked(new Set(entries.map((entry) => entry.key)))}>
+        <SelectionBar count={chosen.length} total={pickable.length} on_clear={clear} on_select_all={() => set_picked(new Set(pickable.map((entry) => entry.key)))}>
           <button type="button" className="accent solid" onClick={() => ask_then(chosen, true, clear)}>
             Approve or set aside the ticked
           </button>
@@ -197,7 +214,7 @@ export function InboxPage() {
       <PageHeading
         title="Inbox"
         icon={<Icon icon={InboxGlyph} />}
-        subtitle="What waits for you: changes the assistant proposed, in conversations and in background jobs; proposed links, entities and blueprints; background runs that failed or stopped at a limit; and each day's digest of background work."
+        subtitle="What waits for you: changes the assistant proposed, in conversations and in background jobs; proposed links, entities, blueprints and interests; background runs that failed or stopped at a limit; and each day's digest of background work."
       />
       <Loaded resource={inbox}>{(entries) => (entries.length === 0 ? <Empty title="Nothing waits for you" hint="What the assistant proposes, and background runs that need a look, show here." /> : <List entries={entries} />)}</Loaded>
     </>
