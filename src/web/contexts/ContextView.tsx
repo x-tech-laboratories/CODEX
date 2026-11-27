@@ -17,7 +17,7 @@ import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
 import { Age } from "@x-tech-laboratories/x-libs/web/react/time";
 import type { MenuItem } from "@x-tech-laboratories/x-libs/web/menus";
 
-import type { CardPlace, ContextDetail, ContextItem, ContextSummary, ContextView as ViewName } from "../../shared/contexts/model.ts";
+import { global_context_id, type CardPlace, type ContextDetail, type ContextItem, type ContextSummary, type ContextView as ViewName } from "../../shared/contexts/model.ts";
 import { blueprint_collector, blueprint_route } from "../../shared/blueprints/model.ts";
 import { conversation_collector, conversation_route } from "../../shared/conversations/model.ts";
 import { open_conversation } from "../assistant/selection.ts";
@@ -36,7 +36,7 @@ import { kind_order, look_of, row_icon } from "./kinds.tsx";
 
 const save_delay_ms = 800;
 
-// The context's notes, saved a moment after typing stops and when the field is left.
+// The context's notes, saved a moment after typing stops and when the field is left; Global's reach every conversation.
 function Notes({ context }: { context: ContextDetail }) {
   const typed = useRef(context.notes);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -48,7 +48,11 @@ function Notes({ context }: { context: ContextDetail }) {
   return (
     <RichText
       label="Notes"
-      placeholder="What this context is about, what is next, anything worth keeping beside its items."
+      placeholder={
+        context.id === global_context_id
+          ? "Standing guidance for the assistant, given in every conversation wherever it starts, such as how you like answers written."
+          : "What this context is about, what is next, anything worth keeping beside its items."
+      }
       value={context.notes}
       on_change={(markdown) => {
         typed.current = markdown;
