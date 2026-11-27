@@ -1,0 +1,10 @@
+{
+  "name": "node-llama-cpp",
+  "version": "0.0.0-codex-none",
+  "private": true,
+  "description": "Stands in for node-llama-cpp, which SmartHarness depends on, so CODEX installs SmartHarness without its native llama.cpp builds; CODEX's SmartHarness engine reaches a model through an endpoint instead.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "main": "index.js",
+  "exports": "./index.js"
+}

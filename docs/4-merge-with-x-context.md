@@ -26,6 +26,9 @@ the conversations no other context holds.*
 2. **Items stay where they live.** X-Context's rule holds: CODEX keeps a pointer to an item, never its content. What CODEX stores is derived (search index, embeddings, entities, links) and can be rebuilt, plus the assistant's own records (conversations, memories, blueprints). The workspace edits an item through its source app.
 3. **One application, named CODEX.** X-Context's code is the skeleton: one SQLite store built from features, sync, History, backups, and every call served over REST and MCP. CODEX's daemon socket protocol is retired in the port.
 4. **Engines are plugins.** An engine plugin takes the conversation so far and the tools CODEX offers, and streams events back. Planned: the Anthropic API, OpenAI-compatible endpoints, a Claude subscription through its command-line client, and SmartHarness's task tree. An engine may run its own tool loop.
+   *SmartHarness's task tree built 2026-11-27 as the experimental `codex.smartharness` (doc 1, "The SmartHarness
+   engine"): its own tools and store are not used, CODEX's tools reach the tree as one MCP server of the run's own, and
+   the model is an OpenAI-compatible endpoint.*
 5. **Tools belong to CODEX.** Every engine reaches CODEX's data through CODEX's own calls, the same ones served over MCP. Approval, the action policy and the rule that a run which read outside content cannot change anything are enforced there, once, for every engine. Tools come from four places, all under the same policy:
    - **CODEX's own calls** (contexts, items, links, jobs, blueprints).
    - **The sources' MCP servers.**
@@ -198,7 +201,17 @@ dialog showing the exact topic, never ticked with others; a mood still never mak
    replies, dates the user lists and background work, never an input to the policy, screening, tools or budgets) and
    curiosity (interests proposed by the engine and accepted at the page, researched in the background by a run built to
    hold no private data, its findings kept in a context of the assistant's own), both described in doc 1.*
-9. **SmartHarness as an engine:** conversation history and CODEX's tools in the task tree; a recorded set of real assistant jobs as the eval, with a hosted engine as the baseline. SmartHarness takes over one class of job at a time once it matches the baseline there.
+9. **SmartHarness as an engine:** conversation history and CODEX's tools in the task tree; a recorded set of real assistant jobs as the eval, with a hosted engine as the baseline. SmartHarness takes over one class of job at a time once it matches the baseline there. *Engine
+   built 2026-11-27 (`src/server/engines/smartharness.ts`, described in doc 1), experimental and off until turned on: the
+   newest message is the tree's request and CODEX's instructions with as many earlier turns as fit are its standing
+   instructions; the tree acts only through the run's own tools, served as an MCP server on a loopback port with a token
+   of the run's, never SmartHarness's web, file or test tools (a test fails if a model request offers any other tool);
+   it is given no knowledge store, agents, skills or instruction files, so SmartHarness keeps nothing of the user's; the
+   model is any OpenAI-compatible endpoint through the `codex.openai` client, each step's JSON schema sent as the reply
+   format; each step streams as thinking and each model call as usage. SmartHarness is installed without
+   `node-llama-cpp` (a stub stands in), so it cannot load a GGUF file itself. The eval (recorded jobs, a hosted
+   baseline) is not built: no recording of runs exists yet, since it needs an unsynced per-device switch and folder
+   that both hosts lack.*
 
 **Sources to start with:** X-Tasks and Trilium, read-only until the bugs are ironed out.
 
@@ -251,7 +264,31 @@ dialog):
 - How well a real model extracts entities and proposes links is unverified; only a scripted fake engine has proposed.
   Suggest links in its new shape (its graph in the instructions, four tools, six rounds) has not been run on a real
   model.
-- The Claude-subscription engine and the SmartHarness engine are not built.
+- The Claude-subscription engine is not built.
+- No real model has answered through the SmartHarness engine (2026-11-27): a scripted model has, in tests (through a
+  fake OpenAI-compatible server among them), and in the built desktop app, where a reply called `list_contexts` through
+  the bridge and wrote nothing under SmartHarness's own folders. Unknown on a real
+  model: whether a small model's decisions choose `act` for CODEX's tools (SmartHarness offers connected tools only to
+  acting tasks, so a task that decides `research` or `files` reaches no tool at all), how many model calls and tokens a
+  reply takes, whether CODEX's instructions leave a 4B model at 8,192 tokens room to work, and whether llama.cpp's server
+  and Ollama keep every step to its `json_schema` reply format.
+- Each SmartHarness model call counts as a round, so a background job's round limit (set for the direct loop's tool
+  rounds) stops a task tree after a few steps; a job meant for it needs a higher limit.
+- SmartHarness is used through its exported `TaskTreeRun` and a stand-in for its `Toolbox` class, with two methods
+  overridden, rather than through `executeTaskTree`, so a change to those inside SmartHarness can break the engine
+  without a type error. What SmartHarness would need so that it need not be (for its maintainers):
+  1. `executeTaskTree` options to run with no built-in tools and no automatic web search, and to take the caller's
+     tools as a `ToolboxLike` (definitions and a call) rather than only through MCP servers, offered to whichever
+     approach uses tools, not only `act`.
+  2. A way to say the run has connected tools for the decision's note and for `canAct` without an MCP server.
+  3. An option to read no instruction, skill or agent files (`loadSkills` reads the config folder and the filesystem
+     root whatever the run's instructions are), and an exported `Toolbox` interface, since the class has private
+     fields and a stand-in must be cast.
+  4. `node-llama-cpp` as an optional peer dependency (it is imported lazily already), so an application that supplies
+     its own `ModelSource` installs no llama.cpp builds and needs no override.
+  5. The conversation so far as an input of its own, rather than folded into the standing instructions.
+- The eval of step 9 is not built: no switch records runs for replay. It needs a per-device, unsynced setting and a
+  local folder on both the server and the desktop, which CODEX has no shared place for yet.
 - Engine-written tools (decision 5's fourth place) are not built. No real model has used a plugin tool: a scripted fake
   engine has, in tests and in the desktop app, and only fake MCP servers have been added.
 - MCP servers that ask for OAuth, prompts and resources are not supported; only tools, with a bearer token at most.

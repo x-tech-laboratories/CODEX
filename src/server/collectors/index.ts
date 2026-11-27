@@ -8,6 +8,7 @@ import { load_plugin_folder } from "@x-tech-laboratories/x-libs/plugin_folder";
 import { network_plugins } from "../../shared/collectors/bundled.ts";
 import { embedder_plugins } from "../embedders/openai.ts";
 import { engine_plugins } from "../engines/index.ts";
+import { smartharness_plugin } from "../engines/smartharness.ts";
 import { use_mcp_connector } from "../../shared/mcp/connector.ts";
 import { node_mcp_connector } from "../tools/mcp_client.ts";
 import { tool_plugins } from "../tools/web.ts";
@@ -17,7 +18,7 @@ import { files_plugin } from "./files.ts";
 
 // ── Plugins ──────────────────────────────────────────────────────────────────
 
-export const bundled_plugins: ContextPlugin[] = [files_plugin, ...network_plugins, ...engine_plugins, ...embedder_plugins, ...tool_plugins];
+export const bundled_plugins: ContextPlugin[] = [files_plugin, ...network_plugins, ...engine_plugins, smartharness_plugin(), ...embedder_plugins, ...tool_plugins];
 
 // The ones that read what only the user's own computer has, such as Firefox's profile.
 export const desktop_plugins: ContextPlugin[] = [bookmarks_plugin];

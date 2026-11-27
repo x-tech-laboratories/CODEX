@@ -34,6 +34,8 @@ export function openai_request(model: string, request: ChatRequest): ChatComplet
     stream: true,
     stream_options: { include_usage: true },
   };
+  // llama.cpp's server and Ollama hold the reply to the schema as a grammar.
+  if (request.json_schema) body.response_format = { type: "json_schema", json_schema: { name: "reply", schema: request.json_schema } };
   if (request.tools?.length) {
     body.tools = request.tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } }));
     body.tool_choice = "auto";
