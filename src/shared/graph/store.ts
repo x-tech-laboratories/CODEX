@@ -18,10 +18,13 @@ import type { ToolCallRecord } from "../conversations/model.ts";
 import { start_run } from "../conversations/run.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
 import { may_send, merge_withheld, open_screen, screen_sourced, withheld_line, type Screen, type Screened } from "../privacy/screen.ts";
+import { add_proposal, list_proposals_of } from "../policy/proposals.ts";
+import { parse_sources } from "../privacy/sources.ts";
+import type { Proposal } from "../policy/model.ts";
 import { migrations } from "./migrations/index.ts";
 import { entity_kinds, graph_statuses, link_types, node_key, parse_node_key, type DecisionCount, type GraphLink, type GraphNode, type DecisionReport, type EntityKind, type EvidenceInput, type LinkChanges, type LinkType, type MadeBy } from "./model.ts";
 import { default_graph_limit, get_graph, get_node_links, list_graph_proposals, list_link_counts, most_graph_nodes } from "./reading.ts";
-import { canonical, entity_row, from_key, is_open, link_row, links_touching, name_key, now, parse_names, read_joins, resolve_node, to_key, type EntityRow } from "./records.ts";
+import { canonical, entity_row, from_key, is_open, link_row, links_touching, name_key, now, parse_names, read_joins, read_nodes, resolve_node, to_key, type EntityRow, type LinkRow } from "./records.ts";
 import { graph_decisions, graph_entities, graph_links, graph_tables } from "./schema.ts";
 import { checked_moment, checked_type, clip_excerpt, insert_link, record_decision, remove_dangling_links, resolve_evidence, same_links, set_entity_status, set_link_status } from "./writing.ts";
 
@@ -337,6 +340,59 @@ async function propose_link(database: SqlDatabase, from: string, to: string, typ
   return { outcome: "proposed", id, message: `Proposed the link as ${id}; it waits for the user.` };
 }
 
+// Who proposes a drop: an engine's maker, with the conversation the proposal is kept in and the run it came from.
+export interface DropMaker extends ProposalMaker {
+  conversation_id: string;
+  run_id?: string;
+}
+
+// The waiting proposal to drop this link, or one the user rejected, whoever asked: closing it or rejecting it.
+function drop_asked(database: SqlDatabase, id: string): Proposal | undefined {
+  const of_link = list_proposals_of(database, null).filter(
+    (proposal) => (proposal.method === "close_graph_link" && proposal.arguments.id === id) || (proposal.method === "reject_graph_proposals" && Array.isArray(proposal.arguments.ids) && proposal.arguments.ids.length === 1 && proposal.arguments.ids[0] === id),
+  );
+  return of_link.find((proposal) => proposal.status === "waiting") ?? of_link.find((proposal) => proposal.status === "rejected");
+}
+
+function link_words_of(database: SqlDatabase, row: LinkRow): { words: string; sources: string[] } {
+  const ends = read_nodes(database, [from_key(row), to_key(row)]);
+  const [from, to] = [ends.get(from_key(row)), ends.get(to_key(row))];
+  const words = `${from?.label ?? from_key(row)} ${row.type.replace("_", " ")}${row.label ? ` (${row.label})` : ""} ${to?.label ?? to_key(row)}`;
+  return { words, sources: [...(from?.sources ?? []), ...(to?.sources ?? [])] };
+}
+
+// An engine asks for a link to go, with why: an accepted link is proposed to be closed, kept as what was once so; one
+// still proposed is proposed to be rejected, so it is never proposed again. Either waits for the user, whatever the
+// level, in the run's conversation.
+async function propose_link_drop(database: SqlDatabase, id: string, reason: string, evidence: EvidenceInput | null = null, maker?: DropMaker): Promise<ProposalOutcome> {
+  const conversation_id = String(maker?.conversation_id ?? "");
+  if (!conversation_id) throw new Error("A drop is proposed from a conversation with the assistant; a program closes or removes the link itself with close_graph_link or remove_graph_link.");
+  const why = clip_excerpt(reason);
+  if (!why) throw new Error("Say why the link should go.");
+  const row = link_row(database, String(id ?? ""));
+  if (row.status === "rejected") throw new Error("That link was already rejected, so there is nothing to drop.");
+  if (!is_open(row)) throw new Error("That link is already closed.");
+  const asked = drop_asked(database, row.id);
+  if (asked?.status === "waiting") return { outcome: "exists", id: asked.id, message: `A proposal to drop that link already waits for the user: ${asked.id}.` };
+  if (asked) return { outcome: "refused", id: asked.id, message: "The user said no to dropping that link before, so it is not proposed again." };
+  const weighed = await weighed_evidence(database, evidence);
+  const by = maker_of(maker);
+  const { words, sources } = link_words_of(database, row);
+  const quoted = weighed.excerpt ? ` From: “${weighed.excerpt}”` : "";
+  const accepted = row.status === "accepted";
+  const summary = accepted ? `Close the link “${words}”, keeping it as what was once so: ${why}${quoted}` : `Reject the proposed link “${words}”, so it is never proposed again: ${why}${quoted}`;
+  const proposal = add_proposal(database, {
+    conversation_id,
+    method: accepted ? "close_graph_link" : "reject_graph_proposals",
+    arguments: accepted ? { id: row.id } : { ids: [row.id] },
+    summary,
+    reason: "drop",
+    sources: [...new Set([...by.sources, ...weighed.sources, ...sources, ...parse_sources(row.sources)])].sort(),
+    evidence: { asked_by: "", run_id: String(maker?.run_id ?? ""), reads: [], seen: [...new Set(by.sources)].sort(), proposed_by: { engine: by.engine, model: by.model } },
+  });
+  return { outcome: "proposed", id: proposal.id, message: `Proposed dropping the link as proposal ${proposal.id}; it waits for the user.` };
+}
+
 // ── Suggesting ───────────────────────────────────────────────────────────────
 
 export const suggest_links_message = [
@@ -344,11 +400,12 @@ export const suggest_links_message = [
   "Its items, and the entities and links it already has, are listed in your instructions: propose from those.",
   "Use propose_entity for the people, organisations, topics and places the items mention, and propose_link to join items, contexts and entities (mentions, about, related_to, part_of, depends_on, or same_as for two entities that are one), each with the item it came from as evidence and a short excerpt.",
   "Read an item with get_item only when its title and snippet are not enough, and at most three items in all. Do not propose what is already listed as linked.",
+  "If a link listed is wrong or no longer true, you may propose dropping it with propose_link_drop, giving its id and why; list_graph_proposals shows what already waits.",
   "Everything you propose waits for me to accept or reject it; tell me briefly what you proposed.",
 ].join(" ");
 
-// The only tools a Suggest links run is offered: the two proposals and two reads for detail.
-export const suggest_tools = ["propose_entity", "propose_link", "get_item", "search_index"] as const;
+// The only tools a Suggest links run is offered: the three proposals, two reads for detail and what already waits.
+export const suggest_tools = ["propose_entity", "propose_link", "propose_link_drop", "get_item", "search_index", "list_graph_proposals"] as const;
 
 // Fewer rounds than a conversation, so a small model proposes rather than reads; the last has no tools.
 export const suggest_rounds = 6;
@@ -395,9 +452,11 @@ export function proposals_note(calls: ToolCallRecord[]): string {
     }).length;
   const entities = made("propose_entity");
   const links = made("propose_link");
+  const drops = made("propose_link_drop");
   const count = (total: number, one: string, many: string) => `${total} ${total === 1 ? one : many}`;
-  if (entities + links === 0) return "Suggest links proposed nothing this time.";
-  return `Suggest links proposed ${count(entities, "entity", "entities")} and ${count(links, "link", "links")}; they wait for you under Proposed links.`;
+  if (entities + links + drops === 0) return "Suggest links proposed nothing this time.";
+  const dropped = drops > 0 ? ` It also asks to drop ${count(drops, "link", "links")}, in the conversation.` : "";
+  return `Suggest links proposed ${count(entities, "entity", "entities")} and ${count(links, "link", "links")}; they wait for you under Proposed links.${dropped}`;
 }
 
 // Starts a conversation in the context, named Suggest links, with the context's items, entities and links in its
@@ -465,6 +524,7 @@ export const graph_feature = define_feature({
     reject_graph_proposals: (database: SqlDatabase, ids: string[]): DecisionReport => decide(database, ids, "rejected"),
     propose_entity,
     propose_link,
+    propose_link_drop,
     suggest_links,
   },
   api: {
@@ -589,8 +649,17 @@ export const graph_feature = define_feature({
         { name: "evidence", schema: evidence_schema, optional: true },
       ],
     },
+    propose_link_drop: {
+      description:
+        "Proposes that a link go, by its id with why: an accepted link would be closed, kept as what was once so; one still proposed would be rejected, so it is never proposed again. It waits for the user's approval in the conversation, whatever the action policy; one already waiting is given back instead. A closed, rejected or unknown link is refused.",
+      params: [
+        { name: "id", schema: id_of("link") },
+        { name: "reason", schema: text("Why the link is wrong or no longer true, in a sentence or two.") },
+        { name: "evidence", schema: evidence_schema, optional: true },
+      ],
+    },
     suggest_links: {
-      description: "Starts a conversation in a context asking the assistant to propose entities and links from its items and the entities and links it already has, offering it only the proposal tools and two reads for a few rounds; answers at once with the conversation's id and the run's id.",
+      description: "Starts a conversation in a context asking the assistant to propose entities and links from its items and the entities and links it already has, and to propose dropping wrong ones, offering it only the proposal tools and three reads for a few rounds; answers at once with the conversation's id and the run's id.",
       params: [{ name: "context_id", schema: id_of("context") }],
     },
   },

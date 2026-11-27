@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { add_message } from "../src/shared/conversations/messages.ts";
+import type { ToolCallRecord } from "../src/shared/conversations/model.ts";
 import { add_conversation_record } from "../src/shared/conversations/records.ts";
 import { engine_tools, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
 import { run_direct, type ChatModel } from "../src/shared/engines/direct.ts";
@@ -11,7 +12,7 @@ import { node_key, parse_node_key } from "../src/shared/graph/model.ts";
 import { addresses_in, normal_address, rule_link_id, run_rules } from "../src/shared/graph/rules.ts";
 import { most_similar_per_item, propose_similar, similarity_link_id, standing_out } from "../src/shared/graph/similarity.ts";
 import { proposals_note, suggest_links_message, suggest_rounds, suggest_tools } from "../src/shared/graph/store.ts";
-import { changing_calls, offered_api } from "../src/shared/policy/policy.ts";
+import { brings_outside_content, changing_calls, core_tools, offered_api, proposable_spec, proposing_calls } from "../src/shared/policy/policy.ts";
 import { open_screen } from "../src/shared/privacy/screen.ts";
 import { count_changed, open_index, sync_documents, use_search_index, type IndexPass } from "../src/shared/search/indexer.ts";
 import { run_maintenance_job } from "../src/shared/maintenance/loop.ts";
@@ -429,7 +430,7 @@ describe("proposals", () => {
     const started = await fixture.calls.suggest_links(garden);
     await wait_for_runs();
 
-    expect(offered).toEqual([4, 4, 4, 4, 4, 0]);
+    expect(offered).toEqual([6, 6, 6, 6, 6, 0]);
     const answer = fixture.calls.get_conversation(started.conversation_id).messages[1]!;
     expect(answer).toMatchObject({ text: "Nothing to propose.", error: "" });
     expect(answer.notices).toEqual(["Suggest links proposed nothing this time."]);
@@ -470,6 +471,98 @@ describe("proposals", () => {
     const withheld = await tools.call("get_node_links", { node: shop });
     expect(withheld.result).toContain('"withheld":true');
     expect(withheld.result).not.toContain("Seed shop");
+  });
+});
+
+describe("dropping links", () => {
+  it("is proposing, offered with the graph's reads, and never closes, removes or rejects a link itself", () => {
+    expect(proposing_calls.has("propose_link_drop")).toBe(true);
+    expect(changing_calls()).not.toContain("propose_link_drop");
+    expect(Object.keys(offered_api)).toEqual(expect.arrayContaining(["get_node_links", "list_graph_proposals", "propose_link_drop"]));
+    for (const never of ["close_graph_link", "remove_graph_link", "reject_graph_proposals", "accept_graph_proposals"]) expect(Object.keys(offered_api)).not.toContain(never);
+    expect(Object.keys(core_tools)).toEqual(expect.arrayContaining(["get_node_links", "list_graph_proposals", "propose_link_drop"]));
+    expect(brings_outside_content("list_graph_proposals")).toBe(true);
+    expect(brings_outside_content("get_node_links")).toBe(true);
+    expect(proposable_spec("reject_graph_proposals")).toBeDefined();
+    expect(page_only.is_page_only("propose_link_drop")).toBe(false);
+  });
+
+  it("of an accepted link proposes closing it, whatever the level, and approving closes it as what was once so", async () => {
+    const fixture = start_fixture();
+    const { seeds, shop } = garden_of(fixture);
+    const link = fixture.calls.add_graph_link(seeds, shop, "related_to", "for");
+    fixture.calls.set_action_level("close_graph_link", "background");
+    const { tools } = await tools_of(fixture);
+    const answer = await tools.call("propose_link_drop", { id: link, reason: "The shop sells other seeds.", evidence: { item_id: shop, excerpt: "Tulips only" } });
+    const outcome = JSON.parse(answer.result) as { outcome: string; id: string };
+    expect(outcome.outcome).toBe("proposed");
+    // Nothing changed yet.
+    expect(fixture.calls.get_node_links(seeds).links).toMatchObject([{ id: link, valid_until: "" }]);
+    const [proposal] = fixture.calls.list_proposals("general");
+    expect(proposal).toMatchObject({
+      id: outcome.id,
+      method: "close_graph_link",
+      arguments: { id: link },
+      reason: "drop",
+      status: "waiting",
+      summary: "Close the link “Order seeds related to (for) Seed shop”, keeping it as what was once so: The shop sells other seeds.",
+      sources: ["links", "x-tasks"],
+      evidence: { proposed_by: { engine: "fake", model: "fake-model" } },
+    });
+    expect(fixture.calls.list_inbox().find((entry) => entry.id === outcome.id)).toMatchObject({ made_by: "the assistant, fake · fake-model", detail: expect.stringContaining("drop this link") });
+
+    // The same again gives back the one waiting.
+    expect(JSON.parse((await tools.call("propose_link_drop", { id: link, reason: "Again." })).result)).toMatchObject({ outcome: "exists", id: outcome.id });
+    expect(fixture.calls.list_proposals("general")).toHaveLength(1);
+
+    await fixture.calls.resolve_proposal(outcome.id, "approve");
+    const closed = fixture.calls.get_node_links(seeds).links.find((each) => each.id === link)!;
+    expect(closed.status).toBe("accepted");
+    expect(closed.valid_until).not.toBe("");
+    expect((await tools.call("propose_link_drop", { id: link, reason: "Gone." })).result).toContain("That link is already closed.");
+  });
+
+  it("of a proposed link proposes rejecting it, and approving rejects it so it is never proposed again", async () => {
+    const fixture = start_fixture();
+    const { seeds, shop } = garden_of(fixture);
+    fixture.calls.set_source_mark("codex.links", "send_to_hosted", true);
+    const { tools } = await tools_of(fixture);
+    const link = JSON.parse((await tools.call("propose_link", { from: seeds, to: shop, type: "about" })).result) as { id: string };
+    // What waits reads as other apps' text, fenced.
+    expect((await tools.call("list_graph_proposals", {})).result).toMatch(new RegExp(`^<untrusted-data[\\s\\S]*${link.id}`));
+
+    const outcome = JSON.parse((await tools.call("propose_link_drop", { id: link.id, reason: "Not about it.", evidence: { item_id: shop, excerpt: "Tulips only" } })).result) as { outcome: string; id: string };
+    expect(outcome.outcome).toBe("proposed");
+    expect(fixture.calls.list_proposals("general")).toMatchObject([{ method: "reject_graph_proposals", arguments: { ids: [link.id] }, summary: "Reject the proposed link “Order seeds about Seed shop”, so it is never proposed again: Not about it. From: “Tulips only”" }]);
+    expect(fixture.calls.list_graph_proposals().links.map((each) => each.id)).toEqual([link.id]);
+
+    await fixture.calls.resolve_proposal(outcome.id, "approve");
+    expect(fixture.calls.list_proposals("general")[0]!.status).toBe("approved");
+    expect(fixture.calls.get_node_links(seeds).links).toMatchObject([{ id: link.id, status: "rejected" }]);
+    expect(JSON.parse((await tools.call("propose_link", { from: seeds, to: shop, type: "about" })).result)).toMatchObject({ outcome: "refused" });
+    expect((await tools.call("propose_link_drop", { id: link.id, reason: "Again." })).result).toContain("already rejected");
+  });
+
+  it("is refused for an unknown link, without a reason, from a program, and once the user said no", async () => {
+    const fixture = start_fixture();
+    const { seeds, shop } = garden_of(fixture);
+    const link = fixture.calls.add_graph_link(seeds, shop, "related_to");
+    const { tools } = await tools_of(fixture);
+    expect((await tools.call("propose_link_drop", { id: "nothing", reason: "Wrong." })).result).toContain("There is no link nothing.");
+    expect((await tools.call("propose_link_drop", { id: link, reason: "  " })).result).toContain("Say why the link should go.");
+    await expect(fixture.calls.propose_link_drop(link, "Wrong.")).rejects.toThrow("A drop is proposed from a conversation");
+
+    const outcome = JSON.parse((await tools.call("propose_link_drop", { id: link, reason: "Wrong." })).result) as { id: string };
+    await fixture.calls.resolve_proposal(outcome.id, "reject");
+    expect(fixture.calls.get_node_links(seeds).links).toMatchObject([{ id: link, status: "accepted", valid_until: "" }]);
+    expect(JSON.parse((await tools.call("propose_link_drop", { id: link, reason: "Really wrong." })).result)).toMatchObject({ outcome: "refused", id: outcome.id });
+  });
+
+  it("is counted in Suggest links' closing note, which lists each link's id", () => {
+    const made = (name: string): ToolCallRecord => ({ id: name, name, arguments: {}, result: JSON.stringify({ outcome: "proposed" }), is_error: false, outcome: "ran" });
+    expect(proposals_note([made("propose_link_drop")])).toBe("Suggest links proposed 0 entities and 0 links; they wait for you under Proposed links. It also asks to drop 1 link, in the conversation.");
+    expect(suggest_tools).toEqual(expect.arrayContaining(["propose_link_drop", "list_graph_proposals"]));
+    expect(suggest_links_message).toContain("propose_link_drop");
   });
 });
 

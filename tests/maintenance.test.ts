@@ -434,7 +434,7 @@ describe("Suggest links in the background", () => {
     const [run] = setup.calls.list_job_runs("maintenance:suggest");
     expect(run).toMatchObject({ outcome: "done", items: 1, engine: "Fake", rounds: 1, input_tokens: 1000, output_tokens: 200 });
     expect(run!.proposed[0]).toContain("Garden: Suggest links proposed 1 entity and 0 links");
-    expect(setup.requests[0]!.tools.definitions.map((tool) => tool.name).sort()).toEqual(["get_item", "propose_entity", "propose_link", "search_index"]);
+    expect(setup.requests[0]!.tools.definitions.map((tool) => tool.name).sort()).toEqual(["get_item", "list_graph_proposals", "propose_entity", "propose_link", "propose_link_drop", "search_index"]);
     expect(setup.calls.list_graph_proposals().entities).toMatchObject([{ name: "Seeds", made_by: "engine" }]);
     expect(setup.calls.get_conversation(run!.conversation_id).title).toBe("Suggest links (background)");
 

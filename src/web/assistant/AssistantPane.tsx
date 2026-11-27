@@ -222,10 +222,12 @@ function brief_arguments(args: Record<string, unknown>): string {
 // content it had in front of it, in its instructions or through a read.
 export function Evidence({ proposal, asked, label_of }: { proposal: Proposal; asked: string | null; label_of: (source: string) => string }) {
   const { evidence } = proposal;
-  if (!evidence.asked_by && evidence.reads.length === 0) return <p className="muted small">No evidence was kept for this proposal.</p>;
+  const by = evidence.proposed_by ? [evidence.proposed_by.engine, evidence.proposed_by.model].filter(Boolean).join(" · ") : "";
+  if (!evidence.asked_by && evidence.reads.length === 0 && !by) return <p className="muted small">No evidence was kept for this proposal.</p>;
   const sources = (evidence.seen ?? []).filter((source) => source !== "*");
   return (
     <div className="proposal-evidence">
+      {by && <p className="muted small">Proposed by {by}.</p>}
       {asked !== null && (
         <p className="small">
           <span className="muted">Asked for in your message: </span>“{asked}”
@@ -244,7 +246,7 @@ export function Evidence({ proposal, asked, label_of }: { proposal: Proposal; as
           </ul>
         </>
       ) : (
-        <p className="muted small">It read nothing before proposing.</p>
+        !by && <p className="muted small">It read nothing before proposing.</p>
       )}
       {sources.length > 0 && <p className="muted small">From: {sources.map(label_of).join(", ")}</p>}
     </div>
@@ -263,7 +265,7 @@ export function ProposalCard({ proposal, asked = null, label_of = (source) => so
     <article className="card tone-edge-warn proposal-card" aria-label="Proposed change">
       <p>{proposal.summary}</p>
       <p className="muted small">
-        {proposal.reason === "outside content" ? "Proposed after reading text from other apps, so it waits for you whatever its level." : "Its level asks for your approval."}
+        {proposal.reason === "outside content" ? "Proposed after reading text from other apps, so it waits for you whatever its level." : proposal.reason === "drop" ? "The assistant asks to drop this link; it waits for you whatever the level." : "Its level asks for your approval."}
       </p>
       <FormGroup class_name="proposal-why" summary={<span className="muted small">Why, and from what</span>}>
         <Evidence proposal={proposal} asked={asked} label_of={label_of} />
