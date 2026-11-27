@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ContextOverflow, offered_tools, run_direct, stopped_message, too_large_message, type ChatCompletion, type ChatRequest, type ToolCall } from "../src/shared/engines/direct.ts";
-import { chars_per_token, default_chars_per_token, forget_calibrations, left_out_note } from "../src/shared/engines/fitting.ts";
+import { chars_per_token, default_chars_per_token, forget_calibrations, left_out_note, tools_chars } from "../src/shared/engines/fitting.ts";
 import type { EngineEvent, EngineRequest, EngineTools } from "../src/shared/engines/engine.ts";
 import { redacted_instruction, remove_instructions, untrusted_block, untrusted_close, untrusted_open } from "../src/shared/engines/untrusted.ts";
 
@@ -300,17 +300,29 @@ describe("the direct loop with a small model", () => {
     expect(looping.at(-1)).toEqual({ type: "error", message: "The model kept repeating itself, so it was stopped." });
   });
 
-  it("offers the core tools below 16,384 tokens of context when automatic, and the set chosen otherwise", async () => {
+  it("offers the core tools when automatic and the full set would take half the context, and the set chosen otherwise", async () => {
     const both: EngineTools = { ...tools(), core: [{ name: "get_context", description: "Gets one.", parameters: { type: "object", properties: {} } }] };
-    expect(offered_tools(both, "auto", 8192).map((tool) => tool.name)).toEqual(["get_context"]);
-    expect(offered_tools(both, "auto", 16_384).map((tool) => tool.name)).toEqual(["list_contexts"]);
+    const full_tokens = Math.ceil(tools_chars(both.definitions) / default_chars_per_token);
+    expect(offered_tools(both, "auto", full_tokens * 2).map((tool) => tool.name)).toEqual(["get_context"]);
+    expect(offered_tools(both, "auto", full_tokens * 2 + 2).map((tool) => tool.name)).toEqual(["list_contexts"]);
+    // The instructions count too, and a smaller measured ratio makes the same text more tokens.
+    expect(offered_tools(both, "auto", 1000, "x".repeat(1250)).map((tool) => tool.name)).toEqual(["get_context"]);
+    expect(offered_tools(both, "auto", 1000, "x".repeat(400)).map((tool) => tool.name)).toEqual(["list_contexts"]);
+    expect(offered_tools(both, "auto", 1000, "x".repeat(400), 1).map((tool) => tool.name)).toEqual(["get_context"]);
+    // A 32,768-token context is offered the core set when the full set is as large as many plugin tools make it.
+    const large: EngineTools = { ...both, definitions: Array.from({ length: 300 }, (_, at) => ({ name: `tool_${at}`, description: "y".repeat(800), parameters: { type: "object", properties: {} } })) };
+    expect(offered_tools(large, "auto", 32_768)).toBe(large.core);
+    expect(offered_tools(large, "auto", 400_000)).toBe(large.definitions);
     expect(offered_tools(both, "core", 200_000).map((tool) => tool.name)).toEqual(["get_context"]);
     expect(offered_tools(both, "all", 4096).map((tool) => tool.name)).toEqual(["list_contexts"]);
     expect(offered_tools(tools(), "core", 4096).map((tool) => tool.name)).toEqual(["list_contexts"]);
 
     const model = new ScriptedModel([answer("Hi.")]);
-    await collect(run_direct(model, request(both), new AbortController().signal, options));
+    await collect(run_direct(model, request(large), new AbortController().signal, options));
     expect(model.requests[0]!.tools?.map((tool) => tool.name)).toEqual(["get_context"]);
+    const roomy = new ScriptedModel([answer("Hi.")]);
+    await collect(run_direct(roomy, request(both), new AbortController().signal, options));
+    expect(roomy.requests[0]!.tools?.map((tool) => tool.name)).toEqual(["list_contexts"]);
   });
 });
 

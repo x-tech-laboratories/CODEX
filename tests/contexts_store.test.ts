@@ -181,6 +181,16 @@ describe("collectors", () => {
     await expect(store.search_collector("nowhere", "x")).rejects.toThrow("not running");
   });
 
+  it("read one item from their app by its id there, kept or not", async () => {
+    const store = open_methods();
+    const garden = store.add_context("Garden", null);
+    store.add_item([garden], "fake", held.t1!, "");
+    expect(await store.get_source_item("fake", " t1 ")).toMatchObject({ source_id: "t1", title: "Order seeds", kept_in: [garden] });
+    expect(await store.get_source_item("fake", "t2")).toMatchObject({ source_id: "t2", kept_in: [] });
+    await expect(store.get_source_item("fake", "t9")).rejects.toThrow("has no item t9");
+    await expect(store.get_source_item("links", "x")).rejects.toThrow("cannot read one item");
+  });
+
   it("take an item typed in by hand", async () => {
     const store = open_methods();
     const garden = store.add_context("Garden", null);

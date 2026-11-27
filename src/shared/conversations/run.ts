@@ -8,6 +8,7 @@ import { input_schema, positional_args, type JsonSchema } from "@x-tech-laborato
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { open_plugin_host } from "../collectors/host.ts";
+import { contexts_feature } from "../contexts/store.ts";
 import { engine_setting, is_hosted, type Engine, type EngineEvent, type EngineTools, type EngineTurn, type ToolOutcome } from "../engines/engine.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
 
@@ -31,7 +32,7 @@ import { tool_source_of } from "../tools/model.ts";
 import { open_plugin_tools, run_tool, type OpenedTool } from "../tools/offered.ts";
 import { reply_ended, reply_started } from "./activity.ts";
 import { assistant_host, type AssistantHost } from "./host.ts";
-import { screened_instructions } from "./instructions.ts";
+import { screened_instructions, sources_part } from "./instructions.ts";
 import { declarations } from "../declared/current.ts";
 import { add_message, list_messages } from "./messages.ts";
 import { type ConversationMessage, type AssistantStatus, type EngineSummary, type RunState, type ToolCallRecord } from "./model.ts";
@@ -531,6 +532,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
     for (const source of extra.sources) instructions.sources.add(source);
   }
   // The user's own approved blueprints that match the message, put in by CODEX itself; not fenced, and tainting nothing.
+  if (!isolated) instructions.value = `${instructions.value}\n\n${sources_part(await contexts_feature.methods.list_collectors(database))}`;
   const recalled = isolated ? [] : await recall_blueprints(database, context_id, text);
   if (recalled.length > 0) instructions.value = `${instructions.value}\n\n${recalled_part(recalled)}`;
   const plugin_part = plugin_tools_part(plugin_tools);

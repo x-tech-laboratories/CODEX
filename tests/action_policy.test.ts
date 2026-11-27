@@ -11,6 +11,7 @@ import { engine_tools, max_result_chars, wait_for_runs, type ToolContext } from 
 import { brings_outside_content, changing_calls, decide } from "../src/shared/policy/policy.ts";
 import { summarize_call } from "../src/shared/policy/summaries.ts";
 import { open_plugin_tools } from "../src/shared/tools/offered.ts";
+import { default_chars_per_token, tools_chars } from "../src/shared/engines/fitting.ts";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
 
 afterEach(async () => {
@@ -95,6 +96,7 @@ const allowed_tools = [
   "get_context",
   "get_item",
   "get_node_links",
+  "get_source_item",
   "list_blueprints",
   "list_collector_feeds",
   "list_collectors",
@@ -128,10 +130,12 @@ const allowed_tools = [
 // The core set a model with a small context is offered, written out the same way.
 const allowed_core_tools = [
   "add_context",
+  "add_item",
   "add_item_to_contexts",
   "get_blueprint",
   "get_context",
   "get_item",
+  "get_source_item",
   "list_contexts",
   "move_item",
   "propose_blueprint",
@@ -141,6 +145,7 @@ const allowed_core_tools = [
   "propose_link",
   "remove_item",
   "rename_context",
+  "search_collector",
   "search_index",
   "set_context_notes",
   "set_item_note",
@@ -193,6 +198,8 @@ describe("a run's tools", () => {
       expect(Object.keys(tool.parameters.properties as object)).toEqual(Object.keys(full.get(tool.name)!.parameters.properties as object));
     }
     expect(JSON.stringify(core).length * 4).toBeLessThan(JSON.stringify(tools.definitions).length);
+    // The core set, with room for the instructions and the conversation, takes well under a 16,384-token context.
+    expect(Math.ceil(tools_chars(core) / default_chars_per_token)).toBeLessThan(16_384 / 4);
   });
 
   it("run reads, fencing what other apps wrote, and refuse calls that are not offered or arguments that do not fit", async () => {

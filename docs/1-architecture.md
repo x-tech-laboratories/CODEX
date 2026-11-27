@@ -390,9 +390,10 @@ engine counted (or a quarter fewer characters a token); the loop tells the user,
 what was left out. The
 stored messages never change, so an over-long message cannot keep a conversation failing.
 
-Tools offered: below 16,384 tokens of context, or when the plugin's **Tools offered** is **Core set**, the engine offers
+Tools offered: when every offered call's definition and the instructions would take half the context or more (estimated as
+`fitting.ts` does), or when the plugin's **Tools offered** is **Core set**, the engine offers
 the core set (`core_tools` in `policy.ts`: the four reads `list_contexts`, `get_context`, `get_item`, `search_index`,
-seven changes, the graph's two proposing calls, `get_blueprint`, the blueprints' two proposing calls, `propose_interest` and `set_mood`, each with a one-line description and its fields' descriptions left
+the source reads `search_collector` and `get_source_item`, `add_item` and seven other changes, the graph's two proposing calls, `get_blueprint`, the blueprints' two proposing calls, `propose_interest` and `set_mood`, each with a one-line description and its fields' descriptions left
 out); otherwise every offered call.
 The core set is the same calls under the same policy, and a test holds it to a written list as it does the whole set.
 

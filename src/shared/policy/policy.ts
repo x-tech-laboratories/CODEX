@@ -60,20 +60,23 @@ export function proposable_spec(method: string): MethodSpec | undefined {
   return offered_api[method] ?? maintenance_api[method];
 }
 
-// The core set offered to a model with a small context, each briefly described: the reads, the most-used changes, the
-// graph's two proposing calls, so Suggest links works on a small model too, and reading one blueprint whole and the
+// The core set offered to a model with a small context, each briefly described: the reads, searching and reading the
+// source apps and adding what is found to a context, the most-used changes, the graph's two proposing calls, so Suggest links works on a small model too, and reading one blueprint whole and the
 // two blueprint proposing calls, so a small model can save and amend what the user teaches it; recall lists the rest.
 export const core_tools: Record<string, string> = {
   list_contexts: "Lists the contexts as a tree, with their ids.",
   get_context: "Gets one context: its notes and the items it holds.",
   get_item: "Gets one item and the contexts holding it.",
   search_index: "Searches items, contexts and messages by their words and meaning.",
+  search_collector: "Searches a source app, such as Trilium, for items not yet kept.",
+  get_source_item: "Reads one item from a source app by its id there.",
+  add_item: "Puts an item found in a source app into contexts.",
   add_context: "Adds a context; parent_id is null for the top level.",
   rename_context: "Renames a context.",
   set_context_notes: "Sets a context's notes, in Markdown.",
   set_item_note: "Sets the note on why an item is in a context.",
   move_item: "Moves an item from one context to another.",
-  add_item_to_contexts: "Puts an item already kept in more contexts.",
+  add_item_to_contexts: "Puts a kept item in more contexts.",
   remove_item: "Takes an item out of a context; it stays in its own app.",
   propose_entity: "Proposes a person, organisation, topic or place found in the items.",
   propose_link: "Proposes a typed link between two contexts, items or entities.",

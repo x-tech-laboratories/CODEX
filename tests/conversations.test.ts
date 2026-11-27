@@ -8,7 +8,7 @@ import { reply_parts, type ToolCallRecord } from "../src/shared/conversations/mo
 import { placed_in, turns_of, wait_for_runs } from "../src/shared/conversations/run.ts";
 import { ContextOverflow, run_direct, type ChatCompletion, type ChatModel, type ChatRequest } from "../src/shared/engines/direct.ts";
 import { forget_calibrations, message_chars } from "../src/shared/engines/fitting.ts";
-import { listing_caps } from "../src/shared/conversations/instructions.ts";
+import { listing_caps, sources_part } from "../src/shared/conversations/instructions.ts";
 import { offered_api } from "../src/shared/policy/policy.ts";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
 
@@ -84,6 +84,17 @@ describe("a conversation", () => {
       { role: "user", text: "Again" },
     ]);
     expect(fixture.requests[1]!.instructions).toContain("No context is open");
+    expect(fixture.requests[1]!.instructions).toMatch(/Connected source apps, by collector id: .+|No source apps are connected\./);
+  });
+
+  it("tells the engine which source apps it can read, that they are read-only, and to say plainly what it cannot reach", () => {
+    const summary = (id: string, label: string, can_search: boolean, can_refresh: boolean) => ({ id, plugin_id: id, label, kinds: [], can_search, can_refresh, can_follow: false, manual_fields: [], pushed_from: "" });
+    const part = sources_part([summary("trilium", "Trilium", true, true), summary("email", "Email", false, true), summary("links", "Web links", false, false), summary("conversation", "Conversations", false, true)]);
+    expect(part).toBe("Connected source apps, by collector id: Trilium (trilium), Email (email, cannot search). search_collector searches one, get_source_item reads one item by its id there, add_item puts it in contexts.");
+    expect(sources_part([summary("blueprint", "Blueprints", false, true)])).toBe("No source apps are connected.");
+    const instructions = build_instructions(start_fixture().database, null, "2026-11-27");
+    expect(instructions).toContain("you cannot create or change items in them");
+    expect(instructions).toContain("Never name a tool you were not offered.");
   });
 
   it("writes one reply at a time, and stops one, keeping what it had written", async () => {

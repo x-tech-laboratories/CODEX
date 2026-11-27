@@ -119,6 +119,10 @@ describe("withholding from a hosted engine", () => {
     const screen = await open_screen(fixture.database, true);
     const found = screen_result(fixture.database, screen, "search_collector", ["links", "grout"], [{ source_id: "https://example.org/a", kind: "link", title: "A" }]);
     expect(found).toMatchObject({ value: [], withheld: new Map([["links", 1]]) });
+    const one = screen_result(fixture.database, screen, "get_source_item", ["links", "https://example.org/a"], { source_id: "https://example.org/a", kind: "link", title: "A" });
+    expect(one).toMatchObject({ value: { source_id: "https://example.org/a", withheld: true }, withheld: new Map([["links", 1]]) });
+    const local = screen_result(fixture.database, local_screen(), "get_source_item", ["links", "https://example.org/a"], { source_id: "https://example.org/a", kind: "link", title: "A" });
+    expect(local.value).toMatchObject({ title: "A" });
     const feeds = screen_result(fixture.database, screen, "list_collector_feeds", ["x-tasks"], [{ id: "tag:1", label: "Kitchen", kind: "Tag" }]);
     expect(feeds.value).toEqual([]);
     const home = fixture.calls.add_context("Home");

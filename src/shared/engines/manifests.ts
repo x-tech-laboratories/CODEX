@@ -36,7 +36,7 @@ function context_size(default_size: number): SettingField {
 const tool_set: SettingField = {
   key: "tool_set",
   label: "Tools offered",
-  hint: "Which of CODEX's tools the model is offered. Automatic offers the core set, the reads and the most-used changes briefly described, when the context size is under 16,384 tokens, and every tool above it.",
+  hint: "Which of CODEX's tools the model is offered. Automatic offers every tool when their definitions and the instructions take under half the context size, and otherwise the core set: the reads, the most-used changes and reading the source apps, briefly described.",
   type: "choice",
   default: "auto",
   choices: [

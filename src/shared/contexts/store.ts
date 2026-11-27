@@ -204,6 +204,17 @@ async function search_collector(database: SqlDatabase, collector: string, query:
   return found.map((item) => ({ ...item, kept_in: (holders.get(item_id_of(collector, item.source_id)) ?? []).map((holder) => holder.id) }));
 }
 
+// What the collector says now of one item in its app, by its id there, with the contexts that already hold it.
+async function get_source_item(database: SqlDatabase, collector: string, source_id: string): Promise<FoundItem & { kept_in: string[] }> {
+  const source = await collector_of(database, collector);
+  if (!source.resolve) throw new Error(`The ${source.label} collector cannot read one item; search it with search_collector.`);
+  const id = source_id.trim();
+  const found = (await source.resolve([id]))[id];
+  if (!found) throw new Error(`${source.label} has no item ${id}.`);
+  const holders = holders_of(database, [item_id_of(collector, found.source_id)]);
+  return { ...found, kept_in: (holders.get(item_id_of(collector, found.source_id)) ?? []).map((holder) => holder.id) };
+}
+
 async function list_collector_feeds(database: SqlDatabase, collector: string): Promise<Feed[]> {
   const source = await collector_of(database, collector);
   if (!source.feeds) throw new Error(`The ${source.label} collector has nothing to follow.`);
@@ -640,6 +651,7 @@ export const contexts_feature = define_feature({
     get_item,
     list_collectors,
     search_collector,
+    get_source_item,
     list_collector_feeds,
     list_feed_group_news,
     export_contexts,
@@ -704,6 +716,13 @@ export const contexts_feature = define_feature({
       params: [
         { name: "collector", schema: collector_schema },
         { name: "query", schema: text("The text to search for.") },
+      ],
+    },
+    get_source_item: {
+      description: "Reads one item as its app has it now, such as a Trilium note or an X-Tasks task, by its id in that app, with the contexts already holding it; the item need not be in any context.",
+      params: [
+        { name: "collector", schema: collector_schema },
+        { name: "source_id", schema: text("The item's id in its own app, such as a Trilium note id; from a link, the id it ends with.") },
       ],
     },
     set_context_view: {
