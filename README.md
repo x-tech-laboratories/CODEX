@@ -462,6 +462,38 @@ The address and port come from `CODEX_HOST` and `CODEX_PORT` (or `--host` and `-
 The admins are read from the accounts file `CODEX_PASSWORD_HASH_FILE` names, one `name:hash` line each;
 `npm run hash-password -- <name> <file>` adds one or changes their password.
 
+## Declared configuration
+
+A machine's own configuration, such as its NixOS config, can set CODEX up so it starts connected: engines, the
+embedder, which engine answers, the X-Tasks and Trilium collectors, the Web plugin's search endpoint and MCP servers.
+It is a JSON file, `/etc/codex/declared.json` for the desktop daemon (`CODEX_DECLARED_FILE` names another, and empty
+names none; a dev run with its own profile reads none) and, for the server, the file `CODEX_DECLARED_FILE` names:
+
+```json
+{
+  "engines": { "codex.openai": { "endpoint": "http://127.0.0.1:8080/v1", "model": "qwen3-8b", "key_file": "/run/keys/engine" } },
+  "engine": "openai",
+  "embedder": { "endpoint": "http://127.0.0.1:11434/v1", "model": "nomic-embed-text" },
+  "sources": { "codex.x-tasks": { "address": "https://tasks.example.org", "token_file": "/run/keys/x-tasks" } },
+  "web": { "search_endpoint": "https://searx.example.org" },
+  "mcp_servers": [{ "id": "x-budget", "name": "X-Budget", "address": "https://budget.example.org/api/mcp", "token_file": "/run/keys/x-budget" }]
+}
+```
+
+- A secret is only ever the path of a file: `key_file` for an engine's or the embedder's API key, `<field>_file`
+  (`token_file`) for a collector's secret field, `token_file` for an MCP server. CODEX reads the file each time it
+  needs the secret, so a renewed token holds at once, and never copies it into the settings, sync, History, backups,
+  logs or any call's answer. A file that is missing or cannot be read is said on its entry and leaves the rest working.
+- A declared entry is this device's alone: never synced and never stored in the settings. Settings shows it as "Set by
+  this computer's configuration", with its settings and "From a file" for each secret, and does not let you change or
+  remove it; your own entries beside it keep working. A declared plugin is on, a declared engine or embedder is the one
+  in use, and a declared MCP server's tools are listed when the file is read and with **Refresh**.
+- Everything else holds as for your own entries: the marks start off (set them in Settings), an MCP server's tools
+  that change something wait at `proposal`, and a hosted engine is screened. Only the page reads the declarations
+  (`get_declared_config`, page-only); no token, MCP client or engine can read or change them or a file's content.
+- The file is read again a few seconds after it changes. What is wrong in it is said under **Settings → Plugins**, and
+  only that part is left out.
+
 ## The desktop app in the background
 
 The desktop app runs as two processes: a daemon that holds the data and does the work, and the window that shows it.
@@ -544,6 +576,22 @@ services.codex = {
   passwordHashFile = "/etc/codex/password-hash";
 };
 ```
+
+`programs.codex.enable` installs the desktop app, and `programs.codex.declared` writes the declared configuration
+(above) for every desktop daemon on the machine and for the server, its secrets as paths:
+
+```nix
+programs.codex = {
+  enable = true;
+  declared = {
+    sources."codex.x-tasks" = { address = "https://tasks.example.org"; token_file = config.sops.secrets.x_tasks_token.path; };
+    mcpServers = [ { id = "x-budget"; name = "X-Budget"; address = "https://budget.example.org/api/mcp"; tokenFile = config.sops.secrets.x_budget_token.path; } ];
+  };
+};
+```
+
+A secret file must be readable by the user the daemon runs as; the server runs as a dynamic user, so its secret files
+need a group or mode it can read. A path in the Nix store is refused, since the secret would be in the store.
 
 `packages.default` is the server and `packages.desktop` the desktop app. The pre-merge assistant, with its `codex`
 command line and `codex-daemon`, is CODEX 0.2.1.

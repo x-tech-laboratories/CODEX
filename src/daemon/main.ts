@@ -31,6 +31,7 @@ import { conversation_event, type DeviceMethods } from "../shared/page_api.ts";
 import { after_index_change, bind_methods, context_api, is_read_only, needs_upgrade, open_store, page_only, start_assistant, sync_engine } from "../shared/store.ts";
 import { register_context_calls } from "../server/calls.ts";
 import { load_collectors } from "../server/collectors/index.ts";
+import { declared_file_of, keep_declared } from "../server/declared.ts";
 import { keep_refreshing } from "../server/refreshing.ts";
 import { keep_indexing, open_index } from "../shared/search/indexer.ts";
 import { keep_maintaining } from "../shared/maintenance/loop.ts";
@@ -100,6 +101,9 @@ open_store(database);
 // ── Collectors ───────────────────────────────────────────────────────────────
 
 await load_collectors(join(profile, "plugins"), true);
+// What this computer's configuration declares, read again when its file changes; its MCP servers are listed in the background.
+const declared = keep_declared(declared_file_of(process.env), () => database, announce_change);
+void declared.reload();
 // Tells the user when items vanished from their apps, one notice replacing the last.
 const notifier = new Notifier({ app_name: "CODEX", icons: { app: icon_path }, on_error: (message) => console.error(message) });
 const refreshing = keep_refreshing(() => database, {
@@ -260,6 +264,7 @@ async function main(): Promise<void> {
     clearInterval(unused_timer);
     stop_all_runs();
     refreshing.stop();
+    declared.stop();
     void jobs.stop();
     void maintaining.stop().then(() => indexing.stop()).then(() => index.close());
     sync.stop();

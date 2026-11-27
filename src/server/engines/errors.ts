@@ -4,6 +4,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { ContextOverflow, type PlainError } from "../../shared/engines/direct.ts";
+import { DeclaredKeyFailure } from "./secret_command.ts";
 
 // ── Where ────────────────────────────────────────────────────────────────────
 
@@ -127,5 +128,6 @@ export function explain_embedder_failure(error: unknown, endpoint: string, defau
 
 // A key command that failed, said without anything it printed.
 export function key_command_failure(error: unknown): PlainError {
+  if (error instanceof DeclaredKeyFailure) return { message: "The API key file this computer's configuration names could not be read, so no key could be sent.", detail: message_of(error) };
   return { message: "The API key command failed, so no key could be read. Run it in a terminal to see why, then send again.", detail: message_of(error) };
 }

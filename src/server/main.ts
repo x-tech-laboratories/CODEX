@@ -19,6 +19,7 @@ import { keep_maintaining } from "../shared/maintenance/loop.ts";
 import { after_index_change, needs_upgrade, open_store, sync_engine } from "../shared/store.ts";
 import { build_app } from "./app.ts";
 import { load_collectors } from "./collectors/index.ts";
+import { declared_file_of, keep_declared } from "./declared.ts";
 import { keep_refreshing } from "./refreshing.ts";
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -83,6 +84,9 @@ const backing_up = keep_backing_up(kept, read_backup_schedule);
 
 await load_collectors(config.plugins_folder ? resolve(config.plugins_folder) : null);
 const refreshing = keep_refreshing(() => database);
+// What the server's configuration declares, when its module names a file; read again when the file changes.
+const declared = keep_declared(declared_file_of(process.env, ""), () => database);
+void declared.reload();
 
 // ── Search index ─────────────────────────────────────────────────────────────
 
@@ -123,6 +127,7 @@ console.info(`CODEX is serving http://${server_config.host}:${server_config.port
 
 function stop(): void {
   refreshing.stop();
+  declared.stop();
   void jobs.stop();
   void maintaining.stop().then(() => indexing.stop()).then(() => index.close());
   backing_up.stop();

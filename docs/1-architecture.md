@@ -294,6 +294,44 @@ contexts from the server with the ones already holding it ticked, and calls `add
 to the server's API with a token like any other program; `thunderbird/capture.ts` holds everything that does not need
 Thunderbird, and is tested.
 
+## Declared configuration
+
+Built 2026-11-27 (`src/shared/declared/`, `src/server/declared.ts`). A machine's configuration can declare engines,
+the embedder, the engine that answers, the X-Tasks and Trilium collectors, the Web plugin and MCP servers in a JSON
+file: `/etc/codex/declared.json` for the user's own desktop daemon (the window passes an empty `CODEX_DECLARED_FILE`
+to a daemon on another profile, so a dev run reads none) and the file `CODEX_DECLARED_FILE` names for the server,
+which the NixOS module's `programs.codex.declared` writes. `read_declarations` (`model.ts`) checks it against the
+plugins' manifests: an entry's settings must be its manifest's and fit their fields; a secret field is taken only as
+`<key>_file` and an engine's or the embedder's key only as `key_file`, never `api_key_command`; an MCP server gets the
+id `cfg-<id>` so it never meets one the user added. What is wrong goes into `problems`, on the entry or the whole,
+and only that part is left out. `keep_declared` reads the file at start and with X-Libs `watch_config` when it changes,
+then lists each declared MCP server's tools in the background.
+
+Where the store runs, `use_declared` (`current.ts`) sets the declarations and the reader of secret files
+(`read_secret_from`: the file trimmed, refused when missing, unreadable, a folder, empty or longer than a secret,
+naming the file and never its content). Nothing declared is stored or synced:
+
+- **Plugins**: the plugin host's storage lays each declared plugin over the stored records as it reads them
+  (`with_declared`: on, its settings, each secret field read from its file now, an empty `api_key_command` when it has
+  a `key_file`), and puts every declared plugin's record back as stored before it writes (`without_declared`), so a
+  toggle or a settings change never writes a declared value or a secret. A file that cannot be read leaves its field
+  empty, and the plugin says it is not set up. An engine's or the embedder's key comes from `plugin_key`: the declared
+  `key_file`, read for each run or batch, else the key command; a file that cannot be read fails the run with its own
+  plain words (`DeclaredKeyFailure`).
+- **Choices**: `find_engine` and `find_embedder` take the declared engine and embedder over the synced settings; a
+  lone declared engine answers when none is named.
+- **MCP servers**: `codex.mcp` provides each declared server's tools beside the user's, its record made at each use
+  with the token read from its file (`server_record`), so a changed token reconnects. Its tools, as listed, are kept in
+  memory on this device alone; `refresh_declared_mcp_server` lists them again. `change_mcp_server`,
+  `remove_mcp_server`, `refresh_mcp_server` and `move_mcp_server_here` refuse a declared id, and `list_mcp_servers`
+  and `get_settings` never show one. Its tools are tool plugins like any other: marks, offers and levels in the synced
+  `tool_plugins` and policy settings, off and at `proposal` until the user sets them.
+- **The page**: `get_declared_config` (page-only, like `refresh_declared_mcp_server`) gives `declared_summary`: each
+  entry's settings, which fields are read from files, the declared servers' tools and every problem, never a file's
+  content. `src/web/declared.tsx` shows a declared plugin's settings read-only in place of its controls, the declared
+  engine and embedder in place of their choices, a row per declared MCP server with Refresh and its tools' switches,
+  and the file's own problems under Plugins, each marked "Set by this computer's configuration".
+
 ## The desktop daemon
 
 As in every X-app: `src/daemon/main.ts` is plain Node on Electron's own binary, owning the database, sync, backups,

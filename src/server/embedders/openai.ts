@@ -11,7 +11,7 @@ import { openai_embedder_id, openai_embeddings_manifest } from "../../shared/emb
 import { is_local_endpoint } from "../../shared/engines/hosting.ts";
 import { PlainFailure } from "../../shared/engines/direct.ts";
 import { explain_embedder_failure } from "../engines/errors.ts";
-import { key_from, read_secret, type SecretReader } from "../engines/secret_command.ts";
+import { plugin_key, read_secret, type SecretReader } from "../engines/secret_command.ts";
 
 // ── Embedder ─────────────────────────────────────────────────────────────────
 
@@ -34,7 +34,7 @@ export function openai_embedder(settings: () => SettingValues, read: SecretReade
     async embed(texts, signal) {
       if (texts.length === 0) return [];
       if (!model()) throw new Error("Set the embedding model under Settings → Index.");
-      const api_key = await key_from(String(settings().api_key_command ?? ""), read);
+      const api_key = await plugin_key(openai_embeddings_manifest.id, String(settings().api_key_command ?? ""), read);
       const endpoint = endpoint_of(settings());
       const failure = (error: unknown) => {
         const { message, detail } = explain_embedder_failure(error, endpoint, default_endpoint, model());

@@ -8,6 +8,7 @@ import { Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 
 import type { PolicyEntry, PolicyLevel } from "../../shared/policy/model.ts";
 import { attempt, calls, set_setting, use_data } from "../api.ts";
+import { DeclaredChoice, use_declared } from "../declared.tsx";
 import { EngineRows } from "../plugins.tsx";
 import { PluginToolLevels } from "../tools/ToolSettings.tsx";
 
@@ -15,6 +16,8 @@ import { PluginToolLevels } from "../tools/ToolSettings.tsx";
 
 function EngineChoice({ chosen }: { chosen: string }) {
   const status = use_data((api) => api.get_assistant_status());
+  const declared = use_declared().engine;
+  if (declared) return <DeclaredChoice label="Answering" value={status.data?.engines.find((engine) => engine.id === declared)?.label ?? declared} />;
   return (
     <Loaded resource={status} lines={1}>
       {({ engines }) => {

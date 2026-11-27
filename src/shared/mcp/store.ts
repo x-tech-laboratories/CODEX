@@ -7,6 +7,8 @@
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of } from "../api_schemas.ts";
+import { declared_server } from "../declared/current.ts";
+import { declared_words } from "../declared/model.ts";
 import { define_feature } from "../feature.ts";
 import { device_id_of, list_devices } from "../jobs/records.ts";
 import { mcp_connector } from "./connector.ts";
@@ -41,6 +43,8 @@ function summary_of(database: SqlDatabase, server: McpServerRecord): McpServerSu
 }
 
 function server_of(database: SqlDatabase, id: string): McpServerRecord {
+  const declared = declared_server(id);
+  if (declared) throw new Error(`${declared.name} is ${declared_words.toLowerCase()}, so it is changed there, not here.`);
   const found = read_servers(database).find((server) => server.id === id);
   if (!found) throw new Error(`There is no MCP server ${id} under Settings → Plugins.`);
   return found;
