@@ -32,6 +32,8 @@ export interface ToolCallRecord {
   // How far into the reply's text the call was made, in characters; left out on calls kept before it was recorded,
   // which show before the text.
   text_at?: number;
+  // Set on an ask_ tool's call: the calls its specialist made, in order.
+  calls?: ToolCallRecord[];
 }
 
 // A reply as it reads: its text cut where each call was made, each call between the text before it and after it.

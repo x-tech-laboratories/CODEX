@@ -46,6 +46,19 @@ const tool_set: SettingField = {
   ],
 };
 
+const specialists: SettingField = {
+  key: "specialists",
+  label: "Specialists",
+  hint: "Whether each tool plugin and MCP server is handed to a specialist: a run of its own with only that plugin's tools, which the model asks in plain words through one tool per plugin. Automatic does so when the plugins' tools, fully described, and the instructions would take half the context size or more, which keeps a small model's list of tools short.",
+  type: "choice",
+  default: "auto",
+  choices: [
+    { value: "auto", label: "Automatic" },
+    { value: "on", label: "Always" },
+    { value: "off", label: "Never" },
+  ],
+};
+
 // ── Engines ──────────────────────────────────────────────────────────────────
 
 export const anthropic_manifest: PluginManifest = {
@@ -58,6 +71,7 @@ export const anthropic_manifest: PluginManifest = {
     { key: "model", label: "Model", hint: "The model's id at Anthropic.", type: "text", default: "claude-opus-5-5", placeholder: "claude-opus-5-5" },
     context_size(200_000),
     tool_set,
+    specialists,
     key_command("pass show anthropic/api-key"),
   ],
 };
@@ -80,6 +94,7 @@ export const openai_manifest: PluginManifest = {
     { key: "model", label: "Model", hint: "The model's name on that endpoint.", type: "text", default: "", placeholder: "llama3.1" },
     context_size(8192),
     tool_set,
+    specialists,
     key_command("pass show openai/api-key"),
   ],
 };
@@ -114,6 +129,7 @@ export const smartharness_manifest: PluginManifest = {
     whole("max_task_nodes", "Most tasks", "The most tasks one reply may take, its own task included. Each takes three to six model calls.", 12, 1, 60),
     whole("max_tool_calls", "Tool calls a task", "The most calls to CODEX's tools one task may make.", 5, 1, 10),
     tool_set,
+    specialists,
     key_command("pass show openai/api-key"),
   ],
 };

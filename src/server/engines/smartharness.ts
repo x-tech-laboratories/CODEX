@@ -13,12 +13,12 @@ import type { McpServerSettings } from "@x-tech-laboratories/smartharness/settin
 import type { Toolbox } from "@x-tech-laboratories/smartharness/tools";
 
 import type { ContextPlugin, ContextPluginApi } from "../../shared/collectors/host.ts";
-import { offered_tools, stopped_message, type ChatMessage, type ChatModel } from "../../shared/engines/direct.ts";
+import { offered_tools, stopped_message, with_specialists, type ChatMessage, type ChatModel } from "../../shared/engines/direct.ts";
 import type { Engine, EngineEvent, EngineRequest, EngineTurn, ToolDefinition, ToolSet } from "../../shared/engines/engine.ts";
 import { is_local_endpoint } from "../../shared/engines/hosting.ts";
 import { smartharness_engine_id, smartharness_manifest } from "../../shared/engines/manifests.ts";
 import { explain_failure, key_command_failure } from "./errors.ts";
-import { default_endpoints, make_openai, without_key, type ModelMaker } from "./index.ts";
+import { default_endpoints, make_openai, specialists_of, without_key, type ModelMaker } from "./index.ts";
 import { plugin_key, read_secret, type SecretReader } from "./secret_command.ts";
 import { open_tool_bridge, type ToolBridge } from "./tool_bridge.ts";
 
@@ -303,7 +303,7 @@ export function harness_engine(settings: () => SettingValues, options: HarnessEn
       const queue = new EventQueue();
       let model_calls = 0;
       let tool_calls = 0;
-      const offered = offered_tools(request.tools, tool_set_of(values.tool_set), limits.context_size, request.instructions);
+      const offered = offered_tools(with_specialists(request.tools, specialists_of(values.specialists), limits.context_size, request.instructions), tool_set_of(values.tool_set), limits.context_size, request.instructions);
       let bridge: ToolBridge | null = null;
       try {
         if (input.left_out > 0) yield { type: "notice", text: `The ${input.left_out === 1 ? "oldest message was" : `${input.left_out.toLocaleString("en")} oldest messages were`} left out of what SmartHarness read, to fit its context.` };

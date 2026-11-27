@@ -387,6 +387,14 @@
   margin: 0;
 }
 
+/* A specialist's calls, stacked and set in under the ask that made them. */
+.tool-call-nested {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-inline-start: var(--space-4);
+}
+
 .tool-call-undo button {
   display: inline-flex;
   align-items: center;
