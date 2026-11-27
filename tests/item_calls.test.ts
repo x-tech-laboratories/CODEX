@@ -102,20 +102,20 @@ describe("the item calls", () => {
     const got = await calls.get_items([`entity:${entity}`, `context:${child}`, `conversation:${talk}`, "context:nope", "x-tasks:t1", "nonsense", "context:"]);
     expect(got.map((item) => item.id)).toEqual([`entity:${entity}`, `context:${child}`, `conversation:${talk}`]);
     expect(got[1]).toMatchObject({ status: "archived", detail: { parent: `context:${home}`, items: "0" } });
-    expect(got[2]).toMatchObject({ title: "New conversation", snippet: "A conversation in no context." });
+    expect(got[2]).toMatchObject({ title: "New conversation", snippet: "A conversation in Global." });
     expect(got[0]!.changed_at).toMatch(/^\d{4}-/);
   });
 
   it("lists changes oldest first from History and the conversations, deletions included, missing nothing", async () => {
-    const { database, calls } = store();
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-11-20T09:00:00.000Z"));
+    const { database, calls } = store();
     const home = calls.add_context("Home");
     const entity = calls.add_entity("topic", "Boilers");
     const talk = add_conversation_record(database, home);
 
     const first = await calls.list_item_changes();
-    expect(first.map((change) => change.id).sort()).toEqual([`context:${home}`, `conversation:${talk}`, `entity:${entity}`].sort());
+    expect(first.map((change) => change.id).sort()).toEqual(["context:global", `context:${home}`, `conversation:${talk}`, `entity:${entity}`].sort());
     const since = first.at(-1)!.changed_at;
     expect(await calls.list_item_changes(since)).toEqual([]);
 
@@ -190,8 +190,9 @@ describe("the item calls on the server", () => {
     const kinds = await app.inject({ method: "POST", url: "/api/call/list_item_kinds", headers: reader, payload: [] });
     expect(kinds.json<unknown[]>()).toHaveLength(4);
     const changes = await app.inject({ method: "POST", url: "/api/call/list_item_changes", headers: reader, payload: { since: null, limit: 5 } });
-    expect(changes.json<unknown[]>()).toHaveLength(1);
-    const [garden] = changes.json<{ id: string }[]>();
+    // Global, first seen when the store opened, and the garden.
+    expect(changes.json<unknown[]>()).toHaveLength(2);
+    const garden = changes.json<{ id: string }[]>().find((change) => change.id !== "context:global");
     const texts = await app.inject({ method: "POST", url: "/api/call/get_item_texts", headers: reader, payload: { ids: [garden!.id] } });
     expect(texts.statusCode).toBe(200);
     expect(texts.json<unknown[]>()).toEqual([]);

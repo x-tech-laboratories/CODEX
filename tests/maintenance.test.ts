@@ -177,13 +177,14 @@ describe("a tick", () => {
     // Suggest links is off until turned on, so it is not looked at.
     expect(first.jobs.some((each) => each.key === "suggest")).toBe(false);
     const runs = setup.calls.list_job_runs("maintenance:index");
-    expect(runs).toMatchObject([{ outcome: "done", device: "Test laptop", items: 1, applied: ["Brought 1 document of the index up to date."] }]);
+    // Global and the garden.
+    expect(runs).toMatchObject([{ outcome: "done", device: "Test laptop", items: 2, applied: ["Brought 2 documents of the index up to date."] }]);
 
     setup.clock.now += 30 * 60_000;
     const second = await tick();
     expect(second.jobs.filter((each) => each.ran)).toEqual([]);
     expect(setup.calls.list_job_runs("maintenance:index")).toHaveLength(1);
-    expect(job(setup, "index")).toMatchObject({ skips_today: 1, skip_reason: "Nothing changed, so there was nothing to do.", today: { runs: 1, items: 1 } });
+    expect(job(setup, "index")).toMatchObject({ skips_today: 1, skip_reason: "Nothing changed, so there was nothing to do.", today: { runs: 1, items: 2 } });
     // The assistant's own jobs' list and caps leave the maintenance runs out.
     expect(setup.calls.list_job_runs()).toEqual([]);
     expect(setup.calls.get_background_state().runs_today).toBe(0);
@@ -313,7 +314,7 @@ describe("embedding", () => {
     setup.clock.now += 60_000;
     await tick();
     expect(setup.embedded.flat()).toHaveLength(1);
-    expect(setup.calls.list_job_runs("maintenance:embed")[0]).toMatchObject({ items: 1, note: "1 piece waits for the next run." });
+    expect(setup.calls.list_job_runs("maintenance:embed")[0]).toMatchObject({ items: 1, note: "2 pieces wait for the next run." });
 
     // Held by the embedder, the run gives way when background work is paused.
     setup.hold.until = (signal) => new Promise((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));

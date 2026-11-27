@@ -64,6 +64,8 @@ export function open_store(database: SqlDatabase): void {
   install_history(database);
   sync_engine.install(database);
   for (const feature of features) feature.on_open?.(database);
+  // What an upgrade changed, such as contexts moved under Global, is recorded now, as a change made on this device.
+  record_history(database);
 }
 
 // ── Calls ────────────────────────────────────────────────────────────────────

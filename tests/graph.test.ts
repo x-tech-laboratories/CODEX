@@ -194,7 +194,8 @@ describe("the graph as drawn", () => {
     expect(view.nodes.find((node) => node.label === "Order seeds")).toMatchObject({ kind: "item", type: "task", uri: "x-tasks://task/t1", sources: ["x-tasks"] });
 
     const whole = fixture.calls.get_graph();
-    expect(whole.nodes.map((node) => node.label).sort()).toEqual(["Ada", "Beds", "Bob", "Garden", "Kitchen", "Order seeds", "Seed shop", "Soil", "Tiles", "Unlinked"]);
+    expect(whole.nodes.map((node) => node.label).sort()).toEqual(["Ada", "Beds", "Bob", "Garden", "Global", "Kitchen", "Order seeds", "Seed shop", "Soil", "Tiles", "Unlinked"]);
+    expect(fixture.calls.get_graph("global").nodes.length).toBe(whole.nodes.length);
     expect(whole.links).toHaveLength(4);
     expect(() => fixture.calls.get_graph("nowhere")).toThrow("There is no context nowhere.");
     expect(shop).toBeTruthy();

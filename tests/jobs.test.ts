@@ -400,7 +400,7 @@ describe("the job calls an engine proposes", () => {
     const { conversation_id } = await fixture.calls.send_message(kitchen, "Change the job");
     await wait_for_runs();
     expect(fixture.calls.list_proposals(conversation_id).map((proposal) => proposal.summary)).toEqual([
-      'Change the job “Tidy the kitchen”: on the schedule {"kind":"every","every":0,"unit":"hours"}, in no context, only when its context changed, within {"max_rounds":2}.',
+      'Change the job “Tidy the kitchen”: on the schedule {"kind":"every","every":0,"unit":"hours"}, in the context “Global”, only when its context changed, within {"max_rounds":2}.',
       "Change the job that does not exist (nothing): “Other”.",
       "Remove the job “Tidy the kitchen”; its runs and conversation stay.",
     ]);

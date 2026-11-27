@@ -26,9 +26,7 @@ interface Scope {
 }
 
 // A context with every context inside it and the items they hold, or every context not archived and every item kept.
-function scope_of(database: SqlDatabase, given_context: string | null): Scope {
-  // Global's graph is the whole graph, as null's is.
-  const context_id = context_scope(given_context);
+function scope_of(database: SqlDatabase, context_id: string | null): Scope {
   const db = drizzle_of(database);
   const tree = context_tree(database);
   let context_ids: string[];
@@ -81,10 +79,11 @@ function drawn_links(database: SqlDatabase, rows: LinkRow[], joins: Joins, filte
   return kept.map((row) => as_link(row, joins, labels)).filter((link) => link.from !== link.to);
 }
 
-// The graph around a context, or the whole graph: its nodes, the links among them and how many more there were.
-export function get_graph(database: SqlDatabase, context_id: string | null = null, filter: GraphFilter = {}): GraphView {
+// The graph around a context, or the whole graph for Global or null: its nodes, the links among them and how many more there were.
+export function get_graph(database: SqlDatabase, given_context: string | null = null, filter: GraphFilter = {}): GraphView {
+  const context_id = context_scope(given_context);
   const joins = read_joins(database);
-  const scope = scope_of(database, context_id || null);
+  const scope = scope_of(database, context_id);
   const base = new Set(scope.keys);
   let links: GraphLink[];
   let entity_keys: Set<string>;
@@ -152,8 +151,9 @@ export function get_node_links(database: SqlDatabase, node: string): NodeLinks {
 // ── Proposals ────────────────────────────────────────────────────────────────
 
 // The links and entities waiting for the user, in one context and those inside it with the entities linked there, or
-// everywhere; oldest first.
-export function list_graph_proposals(database: SqlDatabase, context_id: string | null = null): GraphProposals {
+// everywhere for Global or null; oldest first.
+export function list_graph_proposals(database: SqlDatabase, given_context: string | null = null): GraphProposals {
+  const context_id = context_scope(given_context);
   const joins = read_joins(database);
   const db = drizzle_of(database);
   let rows: LinkRow[];
