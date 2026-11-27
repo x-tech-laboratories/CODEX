@@ -486,8 +486,8 @@ names none; a dev run with its own profile reads none) and, for the server, the 
   logs or any call's answer. A file that is missing or cannot be read is said on its entry and leaves the rest working.
 - A declared entry is this device's alone: never synced and never stored in the settings. Settings shows it as "Set by
   this computer's configuration", with its settings and "From a file" for each secret, and does not let you change or
-  remove it; your own entries beside it keep working. A declared plugin is on, a declared engine or embedder is the one
-  in use, and a declared MCP server's tools are listed when the file is read and with **Refresh**.
+  remove it; your own entries beside it keep working. A declared plugin is on, the declared engine answers until you choose another under
+  **Settings → Assistant → Answering** (your choice holds over it from then on), the declared embedder is the one in use, and a declared MCP server's tools are listed when the file is read and with **Refresh**.
 - Everything else holds as for your own entries: the marks start off (set them in Settings), an MCP server's tools
   that change something wait at `proposal`, and a hosted engine is screened. Only the page reads the declarations
   (`get_declared_config`, page-only); no token, MCP client or engine can read or change them or a file's content.

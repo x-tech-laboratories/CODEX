@@ -318,8 +318,9 @@ naming the file and never its content). Nothing declared is stored or synced:
   empty, and the plugin says it is not set up. An engine's or the embedder's key comes from `plugin_key`: the declared
   `key_file`, read for each run or batch, else the key command; a file that cannot be read fails the run with its own
   plain words (`DeclaredKeyFailure`).
-- **Choices**: `find_engine` and `find_embedder` take the declared engine and embedder over the synced settings; a
-  lone declared engine answers when none is named.
+- **Choices**: the declared engine is only where the choice starts: `find_engine` takes the synced `engine` setting
+  when the user has chosen one, else the declared engine (a lone declared engine when none is named), and Answering
+  lists it with every other engine. `find_embedder` takes the declared embedder over the synced setting.
 - **MCP servers**: `codex.mcp` provides each declared server's tools beside the user's, its record made at each use
   with the token read from its file (`server_record`), so a changed token reconnects. Its tools, as listed, are kept in
   memory on this device alone; `refresh_declared_mcp_server` lists them again. `change_mcp_server`,

@@ -8,16 +8,18 @@ import { Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 
 import type { PolicyEntry, PolicyLevel } from "../../shared/policy/model.ts";
 import { attempt, calls, set_setting, use_data } from "../api.ts";
-import { DeclaredChoice, use_declared } from "../declared.tsx";
+import { use_declared } from "../declared.tsx";
 import { EngineRows } from "../plugins.tsx";
 import { PluginToolLevels } from "../tools/ToolSettings.tsx";
 
 // ── Engine ───────────────────────────────────────────────────────────────────
 
-function EngineChoice({ chosen }: { chosen: string }) {
+// The engine chosen here, else the one this computer's configuration starts with; either can be changed at any time.
+function EngineChoice({ stored }: { stored: string }) {
   const status = use_data((api) => api.get_assistant_status());
   const declared = use_declared().engine;
-  if (declared) return <DeclaredChoice label="Answering" value={status.data?.engines.find((engine) => engine.id === declared)?.label ?? declared} />;
+  const chosen = stored || (declared ?? "");
+  const starting = declared && !stored ? " This computer's configuration starts with it; choosing another here holds over it." : "";
   return (
     <Loaded resource={status} lines={1}>
       {({ engines }) => {
@@ -27,7 +29,7 @@ function EngineChoice({ chosen }: { chosen: string }) {
         // A chosen engine that is not running stays listed, so the choice is not lost while its plugin is off.
         if (chosen && !engines.some((engine) => engine.id === chosen)) options.push([chosen, `${chosen} (not running)`]);
         return (
-          <SettingRow label="Answering" hint={`The engine that writes the assistant's replies. Each engine's model, address and key command are set in its own row below.${where}`}>
+          <SettingRow label="Answering" hint={`The engine that writes the assistant's replies. Each engine's model, address and key command are set in its own row below.${where}${starting}`}>
             <Select label="Answering" bare options={options} value={chosen} on_change={(engine) => void set_setting("engine", engine)} />
           </SettingRow>
         );
@@ -43,7 +45,7 @@ export function engine_section(settings: Record<string, unknown>): SettingsSecti
     hint: "The assistant answers with a model through an engine. Its key is read from a command each time it answers, and never stored.",
     content: (
       <>
-        <EngineChoice chosen={String(settings.engine ?? "")} />
+        <EngineChoice stored={String(settings.engine ?? "")} />
         <EngineRows />
       </>
     ),

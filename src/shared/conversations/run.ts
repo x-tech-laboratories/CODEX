@@ -39,9 +39,9 @@ import { add_conversation_record, conversation_ids_in, conversation_row, has_con
 
 // ── Engines ──────────────────────────────────────────────────────────────────
 
-// The engine this computer's configuration declares, else the one the settings name, or why there is none.
+// The engine the settings name, else the one this computer's configuration starts with, or why there is none.
 export async function find_engine(database: SqlDatabase): Promise<AssistantStatus & { running: Engine | null }> {
-  const chosen = declarations().engine ?? String(settings_feature.methods.get_settings(database)[engine_setting] ?? "");
+  const chosen = String(settings_feature.methods.get_settings(database)[engine_setting] ?? "") || (declarations().engine ?? "");
   const provided = (await open_plugin_host(database)).providers("engine");
   const engines: EngineSummary[] = provided.map(({ id, plugin_id, value }) => ({ id, plugin_id, label: value.label, model: value.model(), is_local: !is_hosted(value) }));
   const found = provided.find((each) => each.id === chosen);

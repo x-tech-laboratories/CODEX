@@ -314,7 +314,7 @@ describe("declared plugins", () => {
     expect((fixture.calls.get_settings().plugins as Record<string, unknown>)["codex.links"]).toEqual({ enabled: false });
   });
 
-  it("choose the engine that answers over the stored choice", async () => {
+  it("start with the declared engine, and leave the choice to the user from then on", async () => {
     declare(
       read_declarations({
         engines: {
@@ -327,6 +327,8 @@ describe("declared plugins", () => {
     );
     const fixture = start_fixture({ plugins: engine_plugins });
     fixture.calls.set_setting("engine", "fake");
+    expect((await fixture.calls.get_assistant_status()).engine).toMatchObject({ id: "fake" });
+    fixture.calls.set_setting("engine", "");
     const status = await fixture.calls.get_assistant_status();
     expect(status.engine).toMatchObject({
       id: "openai",

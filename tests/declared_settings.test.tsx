@@ -89,6 +89,7 @@ function start(): { listed: McpServerRecord[] } {
   };
   use_mcp_connector(connector);
   const fixture = start_fixture({
+    choose_engine: false,
     plugins: [...engine_plugins, ...embedder_plugins],
   });
   const calls = Object.fromEntries(
@@ -131,8 +132,13 @@ describe("what the configuration declares, in Settings", () => {
     expect(await within(dialog).findByText(/could not be read: it does not exist/)).toBeTruthy();
   });
 
-  it("shows the declared engine and embedder in place of their choices", async () => {
+  it("starts Answering on the declared engine and lets the user choose another, and shows the declared embedder", async () => {
     start();
+    const answering = (await screen.findAllByLabelText("Answering")).find((each) => each.tagName === "SELECT") as HTMLSelectElement;
+    await waitFor(() => expect(answering.value).toBe("openai"));
+    expect(screen.getByText(/starts with it; choosing another here holds over it/)).toBeTruthy();
+    fireEvent.change(answering, { target: { value: "fake" } });
+    await waitFor(() => expect(answering.value).toBe("fake"));
     await waitFor(() => expect(screen.getAllByText("OpenAI-compatible").length).toBeGreaterThan(0));
     expect(await screen.findByText("OpenAI-compatible embeddings")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "Open OpenAI-compatible" }));
