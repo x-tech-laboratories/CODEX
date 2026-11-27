@@ -218,6 +218,7 @@ describe("a specialist's run", () => {
       },
       async function* (request) {
         after.push((await request.tools.call("rename_context", { id: kitchen, name: "Tiles" })).result);
+        yield { type: "notice", text: "Renamed." };
       },
     );
     const { conversation_id } = await fixture.calls.send_message(kitchen, "Find tiles and rename");
