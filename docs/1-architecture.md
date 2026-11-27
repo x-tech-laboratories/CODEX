@@ -363,6 +363,52 @@ unknown model, a refused key, rate limiting, a key command that failed (never wh
 its limit (or one that spent it all thinking); anything else says the engine could not answer, with the raw text behind
 Details. Text shaped like an API key, and the key itself, never reach a message.
 
+### The SmartHarness engine
+
+Built 2026-11-27 on doc 4's step 9, experimental. `codex.smartharness` (`src/server/engines/smartharness.ts`), bundled
+by `load_collectors` beside the two direct engines and off until its row is turned on (`enabled_by_default: false`),
+provides the engine `smartharness`, labelled SmartHarness. Its settings: endpoint and model, as for `codex.openai`;
+context size; the longest step (`max_tokens`, at most half the context); levels of subtasks, most tasks and tool calls a
+task, each held within what SmartHarness accepts (`harness_limits`); the tools offered; and an API key command, read
+for each run as for the others. `is_local()` is `is_local_endpoint` of its endpoint.
+
+- **SmartHarness is loaded on first use.** The package (`@x-tech-laboratories/smartharness`, a git dependency pinned
+  to a commit, with its `dist/` committed) is imported by `run`, so CODEX starts without loading it, and a failed import
+  is an error saying it is not installed. Its dependency `node-llama-cpp` is overridden by the stub in
+  `stubs/node-llama-cpp` (root dependency `file:./stubs/node-llama-cpp`, override `$node-llama-cpp`), which throws if
+  loaded: the harness imports it only to run a GGUF file, which this engine never asks, so CODEX's install grows by
+  about 9 MB and 70 packages rather than the 775 MB of llama.cpp builds (linux x64 with its CUDA and Vulkan builds).
+  `package.json` also lists SmartHarness's own runtime dependencies (`@modelcontextprotocol/sdk` 1.x, `sqlite-vec`,
+  `yaml`), since the nix builds prune with importNpmLock's patched lock and copy each linked dependency out of its store
+  path, and prune keeps only what a root package names.
+- **The model** is CODEX's `ChatModel` from `make_openai` (the `codex.openai` client), adapted by `harness_model` to
+  SmartHarness's `ChatModel`: messages and tool calls converted both ways, `tool_choice: "none"` sending no tools, and a
+  step's `response_format.schema` sent as the request's `json_schema`, which `openai_request` puts in
+  `response_format: { type: "json_schema" }` for llama.cpp's server and Ollama to hold as a grammar. Each completion's
+  usage is a `usage` event, so every model call is a round to a background job's limits.
+- **The run** is SmartHarness's exported `TaskTreeRun`, not `executeTaskTree`, which always builds SmartHarness's own
+  toolbox and knowledge store from its settings. It is given: the newest user message as its request; CODEX's
+  instructions followed by as many earlier turns as fit, newest kept first and each shortened to 1,500 characters, in
+  `instructions` (`harness_input`; both take at most 40% of the context at 2.5 characters a token, and instructions
+  alone over that are an error asking for a larger context, with a notice when turns are left out); no knowledge store
+  (`null`), so it recalls, records and queues nothing; no agents; mode `auto`, trust `user` (CODEX's policy lowers a
+  tainted run itself), file writes and tests off, `confirmActions` off and no clarification callback, so a question the
+  tree would ask becomes a stated assumption; and the abort signal. A subclass returns no skills for any task, so no
+  guide file under the user's config folder is read, and no search results, so its automatic web search never runs.
+- **Tools** reach the tree only as one MCP server, `codex` (`tool_bridge.ts`): the run's offered tools
+  (`offered_tools` with the plugin's tool set) served by `@modelcontextprotocol/server` on `127.0.0.1` at a port the
+  system picks, behind a bearer token of 32 random bytes made for the run, refusing any other path, and closed when the
+  run ends. SmartHarness names them `mcp__codex__<name>` and offers them to tasks that act; each call goes through the
+  run's `call`, so the action policy, fencing, tainting, screening and the hosted log apply as for every engine, and is
+  streamed as `tool_call` and `tool_result` events, the call reaching the run's record before the policy decides it. In
+  place of SmartHarness's toolbox the run gets a stand-in with no tools (`no_builtin_toolbox`) that refuses any name
+  (`web_search` finds nothing), so its web, file and test tools are never offered and cannot run; a test fails if any
+  model request offers a tool not in the run's list, and another that the model naming each built-in runs nothing.
+- **Events:** each step's label (`Task 1.2 · Deciding`) and what it streams are `reasoning`, so the Thinking row shows
+  the tree working; a reasoning model's own thinking is too. The answer is one `text` and `done`, after a `notice`
+  saying how many tasks met their deliverable and how many model calls it took. A stop is "Stopped."; a model failure is
+  put in plain words by `explain_failure`, with keys hidden; SmartHarness's own refusals are said as they are.
+
 ### Conversations and runs
 
 `src/shared/conversations/` keeps two synced tables: `conversations` (an id, the title the user gave, empty while it
@@ -868,4 +914,5 @@ to), Pause and Drop, then Add an interest… and Most accepted at once.
 
 ### Still to come
 
-SmartHarness as an engine, in doc 4's order.
+The eval of doc 4's step 9: recorded assistant jobs replayed against SmartHarness with a hosted engine as the
+baseline. Nothing records jobs yet.

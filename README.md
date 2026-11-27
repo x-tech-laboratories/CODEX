@@ -130,6 +130,7 @@ and fill in its settings.
 | ------ | -------- |
 | Anthropic | the model (`claude-opus-5-5` unless changed), the context size, the tools offered, and an API key command |
 | OpenAI-compatible | the endpoint, ending in `/v1` (empty for OpenAI's own), the model's name there, the context size, the tools offered, and an API key command |
+| SmartHarness (experimental) | off until its row is turned on; the endpoint and model as for OpenAI-compatible, the context size, the longest step, levels of subtasks, most tasks, tool calls a task, the tools offered, and an API key command |
 
 Embedders, which give the search index its sense of meaning, are plugins too; see [Search](#search).
 
@@ -155,6 +156,18 @@ quarter; **Tools offered** in the engine's settings chooses **Automatic**, **Cor
 cold start, and a reasoning model to think for a while first, which the pane shows as it goes. If the context is too
 small for the instructions, the tools and a reply, nothing is sent and the pane says to raise the context size or
 start a new conversation.
+
+**SmartHarness (experimental)** works each message as [SmartHarness](https://github.com/x-tech-laboratories/SmartHarness)'s
+task tree: it decides how to do the task, may split it into subtasks, acts through CODEX's tools, writes, checks the
+result against what was asked and revises once, one narrow step per model call, which helps a small local model and
+costs many calls a reply (a single task takes three to six, more with tool calls). It reaches the model through the
+same client as **OpenAI-compatible**, so point it at the llama.cpp server or Ollama you already run (it is local by the
+same rule); it cannot load a GGUF file itself, since CODEX installs SmartHarness without llama.cpp. It acts only
+through the tools CODEX offers the reply, under the same Action policy, marks and log, never SmartHarness's own web,
+file or test tools, and it keeps nothing: no knowledge store, memories, background research, agents or skills of
+SmartHarness's. The pane's Thinking row shows each step as it runs, and a note under the reply says how many tasks met
+what was asked and how many model calls it took. Each model call counts as a round toward a background job's limit.
+No real model has answered through it yet.
 
 **What it can do:** read and change contexts and their items, search the collectors and follow feeds, through the same
 calls the API and MCP serve; never your settings, plugins, accounts, sync, backups or History. Each kind of change has
