@@ -268,19 +268,36 @@ A job that made or closed links tells the maintenance host (`on_change`), which 
 
 ### Engines and the graph
 
-Engines are offered `get_node_links` and the two proposing calls, `propose_entity` and `propose_link`. The proposing
+Engines are offered `get_node_links`, `list_graph_proposals` and the three proposing calls, `propose_entity`,
+`propose_link` and `propose_link_drop`; the core set takes all five. The proposing
 calls only make proposals, so they run without approval and are not changes under the action policy
 (`proposing_calls` in `policy.ts`); the run passes them the engine, the model and the sources it has read, which the
 proposal carries. Evidence names an item or a message; its excerpt is kept only when every source it carries is marked
 "May be sent to a hosted engine", the mark under which the user lets that source's words leave this computer, and
-otherwise only the reference is kept. `get_node_links` is screened like every other read: for a hosted engine a node
-carrying a source not marked for it is withheld whole, and each link whose own sources, or its other end's, carry one.
+otherwise only the reference is kept. `get_node_links` and `list_graph_proposals` are screened like every other read,
+and both taint the run as outside content: for a hosted engine a node carrying a source not marked for it is withheld
+whole, and each link whose own sources, or either end's, carry one, and each proposed entity on its own sources.
+
+`propose_link_drop(id, reason, evidence?)` asks for a link to go. It never changes the graph: it adds a proposal to the
+policy's `proposals`, in the run's conversation, with reason `drop`, the engine and model in its evidence
+(`proposed_by`), and a summary naming the link's ends, the reason and the evidence's excerpt (kept on the same marks as
+above). An accepted link is proposed as `close_graph_link`, so approving closes it as what was once so; one still
+proposed as `reject_graph_proposals` for that one id, so approving rejects it and it is never proposed again. A closed,
+rejected or unknown link, or a call with no reason, is refused; a drop already waiting for that link (maintenance's
+own close included) is given back instead of a second, and one the user rejected is refused. A program with no
+conversation behind it is refused, since it may close or remove the link itself. Approving runs the call through
+`resolve_proposal` like any other proposal; `reject_graph_proposals` is in the policy's `drop_api`, a call a proposal
+may be for with no level and never offered. `close_graph_link`, `remove_graph_link`, `accept_graph_proposals` and
+`reject_graph_proposals` stay off the offered list, so whatever the action policy, every drop waits for the user. The
+card and the Inbox say it was asked for by the assistant and its model.
+
 `suggest_links(context_id)` starts a conversation in the context, named Suggest links, shaped so a small model can
 finish it: its instructions hold the context's items (kind, title, snippet) as every run's do, and also the context's
 entities and links so far (`graph_part`, screened by source and capped like the other listings); its message says to
-propose from those and read at most three items for detail; it is offered only `propose_entity`, `propose_link`,
-`get_item` and `search_index` (`RunOptions.tools`), for six rounds, the last without tools; and its answer ends with a
-notice saying how many entities and links it proposed. No background job proposes links yet.
+propose from those, read at most three items for detail, and propose dropping a listed link that is wrong (each link is
+listed with its id); it is offered only `propose_entity`, `propose_link`, `propose_link_drop`, `get_item`,
+`search_index` and `list_graph_proposals` (`RunOptions.tools`), for six rounds, the last without tools; and its answer ends with a
+notice saying how many entities and links it proposed, and how many drops. No background job proposes links yet.
 
 ### The views
 
@@ -427,7 +444,7 @@ stored messages never change, so an over-long message cannot keep a conversation
 Tools offered: when every offered call's definition and the instructions would take half the context or more (estimated as
 `fitting.ts` does), or when the plugin's **Tools offered** is **Core set**, the engine offers
 the core set (`core_tools` in `policy.ts`: the four reads `list_contexts`, `get_context`, `get_item`, `search_index`,
-the source reads `search_collector` and `get_source_item`, `add_item` and seven other changes, the graph's two proposing calls, `get_blueprint`, the blueprints' two proposing calls, `propose_interest` and `set_mood`, each with a one-line description and its fields' descriptions left
+the source reads `search_collector` and `get_source_item`, `add_item` and seven other changes, the graph's reads `get_node_links` and `list_graph_proposals` and its three proposing calls, `get_blueprint`, the blueprints' two proposing calls, `propose_interest` and `set_mood`, each with a one-line description and its fields' descriptions left
 out); otherwise every offered call.
 The core set is the same calls under the same policy, and a test holds it to a written list as it does the whole set.
 
@@ -593,7 +610,8 @@ such an item in the open context's instructions. Every call that changes somethi
 | `auto` | run, recorded on the call as made by the engine at auto |
 | `background` | as auto; the only level a background job with nobody present may act on |
 
-Once a run has read outside content, every change it asks for becomes a proposal whatever its level. Approving
+Once a run has read outside content, every change it asks for becomes a proposal whatever its level; a drop of a
+graph link (`propose_link_drop`, under Engines and the graph) is one at every level, with reason `drop`. Approving
 (`resolve_proposal`) runs the call through the store as the page would, so History records it, and adds an event to the
 conversation saying the user approved it and what came back; rejecting adds one saying so. `resolve_proposal` and
 `set_action_level` (and the privacy feature's `set_source_mark`) answer only the page: `page_only_methods` in `page_api.ts` marks their specs `page_only` (X-Libs `api_spec`), so the server's sign-in refuses them to every bearer token, the

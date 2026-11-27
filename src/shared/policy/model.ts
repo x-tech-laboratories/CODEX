@@ -28,8 +28,9 @@ export interface PolicyEntry {
 
 export type ProposalStatus = "waiting" | "approved" | "rejected" | "failed";
 
-// Why a change waits: its level, or a run that had read other apps' text.
-export type ProposalReason = "level" | "outside content";
+// Why a change waits: its level, a run that had read other apps' text, or a drop of a link the assistant proposed,
+// which always waits.
+export type ProposalReason = "level" | "outside content" | "drop";
 
 // One read the run made before proposing, by its tool call, with a short excerpt of what came back only when every
 // source it carried may leave this computer (marked for hosted engines), as graph evidence is kept.
@@ -50,6 +51,8 @@ export interface ProposalEvidence {
   // The sources whose content the run had in front of it, in its instructions or through a read, by collector id;
   // left out for a proposal kept before it was recorded.
   seen?: string[];
+  // The engine and model that proposed it, for a proposed drop of a link.
+  proposed_by?: { engine: string; model: string };
 }
 
 export const no_evidence: ProposalEvidence = { asked_by: "", run_id: "", reads: [] };

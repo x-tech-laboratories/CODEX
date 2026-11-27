@@ -26,17 +26,19 @@ const not_offered = new Set(["export_contexts", "import_contexts", "set_context_
 
 // The graph's, the blueprints' and the interests' calls that only propose: what they make waits for the user, so they
 // run without approval and are not changes under the policy.
-export const proposing_calls: ReadonlySet<string> = new Set(["propose_entity", "propose_link", "propose_blueprint", "propose_blueprint_change", "propose_interest"]);
+export const proposing_calls: ReadonlySet<string> = new Set(["propose_entity", "propose_link", "propose_link_drop", "propose_blueprint", "propose_blueprint_change", "propose_interest"]);
 
-// Only the contexts, items, collectors and feeds calls, the search, what a node is linked to, the blueprints' reads,
-// the five proposing calls, listing the interests, and listing, adding, changing and removing the assistant's own jobs; never accounts, settings, plugins, sync, backups, History, the conversations, this policy,
+// Only the contexts, items, collectors and feeds calls, the search, what a node is linked to and what waits in the graph,
+// the blueprints' reads, the six proposing calls, listing the interests, and listing, adding, changing and removing the assistant's own jobs; never accounts, settings, plugins, sync, backups, History, the conversations, this policy,
 // any other change to the graph or to a blueprint.
 export const offered_api: Record<string, MethodSpec> = {
   ...Object.fromEntries(Object.entries(contexts_feature.api as Record<string, MethodSpec>).filter(([name]) => !not_offered.has(name))),
   search_index: search_feature.api.search_index as MethodSpec,
   get_node_links: graph_feature.api.get_node_links as MethodSpec,
+  list_graph_proposals: graph_feature.api.list_graph_proposals as MethodSpec,
   propose_entity: graph_feature.api.propose_entity as MethodSpec,
   propose_link: graph_feature.api.propose_link as MethodSpec,
+  propose_link_drop: graph_feature.api.propose_link_drop as MethodSpec,
   list_blueprints: blueprints_feature.api.list_blueprints as MethodSpec,
   get_blueprint: blueprints_feature.api.get_blueprint as MethodSpec,
   propose_blueprint: blueprints_feature.api.propose_blueprint as MethodSpec,
@@ -55,13 +57,20 @@ export const maintenance_api: Record<string, MethodSpec> = {
   close_graph_link: graph_feature.api.close_graph_link as MethodSpec,
 };
 
-// The spec of a call a proposal may be for: one an engine is offered, or one background maintenance proposes.
+// Changes only a proposed drop of a link asks for, with no level, never offered to an engine: rejecting a link still
+// proposed. Closing an accepted one is close_graph_link, above.
+export const drop_api: Record<string, MethodSpec> = {
+  reject_graph_proposals: graph_feature.api.reject_graph_proposals as MethodSpec,
+};
+
+// The spec of a call a proposal may be for: one an engine is offered, one background maintenance proposes, or one a
+// proposed drop of a link runs.
 export function proposable_spec(method: string): MethodSpec | undefined {
-  return offered_api[method] ?? maintenance_api[method];
+  return offered_api[method] ?? maintenance_api[method] ?? drop_api[method];
 }
 
 // The core set offered to a model with a small context, each briefly described: the reads, searching and reading the
-// source apps and adding what is found to a context, the most-used changes, the graph's two proposing calls, so Suggest links works on a small model too, and reading one blueprint whole and the
+// source apps and adding what is found to a context, the most-used changes, the graph's two reads and three proposing calls, so Suggest links works on a small model too, and reading one blueprint whole and the
 // two blueprint proposing calls, so a small model can save and amend what the user teaches it; recall lists the rest.
 export const core_tools: Record<string, string> = {
   list_contexts: "Lists the contexts as a tree, with their ids.",
@@ -80,6 +89,9 @@ export const core_tools: Record<string, string> = {
   remove_item: "Takes an item out of a context; it stays in its own app.",
   propose_entity: "Proposes a person, organisation, topic or place found in the items.",
   propose_link: "Proposes a typed link between two contexts, items or entities.",
+  propose_link_drop: "Proposes ending a wrong link, by id, with why.",
+  get_node_links: "Gets a node's links, with their ids.",
+  list_graph_proposals: "Lists the links and entities waiting.",
   get_blueprint: "Gets one blueprint whole.",
   propose_blueprint: "Proposes a blueprint: the rules and steps of a task the user taught you.",
   propose_blueprint_change: "Proposes a new version of a blueprint, with why.",

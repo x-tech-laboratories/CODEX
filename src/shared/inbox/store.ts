@@ -18,6 +18,7 @@ import { list_interest_rows } from "../interests/records.ts";
 import { as_run } from "../jobs/records.ts";
 import { maintenance_conversation_id, maintenance_prefix } from "../jobs/model.ts";
 import { job_runs, jobs } from "../jobs/schema.ts";
+import type { Proposal } from "../policy/model.ts";
 import { list_proposals_of } from "../policy/proposals.ts";
 import type { InboxEntry } from "./model.ts";
 
@@ -31,6 +32,13 @@ function maker(row: { made_by: string; engine: string; model: string; rule?: str
   return "you";
 }
 
+// Why a change waits, in plain words.
+const reason_words: Record<Proposal["reason"], string> = {
+  level: "Its level asks for your approval.",
+  "outside content": "Proposed after reading text from other apps.",
+  drop: "The assistant asks to drop this link; it waits for you whatever the level.",
+};
+
 // Every entry waiting on the user, newest first.
 function list_inbox(database: SqlDatabase): InboxEntry[] {
   const db = drizzle_of(database);
@@ -42,7 +50,7 @@ function list_inbox(database: SqlDatabase): InboxEntry[] {
     conversation_ids.add(proposal.conversation_id);
     // One in background maintenance's own conversation was proposed by it, about the graph.
     const by_maintenance = proposal.conversation_id === maintenance_conversation_id;
-    entries.push({ key: `change:${proposal.id}`, kind: "change", id: proposal.id, title: proposal.summary, detail: proposal.reason === "outside content" ? "Proposed after reading text from other apps." : "Its level asks for your approval.", made_by: by_maintenance ? "background maintenance" : "the assistant", created_at: proposal.created_at, conversation_id: proposal.conversation_id, conversation_title: "", job_title: job_conversations.get(proposal.conversation_id) ?? "", route: conversation_route(proposal.conversation_id), proposal });
+    entries.push({ key: `change:${proposal.id}`, kind: "change", id: proposal.id, title: proposal.summary, detail: reason_words[proposal.reason], made_by: by_maintenance ? "background maintenance" : proposal.evidence.proposed_by ? maker({ made_by: "engine", ...proposal.evidence.proposed_by }) : "the assistant", created_at: proposal.created_at, conversation_id: proposal.conversation_id, conversation_title: "", job_title: job_conversations.get(proposal.conversation_id) ?? "", route: conversation_route(proposal.conversation_id), proposal });
   }
 
   const graph = list_graph_proposals(database);

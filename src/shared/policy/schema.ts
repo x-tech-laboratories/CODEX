@@ -18,7 +18,7 @@ export const proposals = sqliteTable(
     arguments: text().notNull().default("{}"),
     // What it would do, in plain words.
     summary: text().notNull(),
-    // Why it waits: "level" when its level asks for approval, "outside content" when the run had read other apps' text.
+    // Why it waits: "level" when its level asks for approval, "outside content" when the run had read other apps' text, "drop" for a link the assistant proposed to drop.
     reason: text().notNull().default("level"),
     // The sources whose content the run that proposed it had read, or its summary names, as a JSON list of collector
     // ids; ["*"] when not recorded.
