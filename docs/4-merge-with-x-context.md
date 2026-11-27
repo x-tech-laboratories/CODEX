@@ -217,7 +217,12 @@ dialog showing the exact topic, never ticked with others; a mood still never mak
    `node-llama-cpp` (a stub stands in), so it cannot load a GGUF file itself. The eval (recorded jobs, a hosted
    baseline) is not built: no recording of runs exists yet, since it needs an unsynced per-device switch and folder
    that both hosts lack.*
-10. **A specialist agent per plugin (to do, marked important by the owner on 2026-11-27).** Instead of one run seeing
+10. **A specialist agent per plugin (marked important by the owner on 2026-11-27; first slice built 2026-11-27).**
+    *Built for tool plugins and MCP servers (doc 1, "Specialists"): each offered as one `ask_<plugin>` tool that runs
+    the same engine afresh with only that plugin's tools, the user's message pinned and the request, under every
+    safeguard of the run asking it, depth 1, with its calls nested under the ask; a per-engine **Specialists** setting,
+    automatic when the plugin tools would take half the context. Left: collectors as specialists, a measured comparison
+    on a real model, guidance text per plugin, and SmartHarness's native delegation.* Instead of one run seeing
     every collector's, plugin's and MCP server's tools, each becomes a specialist with fresh context and only its own
     tools, and the orchestrating run sees CODEX's core calls plus one "ask the <plugin> agent" tool per specialist.
     - **Why:** SmartHarness built this (its doc 1, "Agents") and measured it: on its scaled eval (26 servers, 116 tools,

@@ -157,6 +157,16 @@ cold start, and a reasoning model to think for a while first, which the pane sho
 small for the instructions, the tools and a reply, nothing is sent and the pane says to raise the context size or
 start a new conversation.
 
+Tool plugins and MCP servers can add hundreds of tools, far more than a small model can read. **Specialists** in the
+engine's settings hands each plugin to a specialist instead: the model sees one tool per plugin, such as
+`ask_x_budget`, listing what its tools are called, and asks it in plain words. The specialist is a fresh run of the same
+engine with only that plugin's tools, your latest message and the request, and it answers briefly with what it found or
+did. Its tools are under the same action policy, marks and log as everywhere else, its changes are proposed to you as
+usual, and its calls show inside the ask in the reply. **Automatic** (the default) does this when the plugins' tools,
+fully described, would take half the context or more, so a local model with a small context gets specialists and a
+large hosted model usually sees the tools themselves; **Always** and **Never** fix it. A specialist takes at most 8
+rounds and 12 tool calls, cannot ask another specialist, and stops with the reply.
+
 **SmartHarness (experimental)** works each message as [SmartHarness](https://github.com/x-tech-laboratories/SmartHarness)'s
 task tree: it decides how to do the task, may split it into subtasks, acts through CODEX's tools, writes, checks the
 result against what was asked and revises once, one narrow step per model call, which helps a small local model and
@@ -353,7 +363,8 @@ runs, are yours alone: only CODEX's own page can do them, and the servers sync o
 A tool plugin of your own is a folder plugin, like a collector, providing `tools`: a label and a list of tools, each a
 name, a plain-words description, a JSON Schema for its arguments, `changes` and `sends_outside`, answered by
 `call(name, args, signal)` with text. A tool that leaves either fact out is taken to change something and to send
-outside; descriptions are shown to the engine fenced as outside data unless the plugin sets `own_words`.
+outside; descriptions are shown to the engine fenced as outside data unless the plugin sets `own_words`. An optional
+`description` says what the plugin as a whole is for, which its specialist's `ask_` tool shows.
 
 The assistant's settings, the marks, the engine and embedder in use, every plugin's settings, the tool plugins' marks,
 which of their tools are offered and at what level, and the apps read through the item calls can be changed only on
