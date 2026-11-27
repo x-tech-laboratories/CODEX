@@ -26,6 +26,8 @@ export interface ToolPlugin {
   // True when the descriptions are the plugin author's own words; left out, they are shown to the engine fenced as
   // outside data, as a server's descriptions are.
   own_words?: boolean;
+  // What the plugin as a whole is for, in a line or two, which its specialist's ask_ tool shows; fenced unless own_words.
+  description?: string;
   // The tools offered now, from the plugin's settings; one with nothing set up yet is left out.
   tools(): PluginTool[] | Promise<PluginTool[]>;
   // Runs one tool by its own name and answers with text; throws a plain error when it cannot.

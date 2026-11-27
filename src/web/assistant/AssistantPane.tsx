@@ -74,8 +74,9 @@ function UndoLine({ undo }: { undo: ChangeUndoState }) {
 }
 
 // One call the engine made, folded to its name and outcome; open, its arguments and what came back. A proposed call
-// reads as the user decided it, when they have; an applied change offers its undo underneath.
-export function ToolCallRow({ call, decided, undo }: { call: ToolCallRecord; decided?: Proposal["status"] | undefined; undo?: ChangeUndoState | undefined }) {
+// reads as the user decided it, when they have; an applied change offers its undo underneath. An ask_ tool's call lists
+// its specialist's calls inside it, each read the same way.
+export function ToolCallRow({ call, decided, undo, decisions }: { call: ToolCallRecord; decided?: Proposal["status"] | undefined; undo?: ChangeUndoState | undefined; decisions?: Map<string, Proposal["status"]> }) {
   const made_by = call.applied_by === "user_approval" ? "approved by you" : call.applied_by === "engine_auto" ? "made by the assistant" : "";
   const [words, tone] = (call.outcome === "proposed" && decided && decided_words[decided]) || [outcome_words[call.outcome], outcome_tones[call.outcome]];
   const row = (
@@ -91,6 +92,16 @@ export function ToolCallRow({ call, decided, undo }: { call: ToolCallRecord; dec
     >
       <p className="muted small">Arguments</p>
       <pre className="output">{JSON.stringify(call.arguments, null, 2)}</pre>
+      {call.calls && call.calls.length > 0 && (
+        <>
+          <p className="muted small">The specialist's calls</p>
+          <div className="tool-call-nested">
+            {call.calls.map((nested) => (
+              <ToolCallRow key={nested.id} call={nested} decided={nested.proposal_id ? decisions?.get(nested.proposal_id) : undefined} />
+            ))}
+          </div>
+        </>
+      )}
       {call.outcome !== "pending" && (
         <>
           <p className="muted small">Result</p>
@@ -173,7 +184,7 @@ function Message({ message, decided, undos }: { message: ConversationMessage; de
       <Notices notices={message.notices} />
       {reply_parts(message.text, message.tool_calls).map((part, at) =>
         "call" in part ? (
-          <ToolCallRow key={part.call.id} call={part.call} decided={part.call.proposal_id ? decided.get(part.call.proposal_id) : undefined} undo={undos.get(`${message.id}:${part.call.id}`)} />
+          <ToolCallRow key={part.call.id} call={part.call} decided={part.call.proposal_id ? decided.get(part.call.proposal_id) : undefined} undo={undos.get(`${message.id}:${part.call.id}`)} decisions={decided} />
         ) : (
           <Markdown key={`text-${at}`} text={part.text} />
         ),

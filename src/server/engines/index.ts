@@ -7,7 +7,7 @@ import { define_plugin, type SettingValues } from "@x-tech-laboratories/x-libs/p
 
 import type { ContextPlugin, ContextPluginApi } from "../../shared/collectors/host.ts";
 import { direct_defaults, run_direct, type ChatModel } from "../../shared/engines/direct.ts";
-import type { Engine, EngineEvent, EngineRequest, ToolSet } from "../../shared/engines/engine.ts";
+import type { Engine, EngineEvent, EngineRequest, SpecialistSet, ToolSet } from "../../shared/engines/engine.ts";
 import { is_local_endpoint } from "../../shared/engines/hosting.ts";
 import { anthropic_engine_id, anthropic_manifest, openai_engine_id, openai_manifest } from "../../shared/engines/manifests.ts";
 import { AnthropicModel } from "./anthropic.ts";
@@ -34,6 +34,10 @@ export const default_endpoints: Record<string, string> = { Anthropic: "https://a
 
 function tool_set_of(value: unknown): ToolSet {
   return value === "core" || value === "all" ? value : "auto";
+}
+
+export function specialists_of(value: unknown): SpecialistSet {
+  return value === "on" || value === "off" ? value : "auto";
 }
 
 // An error event with every copy of the key taken out, should a provider quote it back.
@@ -77,6 +81,7 @@ export function direct_engine(
         ...direct_defaults,
         context_size,
         tool_set: tool_set_of(values.tool_set),
+        specialists: specialists_of(values.specialists),
         calibration_key: `${label}\n${endpoint}\n${model()}`,
         explain: (error: unknown) => explain_failure(error, where),
       };

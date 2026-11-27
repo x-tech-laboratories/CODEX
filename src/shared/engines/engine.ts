@@ -33,6 +33,9 @@ export interface EngineTools {
   // The smaller set for a model with a small context: the reads and the most-used changes, briefly described.
   core?: ToolDefinition[];
   call(name: string, args: Record<string, unknown>): Promise<ToolOutcome>;
+  // The same tools with each tool plugin's tools behind one ask_ tool of its specialist, set when the run has plugin
+  // tools; `delegated` is the plugin tools' full definitions they stand for, which the Automatic rule weighs.
+  specialists?: { definitions: ToolDefinition[]; core?: ToolDefinition[]; delegated: ToolDefinition[] };
 }
 
 export interface EngineRequest {
@@ -80,6 +83,9 @@ export function is_hosted(engine: Pick<Engine, "is_local">): boolean {
 
 // Which tools an engine offers its model: the core set below a context size, every tool above it, or one set always.
 export type ToolSet = "auto" | "core" | "all";
+
+// Whether an engine hands each tool plugin's tools to a specialist: when they would not fit comfortably, always or never.
+export type SpecialistSet = "auto" | "on" | "off";
 
 // The setting naming the engine that answers, by the id its plugin provides it under; empty for none.
 export const engine_setting = "engine";

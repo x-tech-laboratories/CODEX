@@ -71,6 +71,8 @@ export interface OpenedTool {
   label: string;
   tool: PluginTool;
   own_words: boolean;
+  // The plugin's own description of itself, when it gives one.
+  about?: string;
   enabled: boolean;
   small: boolean;
   marks: ToolMarks;
@@ -145,6 +147,7 @@ export async function open_tool_plugins(database: SqlDatabase, host?: PluginHost
         label: value.label,
         tool,
         own_words: value.own_words === true,
+        ...(typeof value.description === "string" && value.description.trim() ? { about: value.description } : {}),
         enabled: offer.off !== true,
         small: offer.small === true,
         marks,

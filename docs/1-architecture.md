@@ -579,7 +579,8 @@ made, marks the call undone and adds an event saying so. It is page-only like `r
 ### Tool plugins
 
 Built 2026-11-27 on doc 4's decision 5. `tools` is a fourth plugin provider beside `collector`, `engine` and `embedder`
-(`src/shared/tools/tool.ts`): a label, an optional `own_words`, `tools()` giving the tools offered now (each a name, a
+(`src/shared/tools/tool.ts`): a label, an optional `own_words`, an optional `description` of the whole plugin (shown
+by its specialist's `ask_` tool), `tools()` giving the tools offered now (each a name, a
 plain-words description, a JSON Schema for its arguments, `changes` and `sends_outside`; a tool that leaves either out
 is taken to change something and to send outside), and `call(name, args, signal)` answering with text. Like engines,
 tool plugins need Node and are bundled where the store runs, by `load_collectors`; the page has their manifests only.
@@ -679,6 +680,59 @@ after CODEX's own; the hosted log shows tool uses in words. MCP servers have a r
 tool's switches, and Remove, then **Add an MCP server…**. A command on another device shows **Runs on** that device in
 its row and dialog, no tools, and **Move to this device…**, whose confirmation shows the program, arguments and
 variables before `move_mcp_server_here` runs.
+
+### Specialists
+
+Built 2026-11-27 as the first slice of doc 4's step 10: tool plugins (MCP servers among them) as specialists; collectors
+and CODEX's own calls stay as they were. **Why:** with the owner's MCP servers connected, every tool described is about
+92,000 tokens, so a gpt-oss-20b at 32,768 tokens got only the core set and could not use those apps at all;
+SmartHarness measured the same split on a 4B model at 0/66 tasks with one flat list of 116 tools against 54/66 with
+specialists (its doc 1, "Agents").
+
+- **The orchestrator's tools.** When a run has a specialist host (every `start_run` does), `engine_tools` groups the
+  plugin tools it would offer (turned on, and for a hosted engine only those of plugins marked for it) by plugin
+  (`specialist_groups` in `src/shared/conversations/specialists.ts`) and adds `specialists` to the `EngineTools`: the
+  same definitions and core set with each plugin's tools taken out and one `ask_<label>` tool per plugin put in, in
+  both, whatever the tools' "Also offer to small models" switches say; and `delegated`, the plugin tools' full
+  definitions. The name is `ask_` and the label made safe (`ask_x_budget`), cut at 64 characters with a hash of the
+  plugin's key when too long or taken, never one of CODEX's calls. The tool takes `request`; its description says who
+  answers, gives the plugin's own `description` fenced unless `own_words`, lists up to 30 of its tools by name, says
+  whether some change something or send outside, and that the specialist sees nothing of the conversation but the
+  user's latest message. The run's instructions say what `ask_` tools are.
+- **Choosing.** `with_specialists` (`direct.ts`) gives the engine the `specialists` view or the plain one, by the
+  engine's **Specialists** setting (`specialists`: `auto`, `on`, `off`, default `auto`, in all three engine manifests,
+  so it can be declared like `tool_set`): `on` always, `off` never, `auto` when `delegated`'s definitions and the
+  instructions, estimated as for **Tools offered**, take half the context or more. **Tools offered** then picks the full
+  or core set of the view chosen. The direct loop and the SmartHarness engine both call it before `offered_tools`; the
+  `call` is the same either way.
+- **The specialist's run.** Calling `ask_<label>` (`ask_specialist` in `run.ts`) runs the same engine afresh
+  (`run_specialist`): instructions saying it serves another assistant, has only that plugin's tools, answers briefly
+  with what it found or did and plainly what it could not do, and asks no questions; one user turn holding the user's
+  own latest message unchanged under `user_request_label` (SmartHarness's `USER_REQUEST_LABEL`) and then the request; no
+  history, context, blueprint or mood; and tools from `engine_tools` on a child of the run's `ToolContext` whose `only`
+  names that plugin's tools, whose `plugin_tools` are that plugin's, with no own tools and no specialist host. So
+  CODEX's calls, `set_mood`, other plugins' tools and every `ask_` tool answer "There is no tool named …", and a
+  specialist never asks another (depth 1). Its final text comes back fenced as outside data; a failure or a stop
+  comes back as an error saying the specialist could not finish, with what it wrote before, fenced.
+- **Safeguards inside.** The child shares the run's screen, its list of reads, the user's message id and run id
+  (proposal evidence), presence and signal, so every call goes through the same wrapper: the action policy (a change
+  is proposed at `proposal`, refused at `restricted`), fencing, the outside-sending refusal once anything private was in
+  front of the run, the hosted log's tool rows and the hosted screening. The run starts lowered when the run asking was,
+  and what it read lowers the run asking it; the answer is noted on the screen as the plugin's source (`tool:<key>`), so
+  the reply's `sources`, the hosted log's counts and later replays carry it, and it lowers the run unless the plugin is
+  marked trusted. A hosted engine is offered no `ask_` tool for a plugin it is not offered.
+- **Limits.** A specialist takes at most 8 model rounds (fewer when a background job allows fewer) and 12 plugin tool
+  calls (`specialist_limits`, `max_calls_here`); its calls count toward the run's `max_plugin_calls` (`used`), and its
+  usage events add to the run's rounds and tokens, so a background job's limits stop the whole run. The run's abort
+  signal stops it.
+- **The record.** The ask's `ToolCallRecord` holds its specialist's calls in `calls`, each with its outcome, proposal
+  and result as for the run's own; open pages hear each change as a `tool_result` event for the ask. The pane lists
+  them under "The specialist's calls" inside the ask's row (`ToolCallRow`), a proposal shown as the user decided it.
+  Undo is offered for the run's own calls only; a plugin tool's change cannot be undone anyway.
+- **SmartHarness** gets the `ask_` tools as ordinary tools through its bridge. Native delegation would need SmartHarness
+  to take agents and their tools from the caller instead of its own folders: CODEX would pass one agent per plugin
+  (description and tool list as above) with that plugin's tools served on its own bridge, and SmartHarness's routing,
+  re-routing and pinned request would replace the ask.
 
 ### The pane
 
@@ -953,6 +1007,10 @@ made it, why and its findings, with Accept… (a dialog showing the exact topic 
 to), Pause and Drop, then Add an interest… and Most accepted at once.
 
 ### Still to come
+
+The rest of doc 4's step 10: collectors as specialists, a measured comparison on a real model (the owner's
+gpt-oss-20b with the X-Fitness, X-Budget and X-Media-Tracker servers), guidance text per plugin, an MCP server's own
+`instructions` as its description, and SmartHarness's native delegation.
 
 The eval of doc 4's step 9: recorded assistant jobs replayed against SmartHarness with a hosted engine as the
 baseline. Nothing records jobs yet.

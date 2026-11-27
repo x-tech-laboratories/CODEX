@@ -3,7 +3,7 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import type { EngineEvent, EngineRequest, EngineTools, ToolDefinition, ToolSet } from "./engine.ts";
+import type { EngineEvent, EngineRequest, EngineTools, SpecialistSet, ToolDefinition, ToolSet } from "./engine.ts";
 import { calibrate, chars_per_token, default_chars_per_token, fit_request, least_ratio, refused, tools_chars, type Fit } from "./fitting.ts";
 
 // ── Chat models ──────────────────────────────────────────────────────────────
@@ -85,6 +85,8 @@ export interface DirectOptions {
   max_rounds: number;
   // Which tools the model is offered; automatic offers the full set only when it fits in under `full_share` of the context.
   tool_set?: ToolSet;
+  // Whether each tool plugin's tools go to a specialist; automatic does so when they would not fit comfortably.
+  specialists?: SpecialistSet;
   // Names the engine and model whose measured characters per token the estimate uses.
   calibration_key?: string;
   // Puts a failure the loop does not know in plain words.
@@ -103,6 +105,15 @@ export function offered_tools(tools: EngineTools, tool_set: ToolSet = "auto", co
   if (tool_set === "core") return tools.core;
   const full = Math.ceil((tools_chars(tools.definitions) + instructions.length) / ratio);
   return full < context_size * full_share ? tools.definitions : tools.core;
+}
+
+// The run's tools with each tool plugin's behind its specialist's ask_ tool, or as they are: on always, off never, and
+// automatic when the plugin tools' full definitions and the instructions would take `full_share` of the context or more.
+export function with_specialists(tools: EngineTools, specialists: SpecialistSet = "auto", context_size: number = direct_defaults.context_size, instructions = "", ratio = default_chars_per_token): EngineTools {
+  const delegated = tools.specialists;
+  if (!delegated || specialists === "off") return tools;
+  if (specialists === "auto" && Math.ceil((tools_chars(delegated.delegated) + instructions.length) / ratio) < context_size * full_share) return tools;
+  return { definitions: delegated.definitions, ...(delegated.core ? { core: delegated.core } : {}), call: tools.call };
 }
 
 // ── Arguments ────────────────────────────────────────────────────────────────
@@ -200,8 +211,9 @@ export async function* run_direct(model: ChatModel, request: EngineRequest, sign
   const messages: ChatMessage[] = [{ role: "system", content: request.instructions }, ...request.conversation.map((turn): ChatMessage => (turn.role === "user" ? { role: "user", content: turn.text } : { role: "assistant", content: turn.text }))];
   const key = options.calibration_key ?? "";
   let ratio = chars_per_token(key);
-  const tools = offered_tools(request.tools, options.tool_set, options.context_size, request.instructions, ratio);
-  const could_use_core = request.tools.core !== undefined && tools !== request.tools.core;
+  const chosen = with_specialists(request.tools, options.specialists, options.context_size, request.instructions, ratio);
+  const tools = offered_tools(chosen, options.tool_set, options.context_size, request.instructions, ratio);
+  const could_use_core = chosen.core !== undefined && tools !== chosen.core;
   const told = new Set<string>();
   let said = "";
   // A background job may allow fewer rounds than the engine's own limit.

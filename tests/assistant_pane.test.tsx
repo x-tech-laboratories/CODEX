@@ -12,7 +12,7 @@ import type { ConversationEvent } from "../src/shared/conversations/model.ts";
 import { wait_for_runs } from "../src/shared/conversations/run.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { data_watch, set_page_api } from "../src/web/api.ts";
-import { AssistantPane, ProposalCard, Thinking } from "../src/web/assistant/AssistantPane.tsx";
+import { AssistantPane, ProposalCard, Thinking, ToolCallRow } from "../src/web/assistant/AssistantPane.tsx";
 import { Mascot } from "../src/web/assistant/Mascot.tsx";
 import { lasting_mood, moment_after, mood_summary, screen_placement } from "../src/web/assistant/mascot.ts";
 import { moods as moods_of } from "../src/shared/mood/model.ts";
@@ -472,6 +472,21 @@ describe("the assistant's pane", () => {
 });
 
 // ── Parts ────────────────────────────────────────────────────────────────────
+
+describe("a specialist's calls", () => {
+  it("are listed inside the ask that made them, each with its outcome, a proposal as the user decided it", () => {
+    const nested = [
+      { id: "specialist_1", name: "mcp_budget__list_budgets", arguments: {}, result: "main", is_error: false, outcome: "ran" as const },
+      { id: "specialist_2", name: "mcp_budget__add_budget", arguments: { name: "Trip" }, result: "", is_error: false, outcome: "proposed" as const, proposal_id: "p1" },
+    ];
+    const { container } = render(<ToolCallRow call={{ id: "t1", name: "ask_budget", arguments: { request: "Add a trip budget." }, result: "Proposed it.", is_error: false, outcome: "ran", calls: nested }} decisions={new Map([["p1", "approved"]])} />);
+    const inside = container.querySelector(".tool-call-nested")!;
+    expect(screen.getByText("The specialist's calls")).toBeTruthy();
+    expect(within(inside as HTMLElement).getByText("mcp_budget__list_budgets")).toBeTruthy();
+    expect(within(inside as HTMLElement).getByText("mcp_budget__add_budget")).toBeTruthy();
+    expect(inside.querySelectorAll(".tool-call").length).toBe(2);
+  });
+});
 
 describe("the mascot's mood", () => {
   it("sleeps without an engine or a store, thinks while a reply is written, and is happy or sad after one", () => {
