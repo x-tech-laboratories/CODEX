@@ -71,7 +71,7 @@ export const core_tools: Record<string, string> = {
   search_collector: "Searches a source app, such as Trilium, for items not yet kept.",
   get_source_item: "Reads one item from a source app by its id there.",
   add_item: "Puts an item found in a source app into contexts.",
-  add_context: "Adds a context; parent_id is null for the top level.",
+  add_context: "Adds a context; parent_id null puts it directly under Global.",
   rename_context: "Renames a context.",
   set_context_notes: "Sets a context's notes, in Markdown.",
   set_item_note: "Sets the note on why an item is in a context.",

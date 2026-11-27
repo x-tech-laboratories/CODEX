@@ -120,7 +120,7 @@ export async function research_problem(database: SqlDatabase): Promise<string> {
 
 // ── Running ──────────────────────────────────────────────────────────────────
 
-// The conversation a research run on an interest is kept in, in no context, made the first time.
+// The conversation a research run on an interest is kept in, in Global, made the first time.
 export function research_conversation(database: SqlDatabase, interest: InterestRow): string {
   const id = `research-${interest.id}`;
   if (!has_conversation(database, id)) {

@@ -257,7 +257,7 @@ function sources_of_ends(database: SqlDatabase, link: LinkRow): string[] {
   return [...new Set(drizzle_of(database).select({ collector: items.collector }).from(items).where(inArray(items.id, ids)).all().map((row) => row.collector))].sort();
 }
 
-// The conversation background maintenance's proposals are kept in, in no context, made the first time one is needed;
+// The conversation background maintenance's proposals are kept in, in Global, made the first time one is needed;
 // approving or rejecting one is recorded there.
 export function maintenance_conversation(database: SqlDatabase): string {
   if (!has_conversation(database, maintenance_conversation_id)) {

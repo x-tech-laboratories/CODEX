@@ -36,7 +36,7 @@ export interface Job extends JobFields {
   id: string;
   is_on: boolean;
   made_by: JobMaker;
-  // The context's name, or empty for a job in no context.
+  // The context's name, Global's for a job with none.
   context_name: string;
   // The conversation its runs are kept in; empty before its first run.
   conversation_id: string;
@@ -140,7 +140,7 @@ export const background_defaults = {
   [background_settings.hosted]: false,
 };
 
-// The conversation, in no context, that background maintenance's proposals are kept in.
+// The conversation, in Global, that background maintenance's proposals are kept in.
 export const maintenance_conversation_id = "maintenance";
 
 // The job id under which a maintenance job's runs are kept beside the assistant's own jobs' runs.

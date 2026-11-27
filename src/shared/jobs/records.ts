@@ -6,6 +6,7 @@ import { and, asc, desc, eq, gte, inArray, like, ne, not } from "@x-tech-laborat
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { contexts } from "../contexts/schema.ts";
+import { context_or_global } from "../contexts/model.ts";
 import { drizzle_of, new_id } from "../feature.ts";
 import { settings_feature } from "../settings.ts";
 import { background_defaults, background_settings, default_limits, maintenance_prefix, type BackgroundDevice, type Job, type JobFields, type JobLimits, type JobMaker, type JobRun, type JobRunOutcome, type JobSchedule } from "./model.ts";
@@ -135,7 +136,7 @@ export function counted_today(database: SqlDatabase, now: number, job_id?: strin
 
 export function as_job(database: SqlDatabase, row: JobRow, now: number): Job {
   const fields = fields_of(row);
-  const context_name = fields.context_id ? (drizzle_of(database).select({ name: contexts.name }).from(contexts).where(eq(contexts.id, fields.context_id)).get()?.name ?? "") : "";
+  const context_name = drizzle_of(database).select({ name: contexts.name }).from(contexts).where(eq(contexts.id, context_or_global(fields.context_id))).get()?.name ?? "";
   return {
     ...fields,
     id: row.id,

@@ -6,6 +6,7 @@
 import { and, eq, inArray } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
+import { scope_of as context_scope } from "../contexts/model.ts";
 import { context_items, contexts } from "../contexts/schema.ts";
 import { drizzle_of } from "../feature.ts";
 import { context_tree, subtree } from "../search/documents.ts";
@@ -25,7 +26,9 @@ interface Scope {
 }
 
 // A context with every context inside it and the items they hold, or every context not archived and every item kept.
-function scope_of(database: SqlDatabase, context_id: string | null): Scope {
+function scope_of(database: SqlDatabase, given_context: string | null): Scope {
+  // Global's graph is the whole graph, as null's is.
+  const context_id = context_scope(given_context);
   const db = drizzle_of(database);
   const tree = context_tree(database);
   let context_ids: string[];
@@ -47,7 +50,7 @@ function scope_of(database: SqlDatabase, context_id: string | null): Scope {
     structure.push({ from: node_key("context", membership.context_id), to: node_key("item", membership.item_id) });
     item_keys.add(node_key("item", membership.item_id));
   }
-  // The whole graph also holds the conversations in no context.
+  // The whole graph also holds items in no context, such as a conversation an older device synced in.
   if (context_id === null) for (const id of held_item_ids(database)) item_keys.add(node_key("item", id));
   return { keys: [...context_ids.map((id) => node_key("context", id)), ...item_keys], structure };
 }

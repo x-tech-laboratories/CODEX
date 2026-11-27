@@ -2,6 +2,19 @@
 
 // ── Contexts ─────────────────────────────────────────────────────────────────
 
+// Global, the root of the tree: it always exists, every other context sits under it, and its notes reach every conversation.
+export const global_context_id = "global";
+
+// The context an id names, where null, empty or left out means Global, as calls made before Global existed sent for "none".
+export function context_or_global(id: string | null | undefined): string {
+  return id || global_context_id;
+}
+
+// The scope an id names for calls that cover everything in Global: null for Global, the id for any other context.
+export function scope_of(id: string | null | undefined): string | null {
+  return !id || id === global_context_id ? null : id;
+}
+
 export interface ContextSummary {
   id: string;
   parent_id: string | null;
