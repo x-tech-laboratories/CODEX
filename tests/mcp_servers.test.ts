@@ -7,10 +7,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { hidden_secret } from "@x-tech-laboratories/x-libs/plugins";
 
-import { mcp_limits, node_mcp_connector, open_connections, passed_variables, result_text } from "../src/server/tools/mcp_client.ts";
+import { instructions_of, mcp_limits, node_mcp_connector, open_connections, passed_variables, result_text } from "../src/server/tools/mcp_client.ts";
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { add_conversation_record, has_conversation } from "../src/shared/conversations/records.ts";
 import { engine_tools, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
+import { specialist_groups, specialist_instructions } from "../src/shared/conversations/specialists.ts";
 import { use_mcp_connector, mcp_connector, type McpConnector } from "../src/shared/mcp/connector.ts";
 import { is_loopback_address, sends_outside, type McpServerFields } from "../src/shared/mcp/model.ts";
 import { device_id_of } from "../src/shared/jobs/records.ts";
@@ -100,6 +101,24 @@ describe("an MCP server over stdio", () => {
     expect(read.description.length).toBeLessThan(1300);
     expect(read.parameters).toMatchObject({ type: "object", required: ["id"] });
     expect((await tools.call("list_contexts", {})).result).not.toContain("Not CODEX's");
+  });
+
+  it("keeps the instructions it gave when listed, and its specialist is told them fenced as its own words", async () => {
+    const fixture = with_mcp();
+    await fixture.calls.add_mcp_server(stdio("Notes"));
+    const [stored] = fixture.calls.get_settings().mcp_servers as { instructions?: string }[];
+    expect(stored!.instructions).toContain("Notes are kept by room");
+    const plugin_tools = await open_plugin_tools(fixture.database);
+    expect(plugin_tools[0]!.guidance).toContain("Notes are kept by room");
+    const [group] = specialist_groups(plugin_tools);
+    const told = specialist_instructions(group!, "");
+    expect(told).toContain("Notes says how to use it, in its own words:\n<untrusted-data>");
+    expect(told).toContain("Notes are kept by room");
+    // Refreshing keeps them, and a server that gives none leaves none.
+    await fixture.calls.refresh_mcp_server("notes");
+    expect((fixture.calls.get_settings().mcp_servers as { instructions?: string }[])[0]!.instructions).toContain("Notes are kept by room");
+    expect(instructions_of(undefined)).toBe("");
+    expect(instructions_of("x".repeat(mcp_limits.max_instructions + 50))).toHaveLength(mcp_limits.max_instructions);
   });
 
   it("runs a read at once, fenced and lowering the run unless the server is trusted, and proposes a change, which approving runs", async () => {
@@ -365,7 +384,7 @@ describe("a remote MCP server's tools", () => {
     const fixture = start_fixture();
     const called: string[] = [];
     const connector: McpConnector = {
-      list_tools: async () => [{ name: "search", description: "Searches.", read_only: true, input_schema: { type: "object", properties: { q: { type: "string" } }, required: ["q"] } }],
+      list_tools: async () => ({ tools: [{ name: "search", description: "Searches.", read_only: true, input_schema: { type: "object", properties: { q: { type: "string" } }, required: ["q"] } }], instructions: "" }),
       call_tool: async (_server, name) => (called.push(name), "Found it."),
       forget: async () => undefined,
     };

@@ -189,12 +189,17 @@ const search_tool: PluginTool = {
   sends_outside: true,
 };
 
+// How the Web plugin works, for the assistant's specialist for it.
+export const web_guidance =
+  "web_fetch reads one public web page as text, at most 10,000 characters, with each link's address after it; it cannot read a page behind a sign-in or an address on this computer or its network. web_search, offered once a search endpoint is set, asks the user's SearXNG instance and gives the best 8 results' titles, addresses and snippets; read the promising ones whole with web_fetch. Search in a few plain words, and never put the user's personal details into a query or an address.";
+
 // The two tools on the plugin's settings now: web_search only once a search endpoint is set.
 export function web_tools(settings: () => SettingValues, options: WebOptions = {}): ToolPlugin {
   const endpoint = () => String(settings().search_endpoint ?? "").trim();
   return {
     label: "Web",
     own_words: true,
+    guidance: web_guidance,
     tools: () => (endpoint() ? [fetch_tool, search_tool] : [fetch_tool]),
     async call(name, args, signal) {
       if (name === "web_fetch") {

@@ -1,7 +1,7 @@
 // The bundled plugin `codex.mcp`: each MCP server the user added and left on is a tool plugin of its own, its tools
 // the ones it listed when added or refreshed, so opening the plugin host starts no server. A tool the server marks
 // read-only reads; every other one changes something. Its tools send outside unless it is a local command or answers on
-// a loopback address. Its descriptions are the server's own words, so they reach the engine fenced. A local command is
+// a loopback address. Its descriptions and instructions are the server's own words, so they reach the engine fenced. A local command is
 // offered only on the device that added it, so a command synced from one machine never starts on another.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
@@ -24,6 +24,8 @@ export function server_tools(server: McpServerRecord): ToolPlugin {
   return {
     label: server.name,
     own_words: false,
+    // What the server said of how to use it, its own words, so fenced like its descriptions.
+    ...(server.instructions ? { guidance: server.instructions } : {}),
     tools: () => server.tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.input_schema, changes: !tool.read_only, sends_outside: outside })),
     call: (name, args, signal) => mcp_connector().call_tool(server, name, args, signal),
   };

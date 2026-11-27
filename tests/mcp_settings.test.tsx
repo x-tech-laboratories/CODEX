@@ -30,10 +30,16 @@ function start(): { fixture: Fixture; listed: McpServerRecord[] } {
   const fixture = start_fixture();
   const listed: McpServerRecord[] = [];
   const connector: McpConnector = {
-    list_tools: async (server) => (listed.push(server), [
-      { name: "read_file", description: "Reads a file.", read_only: true, input_schema: { type: "object", properties: {} } },
-      { name: "write_file", description: "Writes a file.", read_only: false, input_schema: { type: "object", properties: {} } },
-    ]),
+    list_tools: async (server) => (
+      listed.push(server),
+      {
+        tools: [
+          { name: "read_file", description: "Reads a file.", read_only: true, input_schema: { type: "object", properties: {} } },
+          { name: "write_file", description: "Writes a file.", read_only: false, input_schema: { type: "object", properties: {} } },
+        ],
+        instructions: "",
+      }
+    ),
     call_tool: async () => "ok",
     forget: async () => undefined,
   };

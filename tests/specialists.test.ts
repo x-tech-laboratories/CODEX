@@ -1,5 +1,6 @@
-// Specialists: each tool plugin offered as one ask_ tool, asked through a fresh run of the same engine that has only
-// that plugin's tools, under every safeguard of the run that asked it.
+// Specialists: each tool plugin and each source app offered as one ask_ tool, asked through a fresh run of the same
+// engine that has only that plugin's tools or that app's read calls, under every safeguard of the run that asked it,
+// and told how its app works.
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -8,11 +9,24 @@ import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 import type { ContextPlugin, ContextPluginApi } from "../src/shared/collectors/host.ts";
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { add_conversation_record, has_conversation } from "../src/shared/conversations/records.ts";
-import { engine_tools, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
-import { ask_name_of, specialist_limits, user_request_label } from "../src/shared/conversations/specialists.ts";
+import { engine_tools, open_collector_sources, run_guidance_part, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
+import {
+  ask_name_of,
+  collector_groups,
+  guidance_part,
+  guidance_text,
+  no_guidance,
+  shortened_guidance,
+  specialist_groups,
+  specialist_instructions,
+  specialist_limits,
+  user_request_label,
+} from "../src/shared/conversations/specialists.ts";
 import { with_specialists } from "../src/shared/engines/direct.ts";
 import type { EngineEvent, EngineRequest, EngineTools } from "../src/shared/engines/engine.ts";
 import { tools_chars } from "../src/shared/engines/fitting.ts";
+import { guidance_setting, longest_guidance } from "../src/shared/guidance/model.ts";
+import { page_only_methods, user_only_settings } from "../src/shared/page_api.ts";
 import { tool_source_of } from "../src/shared/tools/model.ts";
 import { open_plugin_tools } from "../src/shared/tools/offered.ts";
 import type { PluginTool } from "../src/shared/tools/tool.ts";
@@ -307,5 +321,232 @@ describe("a specialist's limits", () => {
     await wait_for_runs();
     expect(ended).toMatchObject({ stopped_by: "rounds" });
     expect(fixture.requests.find(is_specialist)!.limits).toEqual({ max_rounds: 3 });
+  });
+});
+
+// ── Source apps ──────────────────────────────────────────────────────────────
+
+// A source app whose every item carries an order, as a hostile note might, read through a collector of its own.
+function notes_plugin(asked: string[]): ContextPlugin {
+  const item = (source_id: string) => ({ source_id, kind: "note", title: `Tiles ${source_id}`, snippet: injected, uri: `notes://${source_id}` });
+  return define_plugin<ContextPluginApi>({
+    id: "tests.notes",
+    name: "Notes",
+    version: "1.0.0",
+    description: "Finds the user's notes.",
+    start: (context) =>
+      context.provide("collector", "notes", {
+        label: "Notes",
+        kinds: ["note"],
+        guidance: "Notes are kept by room.",
+        own_words: true,
+        search: async (query) => (asked.push(`search ${query}`), [item("n1")]),
+        resolve: async (ids) => (asked.push(`resolve ${ids.join(",")}`), Object.fromEntries(ids.map((id) => [id, item(id)]))),
+        feeds: { list: async () => (asked.push("feeds"), [{ id: "room:kitchen", label: "Kitchen", kind: "Room" }]), items: async () => [] },
+      }),
+  });
+}
+
+function with_notes(): { fixture: Fixture; asked: string[] } {
+  const asked: string[] = [];
+  const fixture = start_fixture({ plugins: [notes_plugin(asked)] });
+  return { fixture, asked };
+}
+
+// The orchestrator asks the Notes specialist once, then runs `after`; the specialist runs `inside`.
+function asks_notes(fixture: Fixture, inside: Step, after?: Step, results: string[] = []): string[] {
+  fixture.set_script(async function* (request) {
+    if (is_specialist(request)) {
+      yield* inside(request);
+      return;
+    }
+    yield { type: "tool_call", id: "o1", name: "ask_notes", arguments: { request: "Find the tiles note." } };
+    const outcome = await request.tools.call("ask_notes", { request: "Find the tiles note." });
+    results.push(outcome.result);
+    yield { type: "tool_result", id: "o1", ...outcome };
+    if (after) yield* after(request);
+    yield { type: "done", text: "Asked." };
+  });
+  return results;
+}
+
+describe("a source app's ask_ tool", () => {
+  it("stands for the collector read calls, in the full and the core set, beside the plugins' and apart from their names", async () => {
+    const { fixture } = with_notes();
+    const tools = await tools_of(fixture, { collectors: await open_collector_sources(fixture.database) });
+    const asks = (definitions: { name: string }[]) => definitions.map((each) => each.name).filter((name) => name.startsWith("ask_"));
+    // X-Tasks and Trilium are bundled and running; links and email answer no read call.
+    expect(asks(tools.specialists!.definitions)).toEqual(["ask_x_tasks", "ask_trilium", "ask_notes"]);
+    expect(asks(tools.specialists!.core!)).toEqual(["ask_x_tasks", "ask_trilium", "ask_notes"]);
+    for (const read of ["search_collector", "get_source_item", "list_collector_feeds"]) {
+      expect(tools.definitions.some((each) => each.name === read)).toBe(true);
+      expect(tools.specialists!.definitions.some((each) => each.name === read)).toBe(false);
+      expect(tools.specialists!.core!.some((each) => each.name === read)).toBe(false);
+    }
+    expect(tools.specialists!.delegated.map((each) => each.name)).toEqual(["search_collector", "get_source_item", "list_collector_feeds"]);
+    // The changes stay with the run.
+    expect(tools.specialists!.definitions.some((each) => each.name === "add_item")).toBe(true);
+    const ask = tools.specialists!.definitions.find((each) => each.name === "ask_notes")!;
+    expect(ask.description).toContain("calls to search it, read one item by its id there and list what a context can follow in it");
+    expect(ask.description).toContain("Finds the user's notes.");
+    expect(ask.description).toContain("It changes nothing");
+    const trilium = tools.specialists!.definitions.find((each) => each.name === "ask_trilium")!;
+    expect(trilium.description).toContain("calls to search it and read one item by its id there, and answers");
+    expect(trilium.description).not.toContain("follow_feed");
+    // A plugin of the same label keeps its name, and the source app's is told apart.
+    const taken = new Set(["ask_notes"]);
+    expect(collector_groups(await open_collector_sources(fixture.database), () => true, taken).find((group) => group.label === "Notes")!.name).toMatch(/^ask_notes_[0-9a-f]{8}$/);
+    // A run offered none of the read calls has none.
+    const few = await tools_of(fixture, { collectors: await open_collector_sources(fixture.database), only: new Set(["list_contexts"]) });
+    expect(few.specialists).toBeUndefined();
+  });
+
+  it("asks a specialist given only its app's read calls, bound to it, whose reads are fenced and lower the run", async () => {
+    const { fixture, asked } = with_notes();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    fixture.calls.set_action_level("rename_context", "auto");
+    const seen: string[] = [];
+    const after: string[] = [];
+    const results = asks_notes(
+      fixture,
+      async function* (request) {
+        yield* call_tool(request, "s1", "search_collector", { collector: "trilium", query: "tiles" }, seen);
+        yield* call_tool(request, "s2", "get_source_item", { source_id: "n1" }, seen);
+        yield* call_tool(request, "s3", "list_collector_feeds", {}, seen);
+        for (const name of ["add_item", "follow_feed", "list_contexts", "ask_notes", "ask_trilium"]) yield* call_tool(request, `s-${name}`, name, { collector: "notes", request: "x" }, seen);
+        yield { type: "done", text: "Found n1, Tiles n1." };
+      },
+      async function* (request) {
+        after.push((await request.tools.call("rename_context", { id: kitchen, name: "Tiles" })).result);
+        yield { type: "notice", text: "Renamed." };
+      },
+    );
+    const { conversation_id } = await fixture.calls.send_message(kitchen, "Find my tiles note");
+    await wait_for_runs();
+
+    const inner = fixture.requests.find(is_specialist)!;
+    expect(inner.tools.definitions.map((each) => each.name)).toEqual(["search_collector", "get_source_item", "list_collector_feeds"]);
+    for (const definition of inner.tools.definitions) expect(Object.keys((definition.parameters.properties ?? {}) as object)).not.toContain("collector");
+    expect(inner.instructions).toContain("You are the Notes specialist");
+    expect(inner.instructions).toContain("How Notes works, from its author: Notes are kept by room.");
+    expect(asked).toEqual(["search tiles", "resolve n1", "feeds"]);
+    expect(seen.slice(0, 3).every((result) => result.includes("<untrusted-data>"))).toBe(true);
+    expect(seen.slice(3).every((result) => result.startsWith("There is no tool named"))).toBe(true);
+    expect(results[0]).toContain("Found n1");
+    expect(after[0]).toContain("because this conversation has read text from other apps");
+
+    const answer = fixture.calls.get_conversation(conversation_id).messages[1]!;
+    expect(answer.tool_calls[0]!.calls!.map((call) => `${call.name}:${call.outcome}`)).toEqual([
+      "search_collector:ran",
+      "get_source_item:ran",
+      "list_collector_feeds:ran",
+      "add_item:refused",
+      "follow_feed:refused",
+      "list_contexts:refused",
+      "ask_notes:refused",
+      "ask_trilium:refused",
+    ]);
+    expect(answer.sources).toContain("notes");
+    // Nothing was added to a context by the specialist.
+    expect(fixture.calls.get_context(kitchen).items.filter((item) => item.collector !== "conversation")).toEqual([]);
+  });
+
+  it("is not offered to a hosted engine for an app not marked for it, and its run is logged when it is", async () => {
+    const { fixture } = with_notes();
+    fixture.set_hosted(true);
+    asks_notes(fixture, async function* (request) {
+      yield* call_tool(request, "s1", "search_collector", { query: "tiles" });
+      yield { type: "done", text: "Found." };
+    });
+    await fixture.calls.send_message(null, "Tiles?");
+    await wait_for_runs();
+    const first = fixture.requests.find((request) => !is_specialist(request))!;
+    expect(first.tools.specialists?.definitions.some((each) => each.name === "ask_notes") ?? false).toBe(false);
+
+    fixture.calls.set_source_mark("tests.notes", "send_to_hosted", true);
+    fixture.requests.length = 0;
+    const { conversation_id } = await fixture.calls.send_message(null, "Tiles again?");
+    await wait_for_runs();
+    const outer = fixture.requests.find((request) => !is_specialist(request))!;
+    expect(outer.tools.specialists!.definitions.map((each) => each.name).filter((name) => name.startsWith("ask_"))).toEqual(["ask_notes"]);
+    const log = fixture.calls.list_hosted_sends().find((entry) => entry.conversation_id === conversation_id && entry.kind !== "tool");
+    expect(log!.included.find((each) => each.collector === "notes")!.count).toBeGreaterThanOrEqual(2);
+  });
+
+  it("stops its reads at the specialist's cap", async () => {
+    const { fixture, asked } = with_notes();
+    const seen: string[] = [];
+    asks_notes(fixture, async function* (request) {
+      for (let at = 0; at <= specialist_limits.max_tool_calls; at += 1) yield* call_tool(request, `s${at}`, "search_collector", { query: String(at) }, seen);
+      yield { type: "done", text: "Done." };
+    });
+    await fixture.calls.send_message(null, "Search a lot");
+    await wait_for_runs();
+    expect(asked).toHaveLength(specialist_limits.max_tool_calls);
+    expect(seen.at(-1)).toContain("a specialist may use its tools at most");
+  });
+});
+
+// ── Guidance ─────────────────────────────────────────────────────────────────
+
+describe("guidance per plugin and source app", () => {
+  it("is the user's to set at the page, kept until emptied, and capped", () => {
+    const { fixture } = with_notes();
+    fixture.calls.set_plugin_guidance("notes", "  Rooms are named in **bold**.  ");
+    expect(fixture.calls.get_settings().plugin_guidance).toEqual({ notes: "Rooms are named in **bold**." });
+    expect(() => fixture.calls.set_plugin_guidance("notes", "x".repeat(longest_guidance + 1))).toThrow("at most");
+    expect(() => fixture.calls.set_plugin_guidance(" ", "x")).toThrow("Name the source");
+    fixture.calls.set_plugin_guidance("notes", "");
+    expect(fixture.calls.get_settings().plugin_guidance).toEqual({});
+    expect(page_only_methods.has("set_plugin_guidance")).toBe(true);
+    expect(user_only_settings.has(guidance_setting)).toBe(true);
+  });
+
+  it("goes whole to the specialist, the user's after the plugin's, and shortened into the run's instructions", async () => {
+    const { fixture } = with_notes();
+    fixture.calls.set_plugin_guidance("notes", "Kitchen notes are the newest.");
+    fixture.calls.set_plugin_guidance(tool_source_of("tests.fake-tools/fake"), `Fake records ${"are many. ".repeat(60)}`);
+    asks_notes(fixture, async function* () {
+      yield { type: "done", text: "Found." };
+    });
+    await fixture.calls.send_message(null, "Tiles?");
+    await wait_for_runs();
+    const inner = fixture.requests.find(is_specialist)!;
+    expect(inner.instructions).toContain("How Notes works, from its author: Notes are kept by room.\nThe user's own guidance for Notes, which holds where the two differ: Kitchen notes are the newest.");
+    const outer = fixture.requests.find((request) => !is_specialist(request))!;
+    expect(outer.instructions).toContain("- Notes (the source app notes): How Notes works, from its author: Notes are kept by room.");
+    expect(outer.instructions).toContain("- X-Tasks (the source app x-tasks): How X-Tasks works, from its author:");
+  });
+
+  it("fences what a plugin says of itself unless its author wrote it, and shortens each part for the run", () => {
+    const told = guidance_text("Remote", { own: injected, own_words: false, user: "Use it for budgets." });
+    expect(told).toContain(`Remote says how to use it, in its own words:\n<untrusted-data>`);
+    expect(told).toContain("The user's own guidance for Remote, which holds where the two differ: Use it for budgets.");
+    expect(guidance_text("Remote", no_guidance)).toBe("");
+    const part = guidance_part([
+      { label: "Long", where: "tools named long__…", guidance: { own: "word ".repeat(200), own_words: true, user: "" } },
+      { label: "Quiet", where: "the source app quiet", guidance: no_guidance },
+    ]);
+    expect(part).toContain("- Long (tools named long__…):");
+    expect(part).not.toContain("Quiet");
+    expect(part.split("\n")[1]!.length).toBeLessThan(shortened_guidance + 80);
+    expect(guidance_part([])).toBe("");
+  });
+
+  it("reaches a tool plugin's specialist from the plugin and the user", async () => {
+    const calls: string[] = [];
+    const guided = define_plugin<ContextPluginApi>({
+      id: "tests.guided",
+      name: "Guided",
+      version: "1.0.0",
+      start: (context) => context.provide("tools", "guided", { label: "Guided", guidance: injected, tools: () => fake_tools, call: async (name: string) => (calls.push(name), "ok") }),
+    });
+    const fixture = start_fixture({ plugins: [guided] });
+    fixture.calls.set_plugin_guidance(tool_source_of("tests.guided/guided"), "Prefer lookup.");
+    const [group] = specialist_groups(await open_plugin_tools(fixture.database));
+    const told = specialist_instructions(group!, "");
+    expect(told).toContain("Guided says how to use it, in its own words:\n<untrusted-data>");
+    expect(told).toContain("The user's own guidance for Guided, which holds where the two differ: Prefer lookup.");
+    expect(run_guidance_part(await open_plugin_tools(fixture.database), [])).toContain("- Guided (tools named guided__…):");
   });
 });

@@ -18,6 +18,7 @@ import { mcp_manifest, mcp_plugin_id } from "../shared/mcp/model.ts";
 import { tool_manifests } from "../shared/tools/manifests.ts";
 import { calls } from "./api.ts";
 import { DeclaredPluginSettings, DeclaredProblems, DeclaredServerRows, use_declared } from "./declared.tsx";
+import { CollectorGuidance } from "./guidance/GuidanceField.tsx";
 import { SourceMarks } from "./privacy/PrivacySettings.tsx";
 import { ItemSourceRows } from "./sources/ItemSources.tsx";
 import { McpServerRows } from "./mcp/McpServers.tsx";
@@ -71,8 +72,8 @@ export function status_of(manifest: PluginManifest, state: string, values: Recor
   return (manifest.settings ?? []).some((field) => field.type === "text" && needed(field.key, field.secret) && values[field.key] === "") ? "Not set up" : "On";
 }
 
-// A collector's row also holds its privacy and trust marks, but for the apps' plugin, whose apps each have their own; a
-// tool plugin's holds its marks and its tools.
+// A collector's row also holds its privacy and trust marks and its specialist's guidance, but for the apps' plugin,
+// whose apps each have their own; a tool plugin's holds its marks, its tools and its guidance.
 function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<string>; with_marks?: boolean }) {
   const statuses = use_plugins(host).filter(({ manifest }) => ids.has(manifest.id));
   const declared = use_declared();
@@ -86,6 +87,7 @@ function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<st
             {declared_plugin ? <DeclaredPluginSettings manifest={manifest} declared={declared_plugin} /> : <PluginSettings host={host} plugin_id={manifest.id} heading={null} />}
             {with_marks && tool_ids.has(manifest.id) && state === "running" && <ToolPluginSettings plugin_id={manifest.id} />}
             {with_marks && manifest.id !== item_sources_plugin_id && !tool_ids.has(manifest.id) && manifest.id !== mcp_plugin_id && <SourceMarks plugin_id={manifest.id} />}
+            {with_marks && manifest.id !== item_sources_plugin_id && !tool_ids.has(manifest.id) && manifest.id !== mcp_plugin_id && state === "running" && <CollectorGuidance plugin_id={manifest.id} />}
           </SettingsDialogRow>
         );
       })}

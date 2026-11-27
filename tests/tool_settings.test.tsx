@@ -97,6 +97,25 @@ describe("the tool plugins in Settings", () => {
     await waitFor(() => expect(fixture.calls.get_settings().tool_plugins).toEqual({ "tests.poster/poster": { trusted: true } }));
   });
 
+  it("hold the user's guidance for each plugin's and source app's specialist, as kept in the synced settings", async () => {
+    const fixture = start_fixture({ plugins: [web_plugin()] });
+    fixture.calls.set_setting("plugins", { "codex.web": { enabled: true, settings: { search_endpoint: "", allowed_ports: "" } } });
+    fixture.calls.set_plugin_guidance("tool:codex.web/web", "Search in English.");
+    fixture.calls.set_plugin_guidance("x-tasks", "Someday tasks are not due.");
+    open_settings(fixture);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open Web" }));
+    const web = await screen.findByRole("dialog");
+    expect(await within(web).findByText("Search in English.")).toBeTruthy();
+    expect(within(web).getAllByText("Guidance for its specialist").length).toBeGreaterThan(0);
+    cleanup();
+    open_settings(fixture);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open X-Tasks" }));
+    const tasks = await screen.findByRole("dialog");
+    expect(await within(tasks).findByText("Someday tasks are not due.")).toBeTruthy();
+  });
+
   it("say what a tool does in plain words", () => {
     expect(tool_facts({ changes: true, sends_outside: false })).toBe("It changes something and stays on this computer.");
   });

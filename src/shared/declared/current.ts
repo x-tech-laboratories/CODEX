@@ -6,7 +6,7 @@
 
 import type { PluginRecords, SettingValues } from "@x-tech-laboratories/x-libs/plugins";
 
-import { mcp_key_of, sends_outside, type McpServerRecord, type McpToolRecord } from "../mcp/model.ts";
+import { mcp_key_of, sends_outside, type McpListing, type McpServerRecord, type McpToolRecord } from "../mcp/model.ts";
 import { no_declarations, type DeclaredConfig, type DeclaredPlugin, type DeclaredServer, type DeclaredSummary } from "./model.ts";
 
 // ── Source ───────────────────────────────────────────────────────────────────
@@ -92,6 +92,7 @@ export function without_declared(written: PluginRecords, stored: PluginRecords, 
 
 interface Listed {
   tools: McpToolRecord[];
+  instructions: string;
   listed_at: string;
   problem: string;
 }
@@ -122,6 +123,7 @@ export function server_record(server: DeclaredServer, device_id: string): { reco
       device,
       enabled: true,
       tools,
+      instructions: listed.get(server.id)?.instructions ?? "",
       listed_at: listed.get(server.id)?.listed_at ?? "",
     },
   };
@@ -135,12 +137,13 @@ export function declared_server(id: string): DeclaredServer | undefined {
 export async function list_declared_server(
   server: DeclaredServer,
   device_id: string,
-  list: (record: McpServerRecord) => Promise<McpToolRecord[]>,
+  list: (record: McpServerRecord) => Promise<McpListing>,
 ): Promise<void> {
   const made = server_record(server, device_id);
   if ("problem" in made) {
     listed.set(server.id, {
       tools: listed.get(server.id)?.tools ?? [],
+      instructions: listed.get(server.id)?.instructions ?? "",
       listed_at: listed.get(server.id)?.listed_at ?? "",
       problem: made.problem,
     });
@@ -148,13 +151,14 @@ export async function list_declared_server(
   }
   try {
     listed.set(server.id, {
-      tools: await list(made.record),
+      ...(await list(made.record)),
       listed_at: new Date().toISOString(),
       problem: "",
     });
   } catch (error) {
     listed.set(server.id, {
       tools: listed.get(server.id)?.tools ?? [],
+      instructions: listed.get(server.id)?.instructions ?? "",
       listed_at: listed.get(server.id)?.listed_at ?? "",
       problem: error instanceof Error ? error.message : String(error),
     });

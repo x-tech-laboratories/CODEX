@@ -28,6 +28,9 @@ export interface ToolPlugin {
   own_words?: boolean;
   // What the plugin as a whole is for, in a line or two, which its specialist's ask_ tool shows; fenced unless own_words.
   description?: string;
+  // How its app works, in a few plain lines, for its specialist: an MCP server's own instructions, or the author's
+  // guidance; fenced unless own_words.
+  guidance?: string;
   // The tools offered now, from the plugin's settings; one with nothing set up yet is left out.
   tools(): PluginTool[] | Promise<PluginTool[]>;
   // Runs one tool by its own name and answers with text; throws a plain error when it cannot.

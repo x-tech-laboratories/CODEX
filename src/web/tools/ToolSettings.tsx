@@ -1,4 +1,4 @@
-// The tool plugins' settings: in each tool plugin's row under Plugins, its three marks and each tool, whether it is
+// The tool plugins' settings: in each tool plugin's row under Plugins, its three marks, its specialist's guidance and each tool, whether it is
 // offered and whether small models are offered it too; under Action policy, the level of each tool that changes something.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
@@ -9,9 +9,10 @@ import { SettingRow } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 
 import type { PolicyLevel } from "../../shared/policy/model.ts";
-import type { PluginToolEntry, ToolMarkName, ToolPluginEntry } from "../../shared/tools/model.ts";
+import { tool_source_of, type PluginToolEntry, type ToolMarkName, type ToolPluginEntry } from "../../shared/tools/model.ts";
 import { attempt, calls, use_data } from "../api.ts";
 import { level_words } from "../assistant/AssistantSettings.tsx";
+import { GuidanceField } from "../guidance/GuidanceField.tsx";
 
 // ── Marks ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ export function ToolRows({ entry }: { entry: ToolPluginEntry }) {
           <Switch label={tool_mark_words[mark].label} checked={entry[mark]} on_change={(on) => void attempt(() => calls().set_tool_plugin_mark(entry.key, mark, on))} />
         </SettingRow>
       ))}
+      <GuidanceField source={tool_source_of(entry.key)} />
       {entry.tools.length === 0 && !entry.problem && <p className="muted small">It offers no tools as it is set up now.</p>}
       {entry.tools.map((tool) => (
         <div key={tool.name}>

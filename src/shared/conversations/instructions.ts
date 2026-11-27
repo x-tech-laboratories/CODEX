@@ -67,14 +67,14 @@ const identity = [
 ].join("\n");
 
 // CODEX's own collectors, which are not source apps.
-const own_collectors = new Set([conversation_collector, blueprint_collector, finding_collector]);
+export const own_collectors: ReadonlySet<string> = new Set([conversation_collector, blueprint_collector, finding_collector]);
 
 // The source apps CODEX can read now, by the collector id each call takes.
 export function sources_part(all: CollectorSummary[]): string {
   const collectors = all.filter((each) => !own_collectors.has(each.id) && (each.can_search || each.can_refresh));
   if (collectors.length === 0) return "No source apps are connected.";
   const named = collectors.map((each) => `${each.label} (${each.id}${each.can_search ? "" : ", cannot search"})`).join(", ");
-  return `Connected source apps, by collector id: ${named}. search_collector searches one, get_source_item reads one item by its id there, add_item puts it in contexts.`;
+  return `Connected source apps, by collector id: ${named}. search_collector searches one, get_source_item reads one item by its id there, add_item puts it in contexts. When you are offered ask_ tools for them instead, ask a source app's specialist to look things up there, then add what it reports with add_item.`;
 }
 
 export function shortened(text: string): string {

@@ -226,12 +226,16 @@ dialog showing the exact topic, never ticked with others; a mood still never mak
    `node-llama-cpp` (a stub stands in), so it cannot load a GGUF file itself. The eval (recorded jobs, a hosted
    baseline) is not built: no recording of runs exists yet, since it needs an unsynced per-device switch and folder
    that both hosts lack.*
-10. **A specialist agent per plugin (marked important by the owner on 2026-11-27; first slice built 2026-11-27).**
+10. **A specialist agent per plugin (marked important by the owner on 2026-11-27; two slices built 2026-11-27).**
     *Built for tool plugins and MCP servers (doc 1, "Specialists"): each offered as one `ask_<plugin>` tool that runs
     the same engine afresh with only that plugin's tools, the user's message pinned and the request, under every
     safeguard of the run asking it, depth 1, with its calls nested under the ask; a per-engine **Specialists** setting,
-    automatic when the plugin tools would take half the context. Left: collectors as specialists, a measured comparison
-    on a real model, guidance text per plugin, and SmartHarness's native delegation.* Instead of one run seeing
+    automatic when the plugin tools would take half the context. Then for the source apps: each collector that can
+    search, resolve or list feeds gets an `ask_<app>` tool whose specialist has only that app's read calls with its id
+    bound, while adding and following stay with the orchestrator; and guidance per plugin and app, from the MCP server's
+    own instructions (fenced), the bundled plugins' authors and the user's Markdown under Plugins, whole for the
+    specialist and shortened in the run's instructions. Left: a measured comparison on a real model, previewing a feed's
+    items without following it, and SmartHarness's native delegation.* Instead of one run seeing
     every collector's, plugin's and MCP server's tools, each becomes a specialist with fresh context and only its own
     tools, and the orchestrating run sees CODEX's core calls plus one "ask the <plugin> agent" tool per specialist.
     - **Why:** SmartHarness built this (its doc 1, "Agents") and measured it: on its scaled eval (26 servers, 116 tools,

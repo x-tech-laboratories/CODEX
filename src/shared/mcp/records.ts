@@ -44,6 +44,7 @@ export function server_records(value: unknown): McpServerRecord[] {
       device: each.transport === "stdio" ? text_of(each.device) : "",
       enabled: each.enabled !== false,
       tools: tools_of(each.tools),
+      ...(text_of(each.instructions) ? { instructions: text_of(each.instructions) } : {}),
       listed_at: text_of(each.listed_at),
     }));
 }
