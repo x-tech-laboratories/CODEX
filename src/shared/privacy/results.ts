@@ -10,7 +10,7 @@ import type { Blueprint, BlueprintSummary } from "../blueprints/model.ts";
 import type { Interest } from "../interests/model.ts";
 import type { ContextDetail, KeptItem, RefreshReport } from "../contexts/model.ts";
 import { contexts_feature } from "../contexts/store.ts";
-import type { NodeLinks } from "../graph/model.ts";
+import type { GraphProposals, NodeLinks } from "../graph/model.ts";
 import type { SearchHit } from "../search/model.ts";
 import { conversation_collector } from "../conversations/model.ts";
 import { item_sources, merge_withheld, may_send, screen_entries, screen_sourced, type Screen, type Screened } from "./screen.ts";
@@ -104,6 +104,15 @@ function screen_node_links(_database: SqlDatabase, screen: Screen, _args: unknow
   return { value: { node, links: kept.value }, sources: new Set([...own.sources, ...kept.sources]), ...merge_withheld([own, kept]) };
 }
 
+// What waits in the graph: each proposed link withheld when it or a node at either end carries a source that may not
+// be sent, and each proposed entity on its own sources.
+function screen_graph_proposals(_database: SqlDatabase, screen: Screen, _args: unknown[], value: unknown): Screened<unknown> {
+  const { links, entities } = value as GraphProposals;
+  const kept_links = screen_sourced(screen, links, (link) => [...link.sources, ...link.from_node.sources, ...link.to_node.sources], (link) => `link:${link.id}`, () => "link");
+  const kept_entities = screen_sourced(screen, entities, (entity) => entity.sources, (entity) => `entity:${entity.id}`, () => "entity");
+  return { value: { links: kept_links.value, entities: kept_entities.value }, sources: new Set([...kept_links.sources, ...kept_entities.sources]), ...merge_withheld([kept_links, kept_entities]) };
+}
+
 // A blueprint written during a run carries what that run had read until the user makes it theirs; an active one is
 // the user's own and carries nothing.
 function screen_blueprints(_database: SqlDatabase, screen: Screen, _args: unknown[], value: unknown): Screened<unknown> {
@@ -137,6 +146,7 @@ export const result_screeners: Record<string, Screener> = {
   follow_feed: screen_report,
   search_index: screen_hits,
   get_node_links: screen_node_links,
+  list_graph_proposals: screen_graph_proposals,
   list_blueprints: screen_blueprints,
   get_blueprint: screen_blueprint,
   list_interests: screen_interests,

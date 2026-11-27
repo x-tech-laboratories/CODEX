@@ -308,6 +308,12 @@ describe("the assistant's pane", () => {
     cleanup();
     render(<ProposalCard proposal={{ ...proposal, evidence: { asked_by: "", run_id: "", reads: [] } }} />);
     expect(screen.getByText("No evidence was kept for this proposal.")).toBeTruthy();
+    cleanup();
+    // A drop of a link names the engine and model that asked for it, and always waits.
+    render(<ProposalCard proposal={{ ...proposal, method: "close_graph_link", reason: "drop", summary: "Close the link “A about B”: wrong.", evidence: { asked_by: "", run_id: "r1", reads: [], seen: [], proposed_by: { engine: "fake", model: "fake-model" } } }} />);
+    expect(screen.getByText("Proposed by fake · fake-model.")).toBeTruthy();
+    expect(screen.getByText(/asks to drop this link; it waits for you whatever the level/)).toBeTruthy();
+    expect(screen.queryByText("It read nothing before proposing.")).toBeNull();
   });
 
   it("says on an applied change's row why it cannot be undone", async () => {

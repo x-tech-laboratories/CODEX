@@ -107,6 +107,7 @@ const allowed_tools = [
   "list_collectors",
   "list_contexts",
   "list_feed_group_news",
+  "list_graph_proposals",
   "list_interests",
   "list_jobs",
   "move_context",
@@ -116,6 +117,7 @@ const allowed_tools = [
   "propose_entity",
   "propose_interest",
   "propose_link",
+  "propose_link_drop",
   "refresh_items",
   "remove_context",
   "remove_item",
@@ -140,14 +142,17 @@ const allowed_core_tools = [
   "get_blueprint",
   "get_context",
   "get_item",
+  "get_node_links",
   "get_source_item",
   "list_contexts",
+  "list_graph_proposals",
   "move_item",
   "propose_blueprint",
   "propose_blueprint_change",
   "propose_entity",
   "propose_interest",
   "propose_link",
+  "propose_link_drop",
   "remove_item",
   "rename_context",
   "search_collector",
@@ -202,7 +207,8 @@ describe("a run's tools", () => {
       expect(JSON.stringify(tool.parameters)).not.toContain('"description"');
       expect(Object.keys(tool.parameters.properties as object)).toEqual(Object.keys(full.get(tool.name)!.parameters.properties as object));
     }
-    expect(JSON.stringify(core).length * 4).toBeLessThan(JSON.stringify(tools.definitions).length);
+    // Under a third of the whole, the graph's two reads and three proposing calls included.
+    expect(JSON.stringify(core).length * 3).toBeLessThan(JSON.stringify(tools.definitions).length);
     // The core set, with room for the instructions and the conversation, takes well under a 16,384-token context.
     expect(Math.ceil(tools_chars(core) / default_chars_per_token)).toBeLessThan(16_384 / 4);
   });
