@@ -73,7 +73,8 @@ export function is_read_only(method: string): boolean {
 // proposed blueprints, bringing a blueprint back or widening where it applies, turning a job on, running one now and
 // choosing the device that runs them, a maintenance job's switch and budget, the tool plugins' marks, which of their tools are offered and at what level, the
 // MCP servers added, changed, refreshed, moved to this device or removed (a local one's command runs on this machine), the dates the mood remembers, the assistant's interests added, accepted, paused, dropped or capped (an accepted topic is sent to a search engine),
-// setting how freely it may make them and what each source's items may reach, and which apps are read with which token,
+// setting how freely it may make them and what each source's items may reach, which apps are read with which token, and
+// reading what this computer's configuration declares,
 // answered only for the user at the page: a signed-in browser, or the desktop window. Their specs are marked page-only
 // with X-Libs `api_spec`, so a token, MCP and any engine are refused them and nothing a program does can approve a
 // change or raise a level.
@@ -108,6 +109,8 @@ export const page_only_methods: ReadonlySet<string> = new Set([
   "accept_interest",
   "set_interest_state",
   "set_max_interests",
+  "get_declared_config",
+  "refresh_declared_mcp_server",
 ]);
 
 // Settings that keep the user in charge, written only by the user at the page: the action policy, the source marks,

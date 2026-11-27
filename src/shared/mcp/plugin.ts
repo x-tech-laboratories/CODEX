@@ -10,6 +10,7 @@ import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import type { ContextPlugin, ContextPluginApi } from "../collectors/host.ts";
+import { declarations, server_record } from "../declared/current.ts";
 import { device_id_of } from "../jobs/records.ts";
 import type { ToolPlugin } from "../tools/tool.ts";
 import { mcp_connector } from "./connector.ts";
@@ -34,6 +35,11 @@ export function mcp_plugin(database: SqlDatabase): ContextPlugin {
     start: (context) => {
       const here = device_id_of(database);
       for (const server of read_servers(database)) if (server.enabled && runs_on(server, here)) context.provide("tools", mcp_provider_of(server.id), server_tools(server));
+      // The servers this computer's configuration declares, each with its token read from its file now.
+      for (const declared of declarations().mcp_servers) {
+        const made = server_record(declared, here);
+        if ("record" in made) context.provide("tools", mcp_provider_of(declared.id), server_tools(made.record));
+      }
     },
   });
 }

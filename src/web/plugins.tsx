@@ -17,6 +17,7 @@ import { engine_manifests } from "../shared/engines/manifests.ts";
 import { mcp_manifest, mcp_plugin_id } from "../shared/mcp/model.ts";
 import { tool_manifests } from "../shared/tools/manifests.ts";
 import { calls } from "./api.ts";
+import { DeclaredPluginSettings, DeclaredProblems, DeclaredServerRows, use_declared } from "./declared.tsx";
 import { SourceMarks } from "./privacy/PrivacySettings.tsx";
 import { ItemSourceRows } from "./sources/ItemSources.tsx";
 import { McpServerRows } from "./mcp/McpServers.tsx";
@@ -74,15 +75,20 @@ export function status_of(manifest: PluginManifest, state: string, values: Recor
 // tool plugin's holds its marks and its tools.
 function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<string>; with_marks?: boolean }) {
   const statuses = use_plugins(host).filter(({ manifest }) => ids.has(manifest.id));
+  const declared = use_declared();
   return (
     <>
-      {statuses.map(({ manifest, state }) => (
-        <SettingsDialogRow key={manifest.id} name={manifest.name} status={status_of(manifest, state, host.settings(manifest.id))} about={manifest.description}>
-          <PluginSettings host={host} plugin_id={manifest.id} heading={null} />
-          {with_marks && tool_ids.has(manifest.id) && state === "running" && <ToolPluginSettings plugin_id={manifest.id} />}
-          {with_marks && manifest.id !== item_sources_plugin_id && !tool_ids.has(manifest.id) && manifest.id !== mcp_plugin_id && <SourceMarks plugin_id={manifest.id} />}
-        </SettingsDialogRow>
-      ))}
+      {statuses.map(({ manifest, state }) => {
+        const declared_plugin = declared.plugins.find((plugin) => plugin.plugin_id === manifest.id);
+        const status = declared_plugin ? (declared_plugin.problems.length > 0 ? "Not set up" : "Set by this computer") : status_of(manifest, state, host.settings(manifest.id));
+        return (
+          <SettingsDialogRow key={manifest.id} name={manifest.name} status={status} about={manifest.description}>
+            {declared_plugin ? <DeclaredPluginSettings manifest={manifest} declared={declared_plugin} /> : <PluginSettings host={host} plugin_id={manifest.id} heading={null} />}
+            {with_marks && tool_ids.has(manifest.id) && state === "running" && <ToolPluginSettings plugin_id={manifest.id} />}
+            {with_marks && manifest.id !== item_sources_plugin_id && !tool_ids.has(manifest.id) && manifest.id !== mcp_plugin_id && <SourceMarks plugin_id={manifest.id} />}
+          </SettingsDialogRow>
+        );
+      })}
     </>
   );
 }
@@ -102,6 +108,8 @@ export function CollectorRows() {
       <Rows host={host} ids={ids} with_marks />
       <OtherToolPluginRows known={new Set(host.list().map((status) => status.manifest.id))} />
       <McpServerRows />
+      <DeclaredServerRows />
+      <DeclaredProblems />
       <ItemSourceRows />
     </>
   );

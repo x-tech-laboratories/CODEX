@@ -63,6 +63,11 @@ the conversations no other context holds.*
    *Built 2026-11-26 (`src/shared/jobs/`, described in doc 1): the engine lists, adds, changes and removes jobs as
    changes under the action policy; each run is an ordinary run in the job's own conversation with nobody present.*
 9. **Mail leaves.** Mail belongs in an application of its own with an MCP server; CODEX reads it like any other source. The mail code here (`legacy/src/assistant/mail*.ts`, `imap.ts`, `triage.ts`, `draftReply.ts`) is frozen and seeds that application; it is not ported.
+10. **A machine can declare its setup.** *Decided and built 2026-11-27 (doc 1, "Declared configuration"): the owner's
+    NixOS config sets CODEX up so a deploy comes up connected, with engines, the embedder, the X-Tasks and Trilium
+    collectors, the Web plugin and MCP servers declared in a file whose secrets are paths to files (such as sops-nix
+    writes), read when needed and never stored, synced or shown. Declared entries are the device's own and read-only in
+    Settings; every rule above holds for them, and their marks start off unless set.*
 
 ## Action policy
 

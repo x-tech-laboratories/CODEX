@@ -15,6 +15,7 @@ import { migrate, type MigrationStep, type SqlDatabase } from "@x-tech-laborator
 import { plugins_setting } from "../collectors/collector.ts";
 import { open_plugin_host } from "../collectors/host.ts";
 import { is_replying } from "../conversations/activity.ts";
+import { declarations } from "../declared/current.ts";
 import { embedder_setting, type Embedder } from "../embedders/embedder.ts";
 import { PlainFailure } from "../engines/direct.ts";
 import { is_hosted } from "../engines/engine.ts";
@@ -240,9 +241,10 @@ export interface FoundEmbedder {
   embedder: Embedder;
 }
 
-// The embedder the settings name, or why there is none; null with no problem when none is chosen.
+// The embedder this computer's configuration declares, else the one the settings name, or why there is none; null with
+// no problem when none is chosen.
 export async function find_embedder(database: SqlDatabase): Promise<{ found: FoundEmbedder | null; problem: string }> {
-  const chosen = String(settings_feature.methods.get_settings(database)[embedder_setting] ?? "");
+  const chosen = declarations().embedder ?? String(settings_feature.methods.get_settings(database)[embedder_setting] ?? "");
   if (!chosen) return { found: null, problem: "" };
   const provided = (await open_plugin_host(database)).providers("embedder").find((each) => each.id === chosen);
   return provided ? { found: { id: provided.id, embedder: provided.value }, problem: "" } : { found: null, problem: `The ${chosen} embedder is not running; turn its plugin on under Settings → Index.` };
@@ -371,7 +373,8 @@ let pass_settings = "";
 // What the embedder in use is and how it is set up, to tell when that changed.
 function embedder_settings(database: SqlDatabase): string {
   const settings = settings_feature.methods.get_settings(database);
-  return JSON.stringify([settings[embedder_setting] ?? "", settings[plugins_setting] ?? {}]);
+  const declared = declarations();
+  return JSON.stringify([declared.embedder ?? settings[embedder_setting] ?? "", settings[plugins_setting] ?? {}, declared.plugins]);
 }
 
 // What one pass does beyond bringing the documents in step: embed what waits (unless told not to, as after a write,

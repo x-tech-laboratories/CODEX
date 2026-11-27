@@ -19,7 +19,7 @@ import { is_local_endpoint } from "../../shared/engines/hosting.ts";
 import { smartharness_engine_id, smartharness_manifest } from "../../shared/engines/manifests.ts";
 import { explain_failure, key_command_failure } from "./errors.ts";
 import { default_endpoints, make_openai, without_key, type ModelMaker } from "./index.ts";
-import { key_from, read_secret, type SecretReader } from "./secret_command.ts";
+import { plugin_key, read_secret, type SecretReader } from "./secret_command.ts";
 import { open_tool_bridge, type ToolBridge } from "./tool_bridge.ts";
 
 export type HarnessModule = typeof import("@x-tech-laboratories/smartharness/taskTree");
@@ -287,7 +287,7 @@ export function harness_engine(settings: () => SettingValues, options: HarnessEn
       }
       let api_key: string;
       try {
-        api_key = await key_from(String(values.api_key_command ?? ""), read);
+        api_key = await plugin_key(smartharness_manifest.id, String(values.api_key_command ?? ""), read);
       } catch (error) {
         yield { type: "error", ...key_command_failure(error) };
         return;

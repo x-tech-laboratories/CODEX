@@ -51,7 +51,14 @@ function ensure_daemon(): Promise<unknown> {
   return start_daemon({
     socket_path,
     script: join(import.meta.dirname, "daemon.js"),
-    env: { CODEX_DB: database_path, CODEX_SOCKET: socket_path, CODEX_VERSION: app.getVersion(), CODEX_ICON: icon_path },
+    // Only the user's own daemon reads what this computer's configuration declares, unless a run names a file itself.
+    env: {
+      CODEX_DB: database_path,
+      CODEX_SOCKET: socket_path,
+      CODEX_VERSION: app.getVersion(),
+      CODEX_ICON: icon_path,
+      ...(is_own_profile ? {} : { CODEX_DECLARED_FILE: process.env.CODEX_DECLARED_FILE ?? "" }),
+    },
     log_file,
   });
 }

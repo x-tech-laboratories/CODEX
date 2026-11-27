@@ -5,6 +5,8 @@
 
 import { execFile } from "node:child_process";
 
+import { declared_plugin, read_declared_secret } from "../../shared/declared/current.ts";
+
 // ── Commands ─────────────────────────────────────────────────────────────────
 
 const secret_timeout_ms = 10_000;
@@ -62,4 +64,16 @@ export const read_secret: SecretReader = ([program, ...args]) =>
 export async function key_from(command_line: string, read: SecretReader = read_secret): Promise<string> {
   const words = command_words(command_line.trim());
   return words.length === 0 ? "" : read(words);
+}
+
+// A key file this computer's configuration names that could not be read.
+export class DeclaredKeyFailure extends Error {}
+
+// The key for a plugin: read from the file this computer's configuration names for it, else printed by its command.
+export async function plugin_key(plugin_id: string, command_line: string, read: SecretReader = read_secret): Promise<string> {
+  const key_file = declared_plugin(plugin_id)?.key_file;
+  if (!key_file) return key_from(command_line, read);
+  const found = read_declared_secret(key_file);
+  if ("problem" in found) throw new DeclaredKeyFailure(found.problem);
+  return found.secret;
 }

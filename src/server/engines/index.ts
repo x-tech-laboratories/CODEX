@@ -13,7 +13,7 @@ import { anthropic_engine_id, anthropic_manifest, openai_engine_id, openai_manif
 import { AnthropicModel } from "./anthropic.ts";
 import { explain_failure, key_command_failure } from "./errors.ts";
 import { OpenAiModel } from "./openai.ts";
-import { key_from, read_secret, type SecretReader } from "./secret_command.ts";
+import { plugin_key, read_secret, type SecretReader } from "./secret_command.ts";
 
 // ── Engines ──────────────────────────────────────────────────────────────────
 
@@ -44,7 +44,14 @@ export function without_key(event: EngineEvent, api_key: string): EngineEvent {
 }
 
 // An engine on the direct loop whose key is read afresh for each run and dropped with it.
-export function direct_engine(label: string, settings: () => SettingValues, make: ModelMaker, read: SecretReader = read_secret, is_local: (settings: SettingValues) => boolean = () => false): Engine {
+export function direct_engine(
+  label: string,
+  settings: () => SettingValues,
+  make: ModelMaker,
+  read: SecretReader = read_secret,
+  is_local: (settings: SettingValues) => boolean = () => false,
+  plugin_id = "",
+): Engine {
   const model = () => String(settings().model ?? "").trim();
   return {
     label,
@@ -58,7 +65,7 @@ export function direct_engine(label: string, settings: () => SettingValues, make
       }
       let api_key: string;
       try {
-        api_key = await key_from(String(values.api_key_command ?? ""), read);
+        api_key = await plugin_key(plugin_id, String(values.api_key_command ?? ""), read);
       } catch (error) {
         yield { type: "error", ...key_command_failure(error) };
         return;
@@ -83,14 +90,14 @@ export function direct_engine(label: string, settings: () => SettingValues, make
 export function anthropic_plugin(make: ModelMaker = make_anthropic, read?: SecretReader): ContextPlugin {
   return define_plugin<ContextPluginApi>({
     ...anthropic_manifest,
-    start: (context) => context.provide("engine", anthropic_engine_id, direct_engine("Anthropic", () => context.settings(), make, read, anthropic_is_local)),
+    start: (context) => context.provide("engine", anthropic_engine_id, direct_engine("Anthropic", () => context.settings(), make, read, anthropic_is_local, anthropic_manifest.id)),
   });
 }
 
 export function openai_plugin(make: ModelMaker = make_openai, read?: SecretReader): ContextPlugin {
   return define_plugin<ContextPluginApi>({
     ...openai_manifest,
-    start: (context) => context.provide("engine", openai_engine_id, direct_engine("OpenAI-compatible", () => context.settings(), make, read, openai_is_local)),
+    start: (context) => context.provide("engine", openai_engine_id, direct_engine("OpenAI-compatible", () => context.settings(), make, read, openai_is_local, openai_manifest.id)),
   });
 }
 

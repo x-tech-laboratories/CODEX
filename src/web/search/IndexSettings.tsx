@@ -12,6 +12,7 @@ import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
 import type { IndexState } from "../../shared/search/model.ts";
 import { calls, set_setting, succeeds, use_data } from "../api.ts";
 import { ReplyError } from "../assistant/AssistantPane.tsx";
+import { DeclaredChoice, use_declared } from "../declared.tsx";
 import { EmbedderRows } from "../plugins.tsx";
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -71,6 +72,8 @@ function IndexStateRows() {
 
 function EmbedderChoice({ chosen }: { chosen: string }) {
   const state = use_data((api) => api.get_index_state());
+  const declared = use_declared().embedder;
+  if (declared) return <DeclaredChoice label="Embedder" value={(state.data ?? null)?.embedders?.find((embedder) => embedder.id === declared)?.label ?? declared} />;
   const options: [string, string][] = [["", "None: words only"], ...((state.data ?? null)?.embedders ?? []).map((embedder): [string, string] => [embedder.id, embedder.label])];
   // A chosen embedder that is not running stays listed, so the choice is not lost while its plugin is off.
   if (chosen && !options.some(([id]) => id === chosen)) options.push([chosen, `${chosen} (not running)`]);

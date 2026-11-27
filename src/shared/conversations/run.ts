@@ -32,15 +32,16 @@ import { open_plugin_tools, run_tool, type OpenedTool } from "../tools/offered.t
 import { reply_ended, reply_started } from "./activity.ts";
 import { assistant_host, type AssistantHost } from "./host.ts";
 import { screened_instructions } from "./instructions.ts";
+import { declarations } from "../declared/current.ts";
 import { add_message, list_messages } from "./messages.ts";
 import { type ConversationMessage, type AssistantStatus, type EngineSummary, type RunState, type ToolCallRecord } from "./model.ts";
 import { add_conversation_record, conversation_ids_in, conversation_row, has_conversation, summaries_of } from "./records.ts";
 
 // ── Engines ──────────────────────────────────────────────────────────────────
 
-// The engine the settings name, or why there is none.
+// The engine the settings name, else the one this computer's configuration starts with, or why there is none.
 export async function find_engine(database: SqlDatabase): Promise<AssistantStatus & { running: Engine | null }> {
-  const chosen = String(settings_feature.methods.get_settings(database)[engine_setting] ?? "");
+  const chosen = String(settings_feature.methods.get_settings(database)[engine_setting] ?? "") || (declarations().engine ?? "");
   const provided = (await open_plugin_host(database)).providers("engine");
   const engines: EngineSummary[] = provided.map(({ id, plugin_id, value }) => ({ id, plugin_id, label: value.label, model: value.model(), is_local: !is_hosted(value) }));
   const found = provided.find((each) => each.id === chosen);
