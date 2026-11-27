@@ -10,7 +10,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 
 import { app_info } from "../../shared/collectors/collector.ts";
 import type { McpConnector } from "../../shared/mcp/connector.ts";
-import type { McpServerRecord, McpToolRecord } from "../../shared/mcp/model.ts";
+import type { McpListing, McpServerRecord, McpToolRecord } from "../../shared/mcp/model.ts";
 
 // ── Limits ───────────────────────────────────────────────────────────────────
 
@@ -24,6 +24,8 @@ export const mcp_limits = {
   // The most tools read from one server, and of a description's characters.
   max_tools: 200,
   max_description: 2000,
+  // The most of a server's instructions kept.
+  max_instructions: 2000,
   // The most of what a server wrote on stderr kept for a plain error.
   stderr_chars: 600,
 };
@@ -145,7 +147,13 @@ export function result_text(result: CallToolResult): string {
 
 // ── Connector ────────────────────────────────────────────────────────────────
 
-async function list_tools(server: McpServerRecord): Promise<McpToolRecord[]> {
+// What the server said of how to use it when it was reached, cut to the limit.
+export function instructions_of(said: string | undefined): string {
+  const text = (said ?? "").trim();
+  return text.length > mcp_limits.max_instructions ? `${text.slice(0, mcp_limits.max_instructions - 1)}…` : text;
+}
+
+async function list_tools(server: McpServerRecord): Promise<McpListing> {
   const connection = await connect(server);
   try {
     const tools: McpToolRecord[] = [];
@@ -165,7 +173,7 @@ async function list_tools(server: McpServerRecord): Promise<McpToolRecord[]> {
       if (!cursor) break;
     }
     keep_alive(server.id, connection);
-    return tools.slice(0, mcp_limits.max_tools);
+    return { tools: tools.slice(0, mcp_limits.max_tools), instructions: instructions_of(connection.client.getInstructions()) };
   } catch (error) {
     await close(server.id);
     throw plain(server, error, connection);

@@ -8,9 +8,10 @@ import type { PluginHost } from "@x-tech-laboratories/x-libs/plugins";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { open_plugin_host, type ContextPluginApi } from "../collectors/host.ts";
+import { stored_guidance } from "../guidance/store.ts";
 import { settings_feature } from "../settings.ts";
 import { web_manifest, web_tools_id } from "./manifests.ts";
-import { namespace_mark, tool_plugins_setting, type ToolMarks, type ToolPluginRecord } from "./model.ts";
+import { namespace_mark, tool_plugins_setting, tool_source_of, type ToolMarks, type ToolPluginRecord } from "./model.ts";
 import type { PluginTool, ToolPlugin } from "./tool.ts";
 
 // ── Records ──────────────────────────────────────────────────────────────────
@@ -73,6 +74,9 @@ export interface OpenedTool {
   own_words: boolean;
   // The plugin's own description of itself, when it gives one.
   about?: string;
+  // How the plugin's app works, as its author or server says, trusted as own_words is; and as the user wrote it.
+  guidance?: string;
+  user_guidance?: string;
   enabled: boolean;
   small: boolean;
   marks: ToolMarks;
@@ -117,6 +121,7 @@ function checked_tool(value: unknown): PluginTool | null {
 export async function open_tool_plugins(database: SqlDatabase, host?: PluginHost<ContextPluginApi>): Promise<OpenedPlugin[]> {
   const opened_host = host ?? (await open_plugin_host(database));
   const stored = stored_tool_plugins(database);
+  const guidance = stored_guidance(database);
   const taken = new Set<string>();
   const plugins: OpenedPlugin[] = [];
   for (const provided of opened_host.providers("tools")) {
@@ -148,6 +153,8 @@ export async function open_tool_plugins(database: SqlDatabase, host?: PluginHost
         tool,
         own_words: value.own_words === true,
         ...(typeof value.description === "string" && value.description.trim() ? { about: value.description } : {}),
+        ...(typeof value.guidance === "string" && value.guidance.trim() ? { guidance: value.guidance.trim() } : {}),
+        ...(guidance[tool_source_of(key)] ? { user_guidance: guidance[tool_source_of(key)] } : {}),
         enabled: offer.off !== true,
         small: offer.small === true,
         marks,

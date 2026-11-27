@@ -189,6 +189,7 @@ export const bookmarks_plugin = define_plugin<ContextPluginApi>({
     context.provide("collector", "bookmarks", {
       label: "Firefox bookmarks",
       kinds: ["link"],
+      own_words: true,
       search: async (query) => find_bookmarks(await bookmarks(), query),
       resolve: async (guids) => look_up_bookmarks(await bookmarks(), guids),
       feeds: {

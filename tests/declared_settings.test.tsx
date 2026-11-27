@@ -75,14 +75,17 @@ function start(): { listed: McpServerRecord[] } {
   const connector: McpConnector = {
     list_tools: async (server) => (
       listed.push(server),
-      [
-        {
-          name: "list_budgets",
-          description: "Lists the budgets.",
-          read_only: true,
-          input_schema: { type: "object", properties: {} },
-        },
-      ]
+      {
+        tools: [
+          {
+            name: "list_budgets",
+            description: "Lists the budgets.",
+            read_only: true,
+            input_schema: { type: "object", properties: {} },
+          },
+        ],
+        instructions: "",
+      }
     ),
     call_tool: async () => "ok",
     forget: async () => undefined,

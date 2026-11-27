@@ -112,9 +112,10 @@ function check_runs_here(database: SqlDatabase, server: McpServerRecord): void {
   if (!runs_on(server, device_id_of(database))) throw new Error(`${server.name} is a command on another device. ${where_it_runs(database, server)}; move it to this device first, after reading its command.`);
 }
 
-// The server with the tools it lists now; fails, saying why, when it cannot be reached.
+// The server with the tools it lists now and its instructions; fails, saying why, when it cannot be reached.
 async function listed(server: McpServerRecord): Promise<McpServerRecord> {
-  return { ...server, tools: await mcp_connector().list_tools(server), listed_at: new Date().toISOString() };
+  const { tools, instructions } = await mcp_connector().list_tools(server);
+  return { ...server, tools, instructions, listed_at: new Date().toISOString() };
 }
 
 // ── Writing ──────────────────────────────────────────────────────────────────
@@ -149,7 +150,7 @@ async function refresh_mcp_server(database: SqlDatabase, id: string): Promise<Mc
   check_runs_here(database, stored);
   await mcp_connector().forget(id);
   const server = await listed(stored);
-  write_servers(database, read_servers(database).map((each) => (each.id === id ? { ...each, tools: server.tools, listed_at: server.listed_at } : each)));
+  write_servers(database, read_servers(database).map((each) => (each.id === id ? { ...each, tools: server.tools, instructions: server.instructions ?? "", listed_at: server.listed_at } : each)));
   return summary_of(database, server);
 }
 

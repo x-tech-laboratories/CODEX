@@ -170,12 +170,18 @@ export function x_tasks_in_feed(tasks: XTask[], tags: XTag[], feed_id: string, i
   return include_done ? held : held.filter((task) => !task.is_done);
 }
 
+// How X-Tasks works, as its collector reads it, for the assistant's specialist for it.
+export const x_tasks_guidance =
+  "X-Tasks holds the user's tasks, each with a title, notes, a due date, tags, and maybe a parent task. A search matches tasks whose title or notes hold every word given, open tasks before done ones, at most 30; a done task has status done. A task's source_id is its id in X-Tasks, its due date is detail.due and its parent's id detail.parent. A context can follow a tag, given by its path such as Home/Garden with its filter group, which brings the tasks with that tag or any tag inside it, or an open task with subtasks, which brings it and every task under it; done tasks come only when the plugin's Include done tasks setting is on.";
+
 export const x_tasks_plugin = define_plugin<ContextPluginApi>({
   ...x_tasks_manifest,
   start: (context) =>
     context.provide("collector", "x-tasks", {
       label: "X-Tasks",
       kinds: ["task"],
+      guidance: x_tasks_guidance,
+      own_words: true,
       search: async (query) => {
         const tasks = await list_x_tasks(context.settings());
         return tasks
@@ -253,12 +259,18 @@ export function html_text(html: string): string {
     .trim();
 }
 
+// How Trilium works, as its collector reads it, for the assistant's specialist for it.
+export const trilium_guidance =
+  "Trilium holds the user's notes in a tree. A search goes to Trilium's own search and gives at most 30 notes, so its syntax works: plain words match a note's title and text, and #label or #label=value finds notes by a label. A note's source_id is its note id, the last part of a Trilium link; reading one gives its title and when it last changed, never its text. It has nothing a context can follow.";
+
 export const trilium_plugin = define_plugin<ContextPluginApi>({
   ...trilium_manifest,
   start: (context) =>
     context.provide("collector", "trilium", {
       label: "Trilium",
       kinds: ["note"],
+      guidance: trilium_guidance,
+      own_words: true,
       search: async (query) => {
         const settings = context.settings();
         const address = server_of(settings, "Trilium");

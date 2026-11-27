@@ -74,6 +74,10 @@ export interface Collector {
   content?: (source_ids: string[]) => Promise<Record<string, string>>;
   // Marked for hosted engines and trust on its own rather than with its plugin, as each app the item calls read is.
   marked_alone?: boolean;
+  // How its app works, in a few plain lines, for the assistant's specialist for it; fenced as outside data unless own_words.
+  guidance?: string;
+  // True when the guidance is the plugin author's own words, as for CODEX's bundled collectors.
+  own_words?: boolean;
 }
 
 // A collector as the page and other programs see it.

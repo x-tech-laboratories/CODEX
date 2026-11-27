@@ -129,6 +129,7 @@ export const files_plugin = define_plugin<ContextPluginApi>({
     context.provide("collector", "files", {
       label: "Files",
       kinds: ["file", "folder"],
+      own_words: true,
       search: (query) => find_files(folders_of(context.settings()), query, Number(context.settings().depth) || 6),
       resolve: look_up_files,
       content: read_text_files,

@@ -11,6 +11,7 @@ import { Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 
 import type { ItemSourceSummary } from "../../shared/sources/model.ts";
 import { attempt, calls, data_watch, succeeds, use_data } from "../api.ts";
+import { GuidanceField } from "../guidance/GuidanceField.tsx";
 import { SourceMarks } from "../privacy/PrivacySettings.tsx";
 
 // ── Form ─────────────────────────────────────────────────────────────────────
@@ -106,6 +107,7 @@ function SourceDialogBody({ source }: { source: ItemSourceSummary }) {
       </form>
       <SourceStatus id={source.id} />
       <SourceMarks plugin_id={source.mark_key} />
+      <GuidanceField source={source.collector} />
       <SettingRow label="Remove" hint="Stop reading this app.">
         <button type="button" className="danger" onClick={remove}>Remove…</button>
       </SettingRow>

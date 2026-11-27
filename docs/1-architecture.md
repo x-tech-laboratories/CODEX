@@ -739,8 +739,8 @@ variables before `move_mcp_server_here` runs.
 
 ### Specialists
 
-Built 2026-11-27 as the first slice of doc 4's step 10: tool plugins (MCP servers among them) as specialists; collectors
-and CODEX's own calls stay as they were. **Why:** with the owner's MCP servers connected, every tool described is about
+Built 2026-11-27 as the first two slices of doc 4's step 10: tool plugins (MCP servers among them) and then the source
+apps' collectors as specialists, each told how its app works; CODEX's own calls stay with the orchestrator. **Why:** with the owner's MCP servers connected, every tool described is about
 92,000 tokens, so a gpt-oss-20b at 32,768 tokens got only the core set and could not use those apps at all;
 SmartHarness measured the same split on a 4B model at 0/66 tasks with one flat list of 116 tools against 54/66 with
 specialists (its doc 1, "Agents").
@@ -755,6 +755,32 @@ specialists (its doc 1, "Agents").
   answers, gives the plugin's own `description` fenced unless `own_words`, lists up to 30 of its tools by name, says
   whether some change something or send outside, and that the specialist sees nothing of the conversation but the
   user's latest message. The run's instructions say what `ask_` tools are.
+- **Source apps.** Each collector running that can search, resolve or list feeds, other than CODEX's own conversations,
+  blueprints and findings (`open_collector_sources` in `run.ts`, passed as the `ToolContext`'s `collectors`), gets an
+  `ask_<label>` tool too (`collector_groups`), named after the plugins' asks so a plugin of the same label keeps its name
+  and the app's takes the hash. Its group holds the read calls the app answers and the run is offered:
+  `search_collector`, `get_source_item` and `list_collector_feeds` (`collector_reads`; nothing lists a feed's items
+  without following it, so there is no fourth). Once any app has an ask, those three calls leave the `specialists`
+  view's full and core sets and join `delegated`, so the Automatic rule weighs them as it weighs plugin tools; with the
+  view not chosen nothing changes. The ask's description says what it can read, that it answers with each item's
+  `source_id`, kind, title and details as `add_item` takes them, and that it changes nothing: `add_item`, `follow_feed`
+  and every other change stay with the orchestrator, which adds what the specialist reported. Its specialist's child
+  context has `only` those calls and `bound_collector` set, so their schemas lose `collector` and every call reads that
+  app whatever it names; `add_item`, other calls and every `ask_` answer "There is no tool named …". Its reads go through
+  the same `run` as the orchestrator's (screening by the app's own marks, `marked_alone` included, tainting through
+  `brings_outside_content`, the reads kept as evidence), count toward `max_calls_here` like plugin tool calls, and its
+  answer is noted as the app's source and lowers the run unless the app is marked trusted. A hosted engine gets no ask
+  for an app not marked for it, and the run's instructions say to ask an app's specialist when offered one.
+- **Guidance.** Each group carries a `Guidance`: what the plugin or app says of how it works (`guidance` on a
+  `ToolPlugin` or `Collector`, the author's own words when `own_words`, else fenced), then the user's. An MCP server's
+  `instructions` from its initialize answer are that text, kept on its record (`instructions`, capped at 2,000
+  characters) when its tools are listed and fenced like its descriptions; the bundled X-Tasks, Trilium and Web plugins
+  give guidance of their own written from what their code does. The user's is Markdown in each tool plugin's and source
+  app's dialog under Plugins (`GuidanceField`, an X-Libs `RichText`), kept by source in the synced, user-only setting
+  `plugin_guidance` (`set_plugin_guidance`, page-only, at most 4,000 characters), and holds where the two differ. The
+  specialist's instructions get both whole (`guidance_text`); the run's own instructions get each offered plugin's and
+  app's shortened to 300 characters a part (`guidance_part`), whether or not the engine then chooses specialists, since
+  that choice is made inside the engine; the `ask_` descriptions add none.
 - **Choosing.** `with_specialists` (`direct.ts`) gives the engine the `specialists` view or the plain one, by the
   engine's **Specialists** setting (`specialists`: `auto`, `on`, `off`, default `auto`, in all three engine manifests,
   so it can be declared like `tool_set`): `on` always, `off` never, `auto` when `delegated`'s definitions and the
@@ -777,8 +803,8 @@ specialists (its doc 1, "Agents").
   and what it read lowers the run asking it; the answer is noted on the screen as the plugin's source (`tool:<key>`), so
   the reply's `sources`, the hosted log's counts and later replays carry it, and it lowers the run unless the plugin is
   marked trusted. A hosted engine is offered no `ask_` tool for a plugin it is not offered.
-- **Limits.** A specialist takes at most 8 model rounds (fewer when a background job allows fewer) and 12 plugin tool
-  calls (`specialist_limits`, `max_calls_here`); its calls count toward the run's `max_plugin_calls` (`used`), and its
+- **Limits.** A specialist takes at most 8 model rounds (fewer when a background job allows fewer) and 12 tool calls,
+  plugin tools or an app's reads (`specialist_limits`, `max_calls_here`); its calls count toward the run's `max_plugin_calls` (`used`), and its
   usage events add to the run's rounds and tokens, so a background job's limits stop the whole run. The run's abort
   signal stops it.
 - **The record.** The ask's `ToolCallRecord` holds its specialist's calls in `calls`, each with its outcome, proposal

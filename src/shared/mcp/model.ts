@@ -63,8 +63,16 @@ export interface McpServerRecord {
   device: string;
   enabled: boolean;
   tools: McpToolRecord[];
+  // What the server said of how to use it when its tools were last listed, its own words; left out for nothing.
+  instructions?: string;
   // When its tools were last listed.
   listed_at: string;
+}
+
+// What a server answers when its tools are listed: the tools, and its instructions, empty for none.
+export interface McpListing {
+  tools: McpToolRecord[];
+  instructions: string;
 }
 
 // What the page sends to add or change a server; a token left null keeps the one stored.
