@@ -8,7 +8,8 @@ import { create_plugin_host, type Plugin, type PluginHost, type PluginRecords, t
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { blueprints_plugin } from "../blueprints/collector.ts";
-import { with_declared, without_declared } from "../declared/current.ts";
+import { with_declared, without_declared, declarations } from "../declared/current.ts";
+import { chosen_models } from "../engines/choices.ts";
 import { conversations_plugin } from "../conversations/collector.ts";
 import { findings_plugin } from "../interests/collector.ts";
 import type { Embedder } from "../embedders/embedder.ts";
@@ -36,10 +37,11 @@ export function plugin_records(database: SqlDatabase): PluginRecords {
   return saved && typeof saved === "object" && !Array.isArray(saved) ? (saved as PluginRecords) : {};
 }
 
-// The declared plugins are laid over what is stored as it is read, and put back as stored before anything is written.
+// The declared plugins are laid over what is stored as it is read, with the models chosen for them on this device, and
+// put back as stored before anything is written.
 function settings_storage(database: SqlDatabase): PluginStorage {
   return {
-    read: () => with_declared(plugin_records(database)),
+    read: () => with_declared(plugin_records(database), declarations(), chosen_models(database)),
     write: (records) => settings_feature.methods.set_setting(database, plugins_setting, without_declared(records, plugin_records(database))),
   };
 }

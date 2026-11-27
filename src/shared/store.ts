@@ -15,6 +15,7 @@ import { bundled_manifests } from "./collectors/manifests.ts";
 import { blueprints_feature } from "./blueprints/store.ts";
 import { contexts_feature } from "./contexts/store.ts";
 import { declared_feature } from "./declared/store.ts";
+import { engines_feature } from "./engines/store.ts";
 import { assistant_host, use_assistant_host, type AssistantHost } from "./conversations/host.ts";
 import { conversations_feature } from "./conversations/store.ts";
 import { graph_feature } from "./graph/store.ts";
@@ -41,7 +42,7 @@ import { mcp_feature } from "./mcp/store.ts";
 
 // ── Features ─────────────────────────────────────────────────────────────────
 
-export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature, jobs_feature, maintenance_feature, inbox_feature, tools_feature, mcp_feature, mood_feature, interests_feature, declared_feature, guidance_feature];
+export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature, jobs_feature, maintenance_feature, inbox_feature, tools_feature, mcp_feature, mood_feature, interests_feature, declared_feature, guidance_feature, engines_feature];
 
 export const sync_engine = create_sync_engine({ tables: features.flatMap((feature) => feature.tables), after_apply: forget_synced_changes });
 
@@ -91,7 +92,8 @@ const all_methods = {
     typeof mood_feature.methods &
     typeof interests_feature.methods &
     typeof declared_feature.methods &
-    typeof guidance_feature.methods),
+    typeof guidance_feature.methods &
+    typeof engines_feature.methods),
   // Every setting, the ones never set at their defaults, with plugin keys and apps' and MCP servers' tokens hidden from the page and other programs.
   get_settings: (database: SqlDatabase): Record<string, unknown> => {
     const settings: Record<string, unknown> = { ...setting_defaults, ...settings_feature.methods.get_settings(database) };

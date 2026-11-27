@@ -182,6 +182,18 @@ export function device_id_of(database: SqlDatabase): string {
   return db.select({ value: job_device.value }).from(job_device).where(eq(job_device.key, device_id_key)).get()!.value;
 }
 
+// A setting of this device alone, never synced, such as a model chosen over the one its configuration declares; empty when unset.
+export function device_value(database: SqlDatabase, key: string): string {
+  return drizzle_of(database).select({ value: job_device.value }).from(job_device).where(eq(job_device.key, key)).get()?.value ?? "";
+}
+
+// Sets a setting of this device alone; an empty value removes it.
+export function set_device_value(database: SqlDatabase, key: string, value: string): void {
+  const db = drizzle_of(database);
+  if (!value) db.delete(job_device).where(eq(job_device.key, key)).run();
+  else db.insert(job_device).values({ key, value }).onConflictDoUpdate({ target: job_device.key, set: { value } }).run();
+}
+
 // Says this device can run background work, under its name now; the first to start with none chosen becomes the one.
 export function register_device(database: SqlDatabase, name: string, kind: BackgroundDevice["kind"], now: number): string {
   const id = device_id_of(database);

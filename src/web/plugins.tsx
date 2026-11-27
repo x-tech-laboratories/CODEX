@@ -22,6 +22,7 @@ import { CollectorGuidance } from "./guidance/GuidanceField.tsx";
 import { SourceMarks } from "./privacy/PrivacySettings.tsx";
 import { ItemSourceRows } from "./sources/ItemSources.tsx";
 import { McpServerRows } from "./mcp/McpServers.tsx";
+import { EngineSettings } from "./engines/ModelPicker.tsx";
 import { OtherToolPluginRows, ToolPluginSettings } from "./tools/ToolSettings.tsx";
 import { item_sources_plugin_id } from "../shared/sources/model.ts";
 
@@ -84,7 +85,13 @@ function Rows({ host, ids, with_marks = false }: { host: PluginHost; ids: Set<st
         const status = declared_plugin ? (declared_plugin.problems.length > 0 ? "Not set up" : "Set by this computer") : status_of(manifest, state, host.settings(manifest.id));
         return (
           <SettingsDialogRow key={manifest.id} name={manifest.name} status={status} about={manifest.description}>
-            {declared_plugin ? <DeclaredPluginSettings manifest={manifest} declared={declared_plugin} /> : <PluginSettings host={host} plugin_id={manifest.id} heading={null} />}
+            {declared_plugin ? (
+              <DeclaredPluginSettings manifest={manifest} declared={declared_plugin} />
+            ) : engine_ids.has(manifest.id) ? (
+              <EngineSettings host={host} manifest={manifest} />
+            ) : (
+              <PluginSettings host={host} plugin_id={manifest.id} heading={null} />
+            )}
             {with_marks && tool_ids.has(manifest.id) && state === "running" && <ToolPluginSettings plugin_id={manifest.id} />}
             {with_marks && manifest.id !== item_sources_plugin_id && !tool_ids.has(manifest.id) && manifest.id !== mcp_plugin_id && <SourceMarks plugin_id={manifest.id} />}
             {with_marks && manifest.id !== item_sources_plugin_id && !tool_ids.has(manifest.id) && manifest.id !== mcp_plugin_id && state === "running" && <CollectorGuidance plugin_id={manifest.id} />}
@@ -117,7 +124,8 @@ export function CollectorRows() {
   );
 }
 
-// A row for each engine, each opening its own dialog with the engine's model, endpoint and key command.
+// A row for each engine, each opening its own dialog with the engine's model, chosen from what its endpoint lists,
+// endpoint and key command.
 export function EngineRows() {
   const host = use_page_plugins();
   return host ? <Rows host={host} ids={engine_ids} /> : <Skeleton lines={2} />;

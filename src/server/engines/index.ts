@@ -7,11 +7,12 @@ import { define_plugin, type SettingValues } from "@x-tech-laboratories/x-libs/p
 
 import type { ContextPlugin, ContextPluginApi } from "../../shared/collectors/host.ts";
 import { direct_defaults, run_direct, type ChatModel } from "../../shared/engines/direct.ts";
-import type { Engine, EngineEvent, EngineRequest, SpecialistSet, ToolSet } from "../../shared/engines/engine.ts";
+import type { Engine, EngineEvent, EngineRequest, ModelListing, SpecialistSet, ToolSet } from "../../shared/engines/engine.ts";
 import { is_local_endpoint } from "../../shared/engines/hosting.ts";
 import { anthropic_engine_id, anthropic_manifest, openai_engine_id, openai_manifest } from "../../shared/engines/manifests.ts";
 import { AnthropicModel } from "./anthropic.ts";
 import { explain_failure, key_command_failure } from "./errors.ts";
+import { list_endpoint_models } from "./models.ts";
 import { OpenAiModel } from "./openai.ts";
 import { plugin_key, read_secret, type SecretReader } from "./secret_command.ts";
 
@@ -23,6 +24,24 @@ export type ModelMaker = (settings: SettingValues, api_key: string) => ChatModel
 export const make_anthropic: ModelMaker = (settings, api_key) => new AnthropicModel({ model: String(settings.model ?? ""), api_key });
 
 export const make_openai: ModelMaker = (settings, api_key) => new OpenAiModel({ endpoint: String(settings.endpoint ?? "").trim(), model: String(settings.model ?? ""), api_key });
+
+// How an engine lists the models its endpoint offers, given its settings and its key.
+export type ModelLister = (settings: SettingValues, api_key: string, signal: AbortSignal) => Promise<ModelListing>;
+
+export const list_openai_models: ModelLister = (settings, api_key, signal) =>
+  list_endpoint_models(String(settings.endpoint ?? "").trim() || default_endpoints["OpenAI-compatible"]!, api_key, signal);
+
+// The models an engine's endpoint offers, its key read as for a run; a key that cannot be read is no list.
+export async function listed_models(plugin_id: string, values: SettingValues, list: ModelLister, read: SecretReader, signal: AbortSignal): Promise<ModelListing> {
+  let api_key: string;
+  try {
+    api_key = await plugin_key(plugin_id, String(values.api_key_command ?? ""), read);
+  } catch (error) {
+    return { models: [], problem: key_command_failure(error).message };
+  }
+  const listing = await list(values, api_key, signal);
+  return api_key.length < 4 ? listing : { ...listing, problem: listing.problem.split(api_key).join("[hidden]") };
+}
 
 // Anthropic is always hosted; an OpenAI-compatible endpoint is local when its host is loopback or a private address.
 export const anthropic_is_local = (): boolean => false;
@@ -55,12 +74,14 @@ export function direct_engine(
   read: SecretReader = read_secret,
   is_local: (settings: SettingValues) => boolean = () => false,
   plugin_id = "",
+  list?: ModelLister,
 ): Engine {
   const model = () => String(settings().model ?? "").trim();
   return {
     label,
     model,
     is_local: () => is_local(settings()),
+    ...(list ? { list_models: (signal: AbortSignal) => listed_models(plugin_id, settings(), list, read, signal) } : {}),
     async *run(request: EngineRequest, signal: AbortSignal): AsyncGenerator<EngineEvent> {
       const values = settings();
       if (!model()) {
@@ -99,10 +120,10 @@ export function anthropic_plugin(make: ModelMaker = make_anthropic, read?: Secre
   });
 }
 
-export function openai_plugin(make: ModelMaker = make_openai, read?: SecretReader): ContextPlugin {
+export function openai_plugin(make: ModelMaker = make_openai, read?: SecretReader, list: ModelLister = list_openai_models): ContextPlugin {
   return define_plugin<ContextPluginApi>({
     ...openai_manifest,
-    start: (context) => context.provide("engine", openai_engine_id, direct_engine("OpenAI-compatible", () => context.settings(), make, read, openai_is_local, openai_manifest.id)),
+    start: (context) => context.provide("engine", openai_engine_id, direct_engine("OpenAI-compatible", () => context.settings(), make, read, openai_is_local, openai_manifest.id, list)),
   });
 }
 

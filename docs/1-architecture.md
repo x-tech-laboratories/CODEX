@@ -369,6 +369,12 @@ naming the file and never its content). Nothing declared is stored or synced:
   empty, and the plugin says it is not set up. An engine's or the embedder's key comes from `plugin_key`: the declared
   `key_file`, read for each run or batch, else the key command; a file that cannot be read fails the run with its own
   plain words (`DeclaredKeyFailure`).
+- **A declared engine's model** is only its default. `set_engine_model` keeps the owner's choice for a declared
+  engine in `job_device`, this device's own unsynced table (`engine_model:<plugin id>`, `src/shared/engines/choices.ts`),
+  and the plugin host's storage lays it over the declared `model` as it reads (`with_declared`'s `chosen_models`), so
+  it holds from the next reply and after a restart; choosing the declared model again, or an empty one, removes it.
+  No other declared field can be overridden, and no declared option turns this on: the model's name only picks among
+  what the declared endpoint serves with the declared key.
 - **Choices**: the declared engine is only where the choice starts: `find_engine` takes the synced `engine` setting
   when the user has chosen one, else the declared engine (a lone declared engine when none is named), and Answering
   lists it with every other engine. `find_embedder` takes the declared embedder over the synced setting.
@@ -453,6 +459,26 @@ an endpoint that cannot be reached or does not answer in time (named by host and
 unknown model, a refused key, rate limiting, a key command that failed (never what it printed) and a reply cut off at
 its limit (or one that spent it all thinking); anything else says the engine could not answer, with the raw text behind
 Details. Text shaped like an API key, and the key itself, never reach a message.
+
+Choosing the model (`src/shared/engines/store.ts`, the `engines` feature, with no tables): an `Engine` may give
+`list_models(signal)`, which `codex.openai` and `codex.smartharness` do with `list_endpoint_models`
+(`src/server/engines/models.ts`): `GET <endpoint>/models` (OpenAI's own when the endpoint is empty), the key read as
+for a run (`plugin_key`) and sent only as a bearer token, five seconds at most, at most 500 ids. Each model keeps a
+`state` when the server says one: a llama.cpp router's `status` (`{ value: "loaded" | "loading" | "unloaded" |
+"failed" }`, or a plain word), or a `loaded` switch; empty otherwise. Any failure (unreachable, a refused key, another
+status, not `{ data: [{ id }] }`, an empty list, a key command that fails) is an empty list with a plain `problem`
+naming the endpoint by host and port, never the key. `list_engine_models(plugin_id)` gives the list with the model in
+use and the declared one; it is open to tokens like `get_assistant_status`, and no engine is offered it.
+`set_engine_model(plugin_id, model)` is page-only: one line of at most 200 characters, kept in the engine's synced
+settings for the user's own engine, or on this device for a declared one (under Declared configuration). The page
+writes the user's own engine's model through its plugin host (`choose_model`), as every other plugin setting, so the
+records it writes whole keep it. Settings shows the engines' rows with `EngineSettings` (`src/web/engines/`), laid out
+as X-Libs `PluginSettings` but with Model as an X-Libs `ComboField` over the list, kept on Enter, a pick or leaving
+the field; a declared engine's row shows its model the same way, with a button back to the declared one. The pane's
+head (`PaneModel`) shows a compact `Select` of the list beside the engine when there is one, the model as text when
+not, and, while the chosen model is listed as not loaded (or was just chosen where the server does not say), that the
+first reply may take a minute or more to load it. The list is asked when the model changes and when a reply ends, not
+on every change. Each kept answer records its engine and model, which the transcript shows under it.
 
 ### The SmartHarness engine
 

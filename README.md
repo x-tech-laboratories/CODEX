@@ -137,6 +137,14 @@ and fill in its settings.
 | OpenAI-compatible | the endpoint, ending in `/v1` (empty for OpenAI's own), the model's name there, the context size, the tools offered, and an API key command |
 | SmartHarness (experimental) | off until its row is turned on; the endpoint and model as for OpenAI-compatible, the context size, the longest step, levels of subtasks, most tasks, tool calls a task, the tools offered, and an API key command |
 
+**Choosing the model.** For OpenAI-compatible and SmartHarness the **Model** setting lists the models the endpoint
+offers (asked at its `/models` with the engine's own key, which is never shown) and still takes any name typed, for an
+endpoint that lists none. The pane's head shows the same list beside the engine as a compact picker: a model picked
+there answers from the next reply on, and is kept. A llama.cpp router (`llama-server --models-preset <file>`) holds
+several models and loads the one a request names, unloading the last, so the list says which is loaded, and the pane
+says the first reply after a switch may take a minute or more while the model loads. Each reply names the engine and
+model that wrote it, so a switch shows in the conversation.
+
 Embedders, which give the search index its sense of meaning, are plugins too; see [Search](#search).
 
 The **API key command** is a program whose first line of output is the key, such as `pass show anthropic/api-key`. It
@@ -502,7 +510,9 @@ names none; a dev run with its own profile reads none) and, for the server, the 
   logs or any call's answer. A file that is missing or cannot be read is said on its entry and leaves the rest working.
 - A declared entry is this device's alone: never synced and never stored in the settings. Settings shows it as "Set by
   this computer's configuration", with its settings and "From a file" for each secret, and does not let you change or
-  remove it; your own entries beside it keep working. A declared plugin is on, the declared engine answers until you choose another under
+  remove it, but for a declared engine's model: the declared model is only the default, and one you choose under
+  Settings or in the pane holds over it on this device alone, never synced, and survives restarts (**Use** with the
+  declared model's name goes back to it); the endpoint, key and the rest stay as declared. Your own entries beside it keep working. A declared plugin is on, the declared engine answers until you choose another under
   **Settings → Assistant → Answering** (your choice holds over it from then on), the declared embedder is the one in use, and a declared MCP server's tools are listed when the file is read and with **Refresh**.
 - Everything else holds as for your own entries: the marks start off (set them in Settings), an MCP server's tools
   that change something wait at `proposal`, and a hosted engine is screened. Only the page reads the declarations
