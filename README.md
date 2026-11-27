@@ -230,7 +230,8 @@ no call to the engine while nothing changed.
 
 **Curiosity.** The assistant can keep interests of its own: topics it would like to read about on the public web for
 its own knowledge, such as one a conversation showed you care about. In a conversation it may propose one
-(`propose_interest`); it only ever proposes. Under **Settings → Assistant → Interests** you see each with its state
+(`propose_interest`); it only ever proposes, and a proposed one waits in the Inbox. Under **Settings → Assistant →
+Interests** you see each with its state
 (proposed, accepted, paused, dropped), who made it and from which conversation; **Accept…** shows the exact topic, the
 text a search engine is sent, and lets you edit it first, whatever the Action policy says; you can also add your own,
 pause and drop them, and set the most accepted at once (five unless changed). With **Research interests** on under
@@ -247,8 +248,10 @@ A research run may propose one new interest, which waits for you like any other.
 
 **The Inbox** in the sidebar, with its count, lists everything that waits for you, newest first: changes proposed in
 conversations and jobs, with why and from what; proposed links and entities; proposed blueprints and changes to them;
-job runs that failed or stopped at a limit; and the day's digest of background work. Each opens its conversation or page, and each can be approved or
-accepted, rejected, or for a run set aside, in place; tick several to decide them at once after a confirmation. On the
+interests the assistant proposed; job runs that failed or stopped at a limit; and the day's digest of background work.
+Each opens its conversation or page, and each can be approved or accepted, rejected, or for a run set aside, in place;
+tick several to decide them at once after a confirmation. A proposed interest is never ticked: **Accept…** opens the
+same dialog as under Settings, showing the exact topic sent to a search engine, and **Drop** drops it. On the
 desktop the tray shows the count too, and while the window is not in front a notification says when a job left
 something waiting (**Settings → This device → Notifications**).
 

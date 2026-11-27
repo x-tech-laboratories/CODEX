@@ -496,6 +496,12 @@
   margin-top: var(--space-1);
 }
 
+/* An entry decided only on its own, such as a proposed interest, keeps the tick box's room so the icons line up. */
+.inbox-no-pick {
+  flex: none;
+  inline-size: 13px;
+}
+
 .mcp-command {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

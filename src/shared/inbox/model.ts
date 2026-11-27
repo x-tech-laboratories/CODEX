@@ -4,20 +4,21 @@
 
 import type { BlueprintProposal } from "../blueprints/model.ts";
 import type { GraphEntity, ProposedLink } from "../graph/model.ts";
+import type { Interest } from "../interests/model.ts";
 import type { JobRun } from "../jobs/model.ts";
 import type { Proposal } from "../policy/model.ts";
 
 // ── Entries ──────────────────────────────────────────────────────────────────
 
-// A proposed change, a proposed graph link or entity, a proposed blueprint or change to one, a job's run that ended
-// badly, or the day's digest of background work.
-export type InboxKind = "change" | "link" | "entity" | "blueprint" | "blueprint_change" | "job_run" | "digest";
+// A proposed change, a proposed graph link or entity, a proposed blueprint or change to one, a proposed interest, a
+// job's run that ended badly, or the day's digest of background work.
+export type InboxKind = "change" | "link" | "entity" | "blueprint" | "blueprint_change" | "interest" | "job_run" | "digest";
 
 export interface InboxEntry {
   // The kind and the id, unique across the Inbox.
   key: string;
   kind: InboxKind;
-  // The proposal's, link's, entity's, blueprint's, change's or run's id.
+  // The proposal's, link's, entity's, blueprint's, change's, interest's or run's id.
   id: string;
   // What it is, in plain words.
   title: string;
@@ -35,5 +36,6 @@ export interface InboxEntry {
   link?: ProposedLink;
   entity?: GraphEntity;
   blueprint?: BlueprintProposal;
+  interest?: Interest;
   run?: JobRun;
 }

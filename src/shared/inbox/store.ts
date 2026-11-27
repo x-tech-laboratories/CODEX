@@ -1,7 +1,7 @@
 // The Inbox: everything across CODEX that waits on the user, newest first: the changes conversations and jobs proposed,
 // with their evidence, and those background maintenance proposed; the graph's proposed links and entities; proposed
-// blueprints and changes to them; the background runs that ended in an error or at a limit; and the daily digest of
-// background work. It only reads; deciding stays with each feature's page-only calls.
+// blueprints and changes to them; the interests the assistant proposed; the background runs that ended in an error or
+// at a limit; and the daily digest of background work. It only reads; deciding stays with each feature's page-only calls.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -14,6 +14,7 @@ import { conversation_route } from "../conversations/model.ts";
 import { summaries_of } from "../conversations/records.ts";
 import { define_feature, drizzle_of } from "../feature.ts";
 import { list_graph_proposals } from "../graph/reading.ts";
+import { list_interest_rows } from "../interests/records.ts";
 import { as_run } from "../jobs/records.ts";
 import { maintenance_conversation_id, maintenance_prefix } from "../jobs/model.ts";
 import { job_runs, jobs } from "../jobs/schema.ts";
@@ -60,6 +61,14 @@ function list_inbox(database: SqlDatabase): InboxEntry[] {
     entries.push({ key: `${kind}:${blueprint.id}`, kind, id: blueprint.id, title, detail: blueprint.kind === "new" ? blueprint.applies_when : blueprint.reason, made_by: maker(blueprint), created_at: blueprint.created_at, conversation_id: blueprint.conversation_id, conversation_title: "", job_title: job_conversations.get(blueprint.conversation_id) ?? "", route: blueprint_route(blueprint.blueprint_id), blueprint });
   }
 
+  // A proposed interest waits for the user to read the exact topic; it is accepted only in its dialog, never here.
+  for (const interest of list_interest_rows(database)) {
+    if (interest.state !== "proposed") continue;
+    if (interest.conversation_id) conversation_ids.add(interest.conversation_id);
+    const by = interest.made_by === "engine" ? maker({ made_by: "engine", engine: interest.engine, model: interest.model }) : interest.made_by === "program" ? "a program" : "you";
+    entries.push({ key: `interest:${interest.id}`, kind: "interest", id: interest.id, title: `Interest: ${interest.topic}`, detail: interest.reason, made_by: by, created_at: interest.created_at, conversation_id: interest.conversation_id, conversation_title: "", job_title: "", route: "#/settings", interest });
+  }
+
   const failed = db.select().from(job_runs).where(and(inArray(job_runs.outcome, ["error", "limit"]), eq(job_runs.dismissed_at, ""))).orderBy(desc(job_runs.started_at)).all().map(as_run);
   for (const run of failed) {
     if (run.conversation_id) conversation_ids.add(run.conversation_id);
@@ -94,7 +103,7 @@ export const inbox_feature = define_feature({
   api: {
     list_inbox: {
       description:
-        "Lists everything that waits for the user, newest first: changes the assistant proposed in conversations and background jobs, with their evidence; proposed links and entities of the graph; proposed blueprints and changes to them; background runs that ended in an error or at a limit; and the daily digest of what background maintenance did. Each names what it is, who made it and where it opens.",
+        "Lists everything that waits for the user, newest first: changes the assistant proposed in conversations and background jobs, with their evidence; proposed links and entities of the graph; proposed blueprints and changes to them; interests the assistant proposed to research, each accepted only after reading its exact topic; background runs that ended in an error or at a limit; and the daily digest of what background maintenance did. Each names what it is, who made it and where it opens.",
       params: [],
     },
     get_inbox_count: { description: "Counts what waits for the user in the Inbox.", params: [] },
