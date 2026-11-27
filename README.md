@@ -14,7 +14,12 @@ engines and the action policy are back; the Inbox, background queue and knowledg
 [docs/4-merge-with-x-context.md](docs/4-merge-with-x-context.md) sets out. Until then the rest of the old assistant's
 code sits in [`legacy/`](legacy/README.md), where nothing builds or tests it.
 
-- **Contexts** nest, so Home holds Kitchen and Garden. Each has notes in Markdown and its items grouped by kind, each
+- **Global** is the root of the tree: every other context sits under it, it is open whenever no other context is, and
+  it cannot be moved, archived or deleted, though it can be renamed. Its notes are your standing guidance, given to the
+  assistant in every conversation wherever it was started (long notes are cut short there, with a pointer to the
+  rest). Conversations started with nothing else open are Global's, items can be kept in it directly as a catch-all,
+  and in Global search and the assistant cover everything.
+- **Contexts** nest, so Global holds Home, and Home holds Kitchen and Garden. Each has notes in Markdown and its items grouped by kind, each
   with a note on why it is there and the other contexts that hold it too; a task shows an empty circle while open and a
   ticked one once done. **Move to…** and **Also add to…** on any
   item's menu move it to another context or put it in more; the conversations with the assistant are items too.
@@ -25,7 +30,7 @@ code sits in [`legacy/`](legacy/README.md), where nothing builds or tests it.
   by their handle and resize from their corner (or move with the arrow keys, and resize with Shift and the arrows).
   **Grouped** puts a card per kind instead, such as one holding every task and one every link, each listing its items.
   Where each card sits is kept with the context, for each view, and syncs, but leaves no version in History.
-- **The first page** searches everything kept, and shows each context with what is inside it.
+- **The first page** searches everything kept, and shows each context directly under Global with what is inside it.
 
 ## Search
 
@@ -96,7 +101,7 @@ several. The pane shows the context's most recently used conversation, leaving a
 title under the face opens a list of the others, showing which have a reply being written, with the jobs' under their
 own heading, and **+** starts a new one. A reply keeps being written while you look
 at another. Its ⋮ menu renames, moves, adds to more contexts, copies the conversation's `codex://conversation/<id>`
-link, or deletes it. With no context open, the pane holds the conversations that are in no context. Taking a
+link, or deletes it. With no other context open, the pane is on Global and holds Global's conversations. Taking a
 conversation out of the last context holding it deletes it, after asking; deleting a context deletes the conversations
 no other context holds.
 
@@ -197,13 +202,13 @@ a blueprint, a title, a sentence saying when it applies, and the rules and steps
 a proposed change to one, shows as a card in its conversation and on the **Blueprints** page with its whole text, or,
 for a change, what it adds and takes away, and does nothing until you **Accept** it; only you can, from CODEX's own
 page. Each time you send a message, CODEX itself matches it against the active blueprints that apply where you are
-(the open context, the contexts above it, and those that apply everywhere): by its words, and by meaning too once an
+(the open context and the contexts above it, up to Global, whose blueprints apply everywhere): by its words, and by meaning too once an
 embedder is set up, picking only those that stand out, at most three and about 4,000 characters. The ones that match
 are put in the assistant's instructions with a note above the reply saying which were recalled, and the assistant is
 asked to say which it follows. A blueprint is an item: it lists in its context with its own icon, moves like any other
 item, opens in the workspace at `codex://blueprint/<id>`, where you edit its title, "applies when" and steps, choose
 where it applies, retire it so it is no longer recalled, or delete it; History keeps each version. Those that apply
-everywhere are on the **Blueprints** page in the sidebar, and **New blueprint…** in a context's menu writes one there.
+everywhere, which are Global's, are on the **Blueprints** page in the sidebar, and **New blueprint…** in a context's menu writes one there.
 What you write or edit yourself is active at once; one added through a token or MCP is only proposed. A proposed
 blueprint written after reading another app's text carries that app as its source, so a hosted engine is not shown it
 until you accept it, after which it is your own.
@@ -531,6 +536,14 @@ context, its name, notes and the items it holds, is kept under **History**, wher
 deleted context brought back with its links to what still exists; a refresh is left out, since it changes only what
 the apps said.
 
+**Updating to Global** (2026-11-27): the first time an updated copy opens its data, it makes Global, puts every
+top-level context under it and moves the conversations and blueprints that were in no context into it; History shows
+Global as first seen and each context it took in as edited. Every device does the same on its own, and since Global's
+id is always `global`, sync merges them into one. A copy not yet updated keeps working: it sees Global as an ordinary
+top-level context holding everything, and a context it makes at the top level, or a conversation it starts with none
+open, lands in Global on the updated copies. Do not delete Global from a copy not yet updated, since that copy would
+delete everything inside it too (History can bring it back); update every device instead.
+
 ## Coming from X-Context
 
 X-Context was a separate application whose code became CODEX's skeleton on 2026-11-26; its repository no longer
@@ -552,6 +565,11 @@ claude mcp add --transport http codex https://<server>/api/mcp --header "Authori
 The desktop app serves the same tools on its own data once **Settings → MCP server** is on, at
 `http://127.0.0.1:3922/mcp`. `get_context` gives an AI client everything a context holds in one call. Plugin keys,
 such as a Trilium token, are left out of what the API and MCP read.
+
+Global's id is `global`. A call that takes a context, such as `send_message`, `list_conversations`, `add_context`,
+`move_context`, `add_blueprint` or `add_job`, still takes `null` where it used to mean "no context": `null` now means
+Global, so tokens, MCP clients and engines made before Global keep working. `remove_context`, `move_context` and
+`set_context_archived` refuse Global with a plain message.
 
 **Items for other apps.** Like every X-app, CODEX answers the read-only item calls of the Application Standard,
 so another app or an assistant reads it with the same code it reads any X-app with, a read-only token being enough:

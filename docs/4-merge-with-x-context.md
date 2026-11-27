@@ -7,14 +7,23 @@ The plan to make CODEX one application: a personal knowledge base, a knowledge m
 - **Gathers:** an engine reads notes, tasks, bookmarks, files, contacts and mail from the apps that hold them, through MCP, plugins and APIs.
 - **Relates:** it links related items and groups them into contexts, guided by the user.
 - **Learns:** a knowledge graph of its own, with embeddings and retrieval, holds what it has learned about the user's world.
-- **Works with the user:** conversations are items: a context holds as many as the user starts, listed with its other items, and conversations in no context are kept for when none is open; the assistant has a face and a mood.
+- **Works with the user:** conversations are items: a context holds as many as the user starts, listed with its other items, and those started with nothing else open are Global's; the assistant has a face and a mood.
 
 *Conversations are items by the owner's decision of 2026-11-26, replacing one conversation stream per context, and
 built the same day (doc 1, "Conversations and runs"): each is an item of kind `conversation` owned by CODEX, answered
 for by an internal collector, with a per-membership note, History of its memberships, "also in", search, and a
-`codex://conversation/<id>` link that opens it in the pane. It can be moved, sit in several contexts, or in none; the
+`codex://conversation/<id>` link that opens it in the pane. It can be moved or sit in several contexts; the
 pane shows the open context's most recently used one, with a switcher and New conversation. Removing a context deletes
 the conversations no other context holds.*
+
+*Global, decided by the owner and built 2026-11-27 (doc 1, "Global"): "no context" is gone. Global is the root of the
+tree, a context with the fixed id `global` that always exists and can be renamed but never moved, archived or deleted
+(the owner chose the name over "Home", which reads as living spaces). It is selected whenever nothing else is, holds the
+conversations started there and any item kept directly in it, and its notes are standing guidance in every
+conversation's instructions, cut short when long. In Global, search and the assistant cover everything; in any other
+context the scope stays that context and those under it. A new migration step makes it, puts the top-level contexts
+under it and moves what was in no context into it; every device does so on its own and sync merges them into one, and
+a copy not yet updated sees it as an ordinary context. Calls that took null for "no context" take it for Global.*
 - **Keeps itself up:** in idle time it re-reads the graph, researches, and proposes new links.
 - **Remembers how:** schedules for its own recurring jobs, and blueprints for workflows the user has taught it.
 
