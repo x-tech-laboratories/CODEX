@@ -38,7 +38,22 @@ buildNpmPackage {
   installPhase = ''
     runHook preInstall
 
+    # importNpmLock puts the original lock back, whose git entries npm would fetch again, so prune with its copy.
+    mv package.json package.json.orig
+    mv package-lock.json package-lock.json.orig
+    cp --no-preserve=mode $npmDeps/package.json $npmDeps/package-lock.json .
     npm prune --omit=dev --no-save --ignore-scripts
+    mv package.json.orig package.json
+    mv package-lock.json.orig package-lock.json
+    # A git or folder dependency is linked from its store path, where Node would look for its own dependencies, so copy
+    # it in; prune drops what only a linked package needs, so package.json also lists SmartHarness's own dependencies.
+    for link in node_modules/* node_modules/@*/*; do
+      if [ -L "$link" ]; then
+        target=$(readlink -f "$link")
+        rm "$link"
+        cp -r --no-preserve=mode "$target" "$link"
+      fi
+    done
     mkdir -p $out/lib/codex-desktop
     cp -r out package.json node_modules resources $out/lib/codex-desktop/
     install -Dm644 resources/icon.png $out/share/icons/hicolor/512x512/apps/codex.png
