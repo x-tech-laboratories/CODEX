@@ -68,6 +68,16 @@ describe("the assistant's settings", () => {
     expect(within(section("Plugins")).queryByText("Anthropic")).toBeNull();
   });
 
+  it("keep each reply's thinking until the user turns Keep thinking off", async () => {
+    const fixture = open_settings(true);
+
+    const keep = (await within(await waitFor(() => section("Engine"))).findByLabelText("Keep thinking")) as HTMLInputElement;
+    expect(keep.checked).toBe(true);
+    fireEvent.click(keep);
+
+    await waitFor(() => expect(fixture.calls.get_settings().keep_thinking).toBe(false));
+  });
+
   it("keep a chosen engine that is not running in the choice", async () => {
     const fixture = open_settings(false);
     fixture.calls.set_setting("engine", "gone");

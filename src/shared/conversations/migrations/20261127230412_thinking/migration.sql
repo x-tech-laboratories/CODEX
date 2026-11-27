@@ -1,0 +1,1 @@
+ALTER TABLE `conversation_messages` ADD `thinking` text DEFAULT '[]' NOT NULL;

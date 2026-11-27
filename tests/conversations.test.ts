@@ -64,7 +64,7 @@ describe("a conversation", () => {
     expect(answer).toMatchObject({ input_tokens: 100, output_tokens: 20, error: "" });
     // The call is kept where it was made: after "Looking", before " at it."
     expect(answer.tool_calls).toEqual([{ id: "t1", name: "list_contexts", arguments: {}, result: expect.stringContaining("Kitchen"), is_error: false, outcome: "ran", text_at: 7 }]);
-    expect(reply_parts(answer.text, answer.tool_calls).map((part) => ("call" in part ? part.call.id : part.text))).toEqual(["Looking", "t1", " at it."]);
+    expect(reply_parts(answer.text, answer.tool_calls).map((part) => ("call" in part ? part.call.id : "text" in part ? part.text : ""))).toEqual(["Looking", "t1", " at it."]);
     expect(fixture.events.map((event) => event.type)).toEqual(["started", "text", "tool_call", "tool_result", "text", "finished"]);
     expect(fixture.events.every((event) => event.run_id === run_id && event.conversation_id === conversation_id)).toBe(true);
     expect(fixture.requests[0]!.conversation).toEqual([{ role: "user", text: "What is here?" }]);
@@ -141,7 +141,7 @@ describe("a conversation", () => {
     expect(turns_of(fixture.database, id).map((turn) => turn.text)).toEqual(["One", "Two", "Half", "Three"]);
   });
 
-  it("shows a reasoning model's thinking while it writes, and keeps neither it nor sends it back, but keeps its notices and the failure's detail", async () => {
+  it("shows a reasoning model's thinking while it writes and keeps it without sending it back, with its notices and the failure's detail", async () => {
     const fixture = start_fixture();
     let peek!: () => void;
     const peeked = new Promise<void>((resolve) => (peek = resolve));
@@ -158,13 +158,13 @@ describe("a conversation", () => {
 
     const { conversation_id } = await fixture.calls.send_message(null, "Hi");
     await peeked;
-    expect(fixture.calls.get_conversation(conversation_id).run).toMatchObject({ reasoning: "Thinking it over.", notices: ["Your message was too long."] });
+    expect(fixture.calls.get_conversation(conversation_id).run).toMatchObject({ thinking: [{ text: "Thinking it over.", text_at: 0, calls_before: 0 }], notices: ["Your message was too long."] });
     release();
     await wait_for_runs();
 
     const answer = fixture.calls.get_conversation(conversation_id).messages.at(-1)!;
     expect(answer).toMatchObject({ text: "Half", error: "The engine could not answer.", error_detail: "500 out of memory", notices: ["Your message was too long."] });
-    expect(JSON.stringify(fixture.calls.get_conversation(conversation_id))).not.toContain("Thinking it over");
+    expect(answer.thinking).toEqual([{ text: "Thinking it over.", text_at: 0, calls_before: 0 }]);
     expect(fixture.events.map((event) => event.type)).toEqual(["started", "notice", "reasoning", "text", "finished"]);
     expect(fixture.events.at(-1)).toMatchObject({ error: "The engine could not answer.", error_detail: "500 out of memory" });
 
@@ -496,7 +496,7 @@ describe("what the engine is told", () => {
 
 describe("where a reply's tool calls show", () => {
   const call = (id: string, text_at?: number): ToolCallRecord => ({ id, name: "get_context", arguments: {}, result: "", is_error: false, outcome: "ran", ...(text_at === undefined ? {} : { text_at }) });
-  const read = (text: string, calls: ToolCallRecord[]) => reply_parts(text, calls).map((part) => ("call" in part ? `[${part.call.id}]` : part.text));
+  const read = (text: string, calls: ToolCallRecord[]) => reply_parts(text, calls).map((part) => ("call" in part ? `[${part.call.id}]` : "text" in part ? part.text : ""));
 
   it("cuts the text where each call was made, keeping calls made at one place in order", () => {
     expect(read("First. Then more.", [call("a", 6), call("b", 6), call("c", 17)])).toEqual(["First.", "[a]", "[b]", " Then more.", "[c]"]);

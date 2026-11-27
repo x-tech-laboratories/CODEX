@@ -7,7 +7,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { drizzle_of, new_id } from "../feature.ts";
 import { parse_sources, unrecorded_source } from "../privacy/sources.ts";
-import type { ConversationMessage, ToolCallRecord } from "./model.ts";
+import type { ConversationMessage, ThinkingPiece, ToolCallRecord } from "./model.ts";
 import { has_conversation, refresh_conversation_items } from "./records.ts";
 import { conversation_messages } from "./schema.ts";
 
@@ -31,6 +31,17 @@ function parsed_notices(text: string): string[] {
   }
 }
 
+// The stretches of thinking kept on a message, leaving out any not shaped as one.
+function parsed_thinking(text: string): ThinkingPiece[] {
+  try {
+    const value: unknown = JSON.parse(text);
+    if (!Array.isArray(value)) return [];
+    return value.filter((each): each is ThinkingPiece => typeof each?.text === "string" && typeof each.text_at === "number" && typeof each.calls_before === "number");
+  } catch {
+    return [];
+  }
+}
+
 export function list_messages(database: SqlDatabase, conversation_id: string): ConversationMessage[] {
   return drizzle_of(database)
     .select()
@@ -38,10 +49,10 @@ export function list_messages(database: SqlDatabase, conversation_id: string): C
     .where(eq(conversation_messages.conversation_id, conversation_id))
     .orderBy(asc(conversation_messages.created_at), asc(conversation_messages.id))
     .all()
-    .map((row) => ({ ...row, role: row.role as ConversationMessage["role"], tool_calls: parsed_calls(row.tool_calls), notices: parsed_notices(row.notices), sources: parse_sources(row.sources) }));
+    .map((row) => ({ ...row, role: row.role as ConversationMessage["role"], tool_calls: parsed_calls(row.tool_calls), notices: parsed_notices(row.notices), sources: parse_sources(row.sources), thinking: parsed_thinking(row.thinking) }));
 }
 
-export type NewMessage = Pick<ConversationMessage, "conversation_id" | "role" | "text"> & Partial<Pick<ConversationMessage, "engine" | "model" | "tool_calls" | "error" | "error_detail" | "notices" | "input_tokens" | "output_tokens" | "sources">>;
+export type NewMessage = Pick<ConversationMessage, "conversation_id" | "role" | "text"> & Partial<Pick<ConversationMessage, "engine" | "model" | "tool_calls" | "error" | "error_detail" | "notices" | "input_tokens" | "output_tokens" | "sources" | "thinking">>;
 
 // Adds a message after every one before it, even one written in the same millisecond; without sources given, its
 // sources count as not recorded. The conversation's item takes the new exchange.
@@ -61,11 +72,12 @@ export function add_message(database: SqlDatabase, message: NewMessage): Convers
     tool_calls: JSON.stringify(message.tool_calls ?? []),
     notices: JSON.stringify(message.notices ?? []),
     sources: JSON.stringify(message.sources ?? [unrecorded_source]),
+    thinking: JSON.stringify(message.thinking ?? []),
     created_at,
   };
   drizzle_of(database).insert(conversation_messages).values(row).run();
   refresh_conversation_items(database, has_conversation(database, message.conversation_id) ? [message.conversation_id] : []);
-  return { ...row, tool_calls: message.tool_calls ?? [], notices: message.notices ?? [], sources: message.sources ?? [unrecorded_source] };
+  return { ...row, tool_calls: message.tool_calls ?? [], notices: message.notices ?? [], sources: message.sources ?? [unrecorded_source], thinking: message.thinking ?? [] };
 }
 
 // One message by its id, or null when it is gone.

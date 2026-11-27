@@ -128,7 +128,7 @@ describe("the assistant's pane", () => {
     await waitFor(() => expect(moods).toContain("happy"));
   });
 
-  it("shows a reasoning model's thinking folded under a Thinking row that opens to it streaming, replaced by the answer", async () => {
+  it("shows a reasoning model's thinking folded under a Thinking row that opens to it streaming, kept folded above the answer", async () => {
     const fixture = open_page();
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
@@ -154,7 +154,36 @@ describe("the assistant's pane", () => {
 
     expect(await screen.findByText("Hello there.")).toBeTruthy();
     await waitFor(() => expect(screen.queryByText("Thinking…")).toBeNull());
-    expect(screen.queryByText(/a greeting/)).toBeNull();
+    const kept = screen.getByText("Thinking").closest("details")!;
+    expect(kept.open).toBe(false);
+    expect(within(kept).getByText("The user wants a greeting.")).toBeTruthy();
+    expect(kept.compareDocumentPosition(screen.getByText("Hello there.")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows each kept stretch of thinking where it happened, around the tool call, after a reload", async () => {
+    const fixture = open_page();
+    fixture.calls.add_context("Kitchen");
+    fixture.set_script(async function* (request) {
+      yield { type: "reasoning", text: "Look first." };
+      yield { type: "tool_call", id: "t1", name: "list_contexts", arguments: {} };
+      const outcome = await request.tools.call("list_contexts", {});
+      yield { type: "tool_result", id: "t1", ...outcome };
+      yield { type: "reasoning", text: "Kitchen it is." };
+      yield { type: "done", text: "You have Kitchen." };
+    });
+    const { conversation_id } = await fixture.calls.send_message(null, "What is here?");
+    await wait_for_runs();
+    want_conversation(null, conversation_id);
+    render(<AssistantPane context_id={null} />);
+
+    const answer = await screen.findByText("You have Kitchen.");
+    const first = screen.getByText("Look first.");
+    const call = screen.getByText("list_contexts");
+    const second = screen.getByText("Kitchen it is.");
+    expect(screen.getAllByText("Thinking")).toHaveLength(2);
+    expect(first.compareDocumentPosition(call) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(call.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(second.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("keeps the opened thinking at its newest text as it streams, until the reader scrolls up", () => {
@@ -492,6 +521,19 @@ describe("a specialist's calls", () => {
     expect(within(inside as HTMLElement).getByText("mcp_budget__add_budget")).toBeTruthy();
     expect(inside.querySelectorAll(".tool-call").length).toBe(2);
   });
+
+  it("show the specialist's thinking among its calls, where it happened", () => {
+    const nested = [{ id: "specialist_1", name: "mcp_budget__list_budgets", arguments: {}, result: "main", is_error: false, outcome: "ran" as const }];
+    const thinking = [
+      { text: "List them first.", text_at: 0, calls_before: 0 },
+      { text: "Main is there.", text_at: 0, calls_before: 1 },
+    ];
+    render(<ToolCallRow call={{ id: "t1", name: "ask_budget", arguments: {}, result: "Done.", is_error: false, outcome: "ran", calls: nested, thinking }} />);
+    const first = screen.getByText("List them first.");
+    const call = screen.getByText("mcp_budget__list_budgets");
+    expect(first.compareDocumentPosition(call) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(call.compareDocumentPosition(screen.getByText("Main is there.")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
 
 describe("the mascot's mood", () => {
@@ -566,5 +608,17 @@ describe("a reply as its events arrive", () => {
     expect(next_run(run, { ...base, type: "finished", error: "" })!.finished).toBe(true);
     // A page that missed the start still follows the reply.
     expect(next_run(null, { ...base, run_id: "r2", type: "text", text: "x" })).toMatchObject({ run_id: "r2", text: "x" });
+  });
+
+  it("places each stretch of thinking where the reply stood", () => {
+    const base = { conversation_id: "general", run_id: "r1" };
+    let run = next_run(null, { ...base, type: "reasoning", text: "Hm" });
+    run = next_run(run, { ...base, type: "reasoning", text: "m." });
+    run = next_run(run, { ...base, type: "text", text: "Hi" });
+    run = next_run(run, { ...base, type: "reasoning", text: "Then." });
+    expect(run!.thinking).toEqual([
+      { text: "Hmm.", text_at: 0, calls_before: 0 },
+      { text: "Then.", text_at: 2, calls_before: 0 },
+    ]);
   });
 });

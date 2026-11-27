@@ -2,12 +2,13 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { Select } from "@x-tech-laboratories/x-libs/web/react/controls";
+import { Select, Switch } from "@x-tech-laboratories/x-libs/web/react/controls";
 import { SettingRow, type SettingsSection } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 
+import { keep_thinking_setting } from "../../shared/conversations/model.ts";
 import type { PolicyEntry, PolicyLevel } from "../../shared/policy/model.ts";
-import { attempt, calls, set_setting, use_data } from "../api.ts";
+import { attempt, calls, set_setting, succeeds, use_data } from "../api.ts";
 import { use_declared } from "../declared.tsx";
 import { EngineRows } from "../plugins.tsx";
 import { PluginToolLevels } from "../tools/ToolSettings.tsx";
@@ -38,6 +39,15 @@ function EngineChoice({ stored }: { stored: string }) {
   );
 }
 
+// Whether each reply keeps its model's thinking; off, the thinking still shows while the reply is written.
+function KeepThinking({ on }: { on: boolean }) {
+  return (
+    <SettingRow label="Keep thinking" hint="Keeps a reasoning model's thinking with each reply, folded under Thinking where it happened, and syncs it with the conversation. It is never sent back to the model. Off, the thinking shows only while the reply is written." as_label>
+      <Switch label="Keep thinking" checked={on} on_change={(next) => void succeeds(() => set_setting(keep_thinking_setting, next))} />
+    </SettingRow>
+  );
+}
+
 export function engine_section(settings: Record<string, unknown>): SettingsSection {
   return {
     id: "engine",
@@ -46,6 +56,7 @@ export function engine_section(settings: Record<string, unknown>): SettingsSecti
     content: (
       <>
         <EngineChoice stored={String(settings.engine ?? "")} />
+        <KeepThinking on={settings[keep_thinking_setting] !== false} />
         <EngineRows />
       </>
     ),
