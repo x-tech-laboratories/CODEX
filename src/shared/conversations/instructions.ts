@@ -6,12 +6,15 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
+import { eq } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { blueprint_collector } from "../blueprints/model.ts";
 import type { CollectorSummary } from "../collectors/collector.ts";
 import { contexts_feature } from "../contexts/store.ts";
-import type { ContextItem } from "../contexts/model.ts";
+import { context_or_global, global_context_id, type ContextItem } from "../contexts/model.ts";
+import { contexts } from "../contexts/schema.ts";
+import { drizzle_of } from "../feature.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
 import { finding_collector } from "../interests/model.ts";
 import { item_sources, local_screen, may_send, screen_sourced, withheld_line, type Screen, type Screened } from "../privacy/screen.ts";
@@ -30,6 +33,23 @@ export const listing_caps = {
 };
 
 const longest_snippet = 120;
+
+// Global's notes reach every conversation, so a long one is cut to this many characters, with a line on reading the rest.
+export const longest_global_notes = 1500;
+
+// Global's notes as they go into the instructions: whole when they fit, otherwise cut with a line saying where the rest is.
+export function global_notes_of(notes: string): string {
+  const trimmed = notes.trim();
+  if (trimmed.length <= longest_global_notes) return trimmed;
+  return `${trimmed.slice(0, longest_global_notes - 1)}…\n(The notes go on; get_context with id ${global_context_id} gives them whole.)`;
+}
+
+// The user's standing guidance from Global's notes, for a conversation in any other context; empty when there is none.
+function global_guidance(database: SqlDatabase): string {
+  const global = drizzle_of(database).select({ name: contexts.name, notes: contexts.notes }).from(contexts).where(eq(contexts.id, global_context_id)).get();
+  if (!global?.notes.trim()) return "";
+  return `Standing guidance the user wrote in the notes of "${global.name}", the root context, for every conversation:\n${global_notes_of(global.notes)}`;
+}
 
 const identity = [
   "You are CODEX, the user's personal assistant. CODEX keeps the user's contexts: projects or areas of life holding pointers to tasks, notes, files, emails and links kept by other apps.",
@@ -102,10 +122,14 @@ function context_part(database: SqlDatabase, context_id: string, conversation_id
   const listed = screened.value;
   const child_text = (child: (typeof children)[number]) => `"${child.name}" (id ${child.id})`;
   const listed_children = capped(children, child_text, listing_caps.children);
+  const is_global = context_id === global_context_id;
+  const notes = is_global ? global_notes_of(context.notes) : context.notes.trim();
   const lines = [
-    `The open context is "${context.name}" (id ${context.id})${context.is_archived ? ", archived" : ""}.`,
+    is_global
+      ? `The open context is "${context.name}" (id ${context.id}), the root every other context sits under: from here, search and the other tools cover everything.`
+      : `The open context is "${context.name}" (id ${context.id})${context.is_archived ? ", archived" : ""}.`,
     `Where it sits: ${path.join(" › ")}.`,
-    context.notes.trim() ? `Its notes, written by the user:\n${context.notes.trim()}` : "It has no notes.",
+    notes ? `Its notes, written by the user${is_global ? ", which apply in every conversation" : ""}:\n${notes}` : "It has no notes.",
   ];
   if (children.length === 0) lines.push("No contexts are inside it.");
   else {
@@ -131,10 +155,13 @@ function context_part(database: SqlDatabase, context_id: string, conversation_id
 }
 
 // The instructions with the sources whose items they hold, so a run knows whether it starts having read outside content.
-export function screened_instructions(database: SqlDatabase, context_id: string | null, conversation_id: string | null, today: string, screen: Screen): Screened<string> {
+// Global's notes come first in every other context, as the user's standing guidance; null or none open means Global.
+export function screened_instructions(database: SqlDatabase, given_context: string | null, conversation_id: string | null, today: string, screen: Screen): Screened<string> {
   if (conversation_id !== null) conversation_row(database, conversation_id);
-  const context = context_id ? context_part(database, context_id, conversation_id, screen) : { value: "No context is open: this conversation is in no context. list_contexts gives the user's contexts.", sources: new Set<string>(), withheld: new Map<string, number>() };
-  return { ...context, value: `${identity}\n\nToday is ${today}.\n\n${context.value}` };
+  const context_id = context_or_global(given_context);
+  const context = context_part(database, context_id, conversation_id, screen);
+  const guidance = context_id === global_context_id ? "" : global_guidance(database);
+  return { ...context, value: [identity, `Today is ${today}.`, guidance, context.value].filter(Boolean).join("\n\n") };
 }
 
 export function build_instructions(database: SqlDatabase, context_id: string | null, today: string, screen: Screen = local_screen(), conversation_id: string | null = null): string {

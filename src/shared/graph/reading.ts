@@ -6,6 +6,7 @@
 import { and, eq, inArray } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
+import { scope_of as context_scope } from "../contexts/model.ts";
 import { context_items, contexts } from "../contexts/schema.ts";
 import { drizzle_of } from "../feature.ts";
 import { context_tree, subtree } from "../search/documents.ts";
@@ -47,7 +48,7 @@ function scope_of(database: SqlDatabase, context_id: string | null): Scope {
     structure.push({ from: node_key("context", membership.context_id), to: node_key("item", membership.item_id) });
     item_keys.add(node_key("item", membership.item_id));
   }
-  // The whole graph also holds the conversations in no context.
+  // The whole graph also holds items in no context, such as a conversation an older device synced in.
   if (context_id === null) for (const id of held_item_ids(database)) item_keys.add(node_key("item", id));
   return { keys: [...context_ids.map((id) => node_key("context", id)), ...item_keys], structure };
 }
@@ -78,10 +79,11 @@ function drawn_links(database: SqlDatabase, rows: LinkRow[], joins: Joins, filte
   return kept.map((row) => as_link(row, joins, labels)).filter((link) => link.from !== link.to);
 }
 
-// The graph around a context, or the whole graph: its nodes, the links among them and how many more there were.
-export function get_graph(database: SqlDatabase, context_id: string | null = null, filter: GraphFilter = {}): GraphView {
+// The graph around a context, or the whole graph for Global or null: its nodes, the links among them and how many more there were.
+export function get_graph(database: SqlDatabase, given_context: string | null = null, filter: GraphFilter = {}): GraphView {
+  const context_id = context_scope(given_context);
   const joins = read_joins(database);
-  const scope = scope_of(database, context_id || null);
+  const scope = scope_of(database, context_id);
   const base = new Set(scope.keys);
   let links: GraphLink[];
   let entity_keys: Set<string>;
@@ -149,8 +151,9 @@ export function get_node_links(database: SqlDatabase, node: string): NodeLinks {
 // ── Proposals ────────────────────────────────────────────────────────────────
 
 // The links and entities waiting for the user, in one context and those inside it with the entities linked there, or
-// everywhere; oldest first.
-export function list_graph_proposals(database: SqlDatabase, context_id: string | null = null): GraphProposals {
+// everywhere for Global or null; oldest first.
+export function list_graph_proposals(database: SqlDatabase, given_context: string | null = null): GraphProposals {
+  const context_id = context_scope(given_context);
   const joins = read_joins(database);
   const db = drizzle_of(database);
   let rows: LinkRow[];

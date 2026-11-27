@@ -105,8 +105,9 @@ describe("a blueprint in the workspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retire" }));
     await waitFor(() => expect(fixture.calls.get_blueprint(id).status).toBe("retired"));
-    fireEvent.change(screen.getByLabelText("Where it applies"), { target: { value: "" } });
-    await waitFor(() => expect(fixture.calls.get_blueprint(id).contexts).toEqual([]));
+    fireEvent.change(screen.getByLabelText("Where it applies"), { target: { value: "global" } });
+    await waitFor(() => expect(fixture.calls.get_blueprint(id).contexts).toEqual([{ id: "global", name: "Global" }]));
+    expect(screen.getByRole("option", { name: "Everywhere (Global)" })).toBeTruthy();
   });
 
   it("makes a proposed one active when the user saves an edit of it", async () => {

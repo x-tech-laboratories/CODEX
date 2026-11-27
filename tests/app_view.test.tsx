@@ -66,6 +66,22 @@ describe("the page", () => {
     expect(window.location.hash).toBe(`#/context/${garden}`);
   });
 
+  it("puts Global at the top of the tree, selected while no other context is open, and offers it no delete", async () => {
+    const store = fake_page();
+    store.add_context("Garden");
+    render(<App />);
+    const tree = await screen.findByRole("tree", { name: "Contexts" });
+    await within(tree).findByText("Garden");
+    const rows = within(tree).getAllByRole("treeitem");
+    expect(rows[0]!.textContent).toContain("Global");
+    expect(rows[0]!.getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.contextMenu(within(tree).getByText("Global"));
+    expect(await screen.findByRole("menuitem", { name: "Rename…" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Delete…" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Archive" })).toBeNull();
+  });
+
   it("shows a context's items grouped by kind, each opening in its own app", async () => {
     const store = fake_page();
     const garden = store.add_context("Garden", null);
@@ -105,8 +121,8 @@ describe("the page", () => {
     fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Taxes" } });
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Add" }));
 
-    await waitFor(() => expect(store.list_contexts(false).map((context) => context.name)).toEqual(["Taxes"]));
-    expect(window.location.hash).toBe(`#/context/${store.list_contexts(false)[0]!.id}`);
+    await waitFor(() => expect(store.list_contexts(false).map((context) => context.name)).toEqual(["Global", "Taxes"]));
+    expect(window.location.hash).toBe(`#/context/${store.list_contexts(false).find((context) => context.name === "Taxes")!.id}`);
   });
 });
 
@@ -305,7 +321,7 @@ describe("contexts from a filter group", () => {
     fireEvent.click(within(tasks).getByLabelText(/Kitchen/));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Make contexts" }));
 
-    await waitFor(() => expect(store.list_contexts(false).map((context) => context.name).sort()).toEqual(["Kitchen", "Loose"]));
+    await waitFor(() => expect(store.list_contexts(false).map((context) => context.name).sort()).toEqual(["Global", "Kitchen", "Loose"]));
   });
 
   it("makes the group's context from the first page, then offers a tag added to the group later", async () => {
@@ -317,7 +333,7 @@ describe("contexts from a filter group", () => {
     fireEvent.click(within(await screen.findByRole("list", { name: "Tasks filter groups" })).getByRole("radio", { name: /Area/ }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Make contexts" }));
 
-    await waitFor(() => expect(store.list_contexts(false).map((context) => context.name).sort()).toEqual(["Area", "Home", "Work"]));
+    await waitFor(() => expect(store.list_contexts(false).map((context) => context.name).sort()).toEqual(["Area", "Global", "Home", "Work"]));
     const made = store.list_contexts(false).find((context) => context.name === "Area")!;
     await waitFor(() => expect(window.location.hash).toBe(`#/context/${made.id}`));
 

@@ -470,9 +470,9 @@ export const graph_feature = define_feature({
   api: {
     get_graph: {
       description:
-        "Gets the knowledge graph for drawing: a context with every context inside it, the items they hold and the entities linked to them, or with no context the whole graph; each node with its kind, label and link count, the links among them, where contexts and items sit, and how many nodes and links were not shown.",
+        "Gets the knowledge graph for drawing: a context with every context inside it, the items they hold and the entities linked to them, or for Global the whole graph; each node with its kind, label and link count, the links among them, where contexts and items sit, and how many nodes and links were not shown.",
       params: [
-        { name: "context_id", schema: { type: ["string", "null"], description: "A context's id; null or left out for the whole graph." }, optional: true },
+        { name: "context_id", schema: { type: ["string", "null"], description: "A context's id; Global, null or left out for the whole graph." }, optional: true },
         { name: "filter", schema: filter_schema, optional: true },
       ],
     },
@@ -483,7 +483,7 @@ export const graph_feature = define_feature({
     },
     list_graph_proposals: {
       description: "Lists the links and entities proposed and waiting for the user, oldest first, each with who proposed it and its evidence, in one context and those inside it or everywhere.",
-      params: [{ name: "context_id", schema: { type: ["string", "null"], description: "A context's id; null or left out for everywhere." }, optional: true }],
+      params: [{ name: "context_id", schema: { type: ["string", "null"], description: "A context's id; Global, null or left out for everywhere." }, optional: true }],
     },
     list_link_counts: {
       description: "Lists how many open links, accepted or proposed, a context and each item it holds has, by node key.",

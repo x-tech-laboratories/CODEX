@@ -19,6 +19,7 @@ import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
 import { use_watch } from "@x-tech-laboratories/x-libs/web/react/watch";
 import { Send, Square } from "lucide-react";
 
+import { global_context_id } from "../../shared/contexts/model.ts";
 import { conversation_item_id, reply_parts, type AssistantStatus, type ConversationMessage, type ConversationSummary, type ToolCallRecord } from "../../shared/conversations/model.ts";
 import type { Proposal } from "../../shared/policy/model.ts";
 import type { ChangeUndoState } from "../../shared/policy/undo.ts";
@@ -352,7 +353,7 @@ function Switcher({ context_id, list, shown, on_pick }: { context_id: string | n
   const more: MenuItem[] = shown
     ? [
         { label: "Rename…", run: () => rename_conversation(shown) },
-        { label: context_id ? "Move to…" : "Move to a context…", run: () => move_to_context({ id: conversation_item_id(shown.id), title: shown.title }, context_id, holders, (moved_to) => open_conversation(shown.id, [moved_to], null)) },
+        { label: "Move to…", run: () => move_to_context({ id: conversation_item_id(shown.id), title: shown.title }, context_id, holders, (moved_to) => open_conversation(shown.id, [moved_to], null)) },
         { label: "Also add to…", run: () => add_to_contexts({ id: conversation_item_id(shown.id), title: shown.title }, holders) },
         { label: "Save as blueprint", disabled: shown.is_running || shown.message_count === 0, run: () => void attempt(() => calls().save_as_blueprint(shown.id)) },
         { label: "Copy link", run: () => void navigator.clipboard.writeText(shown.link).then(() => toast("Link copied.")) },
@@ -519,7 +520,7 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
         ) : (
           <>
             {!data?.messages.length && !run && engine && (
-              <p className="muted small">{context_id ? "A new conversation about this context: ask about it, or ask CODEX to change it." : "No context is open, so this conversation will be in no context."}</p>
+              <p className="muted small">{context_id === global_context_id ? "A new conversation in Global: ask about anything you keep, or ask CODEX to change it." : "A new conversation about this context: ask about it, or ask CODEX to change it."}</p>
             )}
             {data?.messages.map((message) => (
               <Message key={message.id} message={message} decided={decided} undos={undos} />

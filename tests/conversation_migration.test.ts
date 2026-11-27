@@ -24,7 +24,7 @@ function add_old_context(database: DatabaseSync, id: string, name: string): void
 }
 
 describe("moving to conversations as items", () => {
-  it("makes each context's conversation with messages an item in it and the general one a conversation in no context, dropping empty ones and losing no message", () => {
+  it("makes each context's conversation with messages an item in it and the general one a conversation in Global, dropping empty ones and losing no message", () => {
     const database = old_database();
     add_old_context(database, "kitchen", "Kitchen");
     add_old_context(database, "garden", "Garden");
@@ -50,7 +50,7 @@ describe("moving to conversations as items", () => {
     // Opening again changes nothing.
     open_store(database);
     expect(database.prepare("SELECT COUNT(*) AS total FROM conversations").get()).toEqual({ total: 3 });
-    expect(database.prepare("SELECT COUNT(*) AS total FROM context_items").get()).toEqual({ total: 1 });
+    expect(database.prepare("SELECT COUNT(*) AS total FROM context_items").get()).toEqual({ total: 3 });
   });
 
   it("takes in what a device still on the old shape syncs, without breaking", () => {

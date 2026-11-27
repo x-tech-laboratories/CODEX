@@ -25,7 +25,7 @@ describe("history", () => {
     expect(versions[0]).toMatchObject({ kind: "context", kind_label: "Context", item_name: "Garden", summary: "1 item", origin: "here" });
 
     store.remove_context(garden);
-    expect(store.list_contexts(true)).toEqual([]);
+    expect(store.list_contexts(true).map((context) => context.id)).toEqual(["global"]);
     const deleted = store.list_recent_changes(10).find((change) => change.item_id === garden)!;
     expect(deleted.change).toBe("deleted");
 

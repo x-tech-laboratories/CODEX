@@ -9,6 +9,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { open_plugin_host } from "../collectors/host.ts";
 import { contexts_feature } from "../contexts/store.ts";
+import { context_or_global } from "../contexts/model.ts";
 import { engine_setting, is_hosted, type Engine, type EngineEvent, type EngineTools, type EngineTurn, type ToolOutcome } from "../engines/engine.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
 
@@ -572,6 +573,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   const host = assistant_host();
   const presence = options.presence ?? "conversation";
   if (!text.trim()) throw new Error("Write a message first.");
+  context_id = context_or_global(context_id);
   // Fails on a context or conversation that does not exist, before anything is kept.
   screened_instructions(database, context_id, null, "", local_screen());
   const chosen = conversation_for(database, context_id, asked);

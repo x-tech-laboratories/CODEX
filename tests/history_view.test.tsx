@@ -32,10 +32,11 @@ function fake_page(): ContextMethods {
 afterEach(cleanup);
 
 describe("the History page", () => {
-  it("says so when nothing has changed yet", async () => {
+  it("shows only Global, first seen, before anything has changed", async () => {
     fake_page();
     render(<HistoryView />);
-    expect(await screen.findByText("No changes yet.")).toBeTruthy();
+    expect(await screen.findByText("Global")).toBeTruthy();
+    expect(screen.queryByText("No changes yet.")).toBeNull();
   });
 
   it("lists the latest changes, and brings a deleted context back", async () => {
@@ -53,7 +54,7 @@ describe("the History page", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Bring back Garden?")).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Bring back" }));
-    await waitFor(() => expect(store.list_contexts().map((context) => context.name)).toEqual(["Garden"]));
+    await waitFor(() => expect(store.list_contexts().map((context) => context.name)).toEqual(["Garden", "Global"]));
   });
 
   it("shows more changes when asked", async () => {

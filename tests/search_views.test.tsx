@@ -98,7 +98,7 @@ describe("Settings → Index", () => {
     );
 
     const section = (await screen.findByRole("heading", { name: "Index" })).closest("section")!;
-    expect(await within(section).findByText("0 items, 1 context and 0 messages.")).toBeTruthy();
+    expect(await within(section).findByText("0 items, 2 contexts and 0 messages.")).toBeTruthy();
     expect(within(section).getByText("No embedder is chosen, so search finds words only.")).toBeTruthy();
     expect(within(section).getByText("OpenAI-compatible embeddings")).toBeTruthy();
     const choice = within(section).getByLabelText("Embedder") as HTMLSelectElement;

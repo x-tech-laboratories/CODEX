@@ -6,6 +6,7 @@
 import { eq, inArray } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
+import { scope_of } from "../contexts/model.ts";
 import { items } from "../contexts/schema.ts";
 import { summaries_of } from "../conversations/records.ts";
 import { conversation_messages } from "../conversations/schema.ts";
@@ -166,8 +167,10 @@ function message_keys_of(database: SqlDatabase, conversation_id: string | null):
 
 // Finds items, contexts and messages by words and by meaning, in one context and those inside it or everywhere; the
 // messages of the conversation named last are left out, as an engine answering there already has them.
-export async function search(database: SqlDatabase, index: SqlDatabase, query: string, context_id: string | null = null, limit = default_hits, problems: string[] = [], leave_out_conversation: string | null = null): Promise<SearchHit[]> {
+export async function search(database: SqlDatabase, index: SqlDatabase, query: string, given_context: string | null = null, limit = default_hits, problems: string[] = [], leave_out_conversation: string | null = null): Promise<SearchHit[]> {
   if (!query.trim()) return [];
+  // Global covers everything, as null does.
+  const context_id = scope_of(given_context);
   const tree = context_tree(database);
   if (context_id && !tree.has(context_id)) throw new Error(`There is no context ${context_id}.`);
   const scope = context_id ? subtree(tree, context_id) : null;

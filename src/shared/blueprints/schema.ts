@@ -7,7 +7,7 @@ import { index, sqliteTable, text } from "@x-tech-laboratories/x-libs/drizzle";
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 // A workflow the user taught: when it applies, and its rules and ordered steps. It is an item of kind "blueprint" in
-// the contexts it applies in, or in none when it applies everywhere.
+// the contexts it applies in, Global when it applies everywhere.
 export const blueprints = sqliteTable(
   "blueprints",
   {

@@ -23,7 +23,8 @@ Views call `calls().<method>(...)` from `src/web/api.ts` and load with `use_data
 `src/shared/contexts/` holds three tables (`schema.ts`), written once as a Drizzle schema with drizzle-kit's
 migrations beside it:
 
-- `contexts`: the tree, by `parent_id` and `position`, with notes and an archived flag.
+- `contexts`: the tree, by `parent_id` and `position`, with notes and an archived flag. Its root is Global ("Global"
+  below).
 - `items`: one row per thing in another app. Its id is the collector's id and the source's own id, such as
   `x-tasks:<task id>` or `email:<Message-ID>`, so two devices adding the same item make the same row and sync merges them.
   It keeps only what the collector last said: title, snippet, where it opens, a state and a few facts.
@@ -31,10 +32,43 @@ migrations beside it:
 
 A conversation with the assistant is an item too, of kind `conversation`, kept by CODEX itself rather than another app
 ("Conversations and runs" below). `add_item_to_contexts` puts any kept item in more contexts and `move_item` moves one
-between contexts with its note; `remove_item` refuses to leave a conversation in no context, which
+between contexts with its note; `remove_item` refuses to take a conversation out of its last context, which
 `delete_conversation` deletes instead.
 
 Taking an item out of a context leaves its row, so History can put a deleted context back with its items.
+
+### Global
+
+Global is the root of the tree, a `contexts` row with the fixed id `global` (`global_context_id` in
+`src/shared/contexts/model.ts`), named "Global" until the user renames it. Every other context sits under it;
+`move_context`, `remove_context` and `set_context_archived` refuse it with a plain message, and `rename_context` and
+`set_context_notes` take it like any context. It is what is open when nothing else is: the page's pane and tree fall
+back to it, and every call that took `context_id: null` for "no context" still takes null, which now means Global
+(`context_or_global`), so tokens, MCP clients and engines made before it keep working. `add_context` and
+`move_context` with a null parent put a context directly under Global. Conversations and blueprints made with no
+context are Global's, and any item can be added to it, so it is the catch-all. Where Global stands for everything,
+`scope_of` turns it into null: search, the graph and its proposals, and `refresh_items` cover everything kept, as null
+did before; inside any other context the scope stays that context and those under it. A blueprint in Global applies
+everywhere. Global's notes go into the instructions of every conversation, wherever it was started ("Conversations and
+runs" below).
+
+The contexts migration `20261127152615_global` (a custom drizzle-kit step after the released ones) makes Global with
+`INSERT OR IGNORE`, puts every context with no parent under it, and gives Global a membership of every conversation and
+blueprint in no context that is not deleted. `ensure_global` (`src/shared/contexts/store.ts`) does the same on every
+open and every write, writing only what is out of place, so what a device not yet updated syncs in (a context at the
+top level, a conversation in none) is taken in at the next write; until then `list_contexts`, `get_context`, search's
+tree and the blueprints' climb read a context with no parent as under Global. It also puts Global back at the top,
+unarchived, should sync bring it otherwise.
+
+Under sync: the row's fixed id makes every device's create the same row, merged column by column by the sync
+engine; re-parenting writes the same value, `global`, on every device, and the membership keys are the context and the
+item, so two devices migrating apart converge on one Global, one tree and one membership each, with no cycle, since
+Global's own parent is always null (tested in `tests/global_context.test.ts`). History's install gives Global a first
+version with the id `first_seen:global`, the same on every device, and the store records what the upgrade changed when
+it opens, so each context taken in shows as edited on the device that did it. A device not yet updated sees Global as an
+ordinary top-level context holding everything; deleting Global there would delete everything under it on that device,
+and the deletion would sync, so every device should be updated (History can bring the contexts back, and `ensure_global`
+remakes an empty Global).
 
 ## Collectors
 
@@ -456,18 +490,18 @@ goes by its first message clipped to 80 characters, and when it was made) and `c
 conversation is an item (`records.ts`): `items` holds `conversation:<id>` from the `conversation` collector, kind
 `conversation`, its title, its latest exchange clipped as the snippet, `codex://conversation/<id>` as where it opens and
 when it was last used in its detail, rewritten whenever a message is kept or it is renamed; `context_items` holds its
-place in each context, with a note, so every view, History, "also in" and search take it as they take any item. One in
-no context has no membership. A message is the user's, an answer (with the engine, model, tool calls with their
+place in each context, with a note, so every view, History, "also in" and search take it as they take any item. One
+started with no context named is Global's. A message is the user's, an answer (with the engine, model, tool calls with their
 results, error in plain words and its raw detail, notices and token counts) or an event, such as an approved change. A
 reasoning model's thinking streams to open pages as `reasoning` events and lives in the run's state while it writes;
 it is never kept, sent back to the engine or indexed.
 
-The calls: `list_conversations(context_id?)` lists a context's conversations, or for null those in no context, most
+The calls: `list_conversations(context_id?)` lists a context's conversations, Global's for null, most
 recently used first, each with whether a reply is being written in it; `get_conversation(id)` gives the messages, the
 proposals and the run still going, so a page opened mid-reply catches up; `send_message(context_id, message,
 conversation_id?)` keeps the user's message and starts a run (`run.ts`), answering at once with both ids, where
 `context_id` is the context the user has open, which the engine is told about, and the conversation is the one named,
-a new one in that context for null, or, left out, the context's most recently used one that is not a background
+a new one in that context for null (Global for a null context), or, left out, the context's most recently used one that is not a background
 job's; `stop_reply`,
 `rename_conversation` (an empty title goes back to the first message) and `delete_conversation`, which takes it out of
 every context with its messages and proposals and keeps its item marked missing, so History can still put a context
@@ -483,14 +517,18 @@ in no context); a conversation also held elsewhere stays. History brings a conte
 Before conversations were items, there was one per context, keyed by the context's id, and `general` for when none was
 open. Opening the store, and every write after, adopts any messages or proposals whose conversation has no row
 (`adopt_stray_conversations`): each becomes a conversation under the same id, in the context of that id when it exists,
-or in no context, so the general one and those of removed contexts are kept and empty ones were never rows. The same
+or in Global, so the general one and those of removed contexts are kept and empty ones were never rows. The same
 adoption takes in what a device still on that shape syncs.
 
 The instructions (`instructions.ts`) say who the engine is, today's date and the context the pane is open on: its
 name, its place in the tree, its notes, the contexts inside it (at most 20, in 1,000 characters) and its items (at most
 30, in 3,000 characters), each listing ending with how many more there are and which call lists them, whose titles, snippets and notes go inside
 an `<untrusted-data>` fence (`src/shared/engines/untrusted.ts`, which also blanks sentences that give orders), then its
-other conversations by title alone, as CODEX's own items. A run never sees a conversation item's latest exchange: the
+other conversations by title alone, as CODEX's own items. With no context named it is Global, described as the root
+from which search and the tools cover everything. In any other context, Global's notes come first, after the date, as
+the user's standing guidance for every conversation; like a context's own notes they are the user's text, so they go
+outside the fence, and past 1,500 characters (`longest_global_notes`) they are cut with a line saying `get_context`
+with id `global` gives the rest, in Global itself as well, so long notes still fit. A run never sees a conversation item's latest exchange: the
 screened reads give it the title and notes only, and the `conversation` collector counts as sendable and trusted.
 
 ### Sources: privacy and trust
@@ -741,7 +779,7 @@ is RoboBuddy's face (`Mascot.tsx`, moods in `mascot.ts`: asleep with no engine o
 written, happy or sad for three seconds when one ends while the mood is on, and otherwise the assistant's mood through
 `face_of`: neutral as RoboBuddy's `default`, happy, celebrating as `laughing`, sad, curious and concerned as `worried`,
 all RoboBuddy's own), a button whose hover text and tapped popover say the mood and why (`mood_summary`), the engine and model answering, and the switcher: the title of
-the conversation shown, opening a menu of the context's conversations (those in no context when none is open) with
+the conversation shown, opening a menu of the context's conversations (Global's when no other is open) with
 when each was used and which are being written, then Rename, New conversation and a menu to move it, add it to more
 contexts, copy its link or delete it, asking first; a background job's conversations (each summary's `job`) are listed
 last, under a Background jobs heading. The pane shows the context's most recently used conversation that is not a
@@ -771,12 +809,12 @@ A blueprint is an item as a conversation is (`records.ts`): `items` holds `bluep
 `blueprint` collector (`codex.blueprints`, `collector.ts`, never listed under Plugins and without marks), kind
 `blueprint`, its title, `applies_when` as the snippet, `codex://blueprint/<id>` as where it opens, its status when not
 active, and in its detail the uses and, for one carrying sources, those sources. Its memberships say where it applies:
-a context and those inside it, or, with none, everywhere. `remove_item` refuses to take it out of its last context,
-which would widen it to everywhere; `place_blueprint` does that on purpose, and a removed context deletes the
+a context and those inside it, or, in Global, everywhere. `remove_item` refuses to take it out of its last context;
+`place_blueprint` moves it, to Global for null, and a removed context deletes the
 blueprints no other context holds. History keeps its row and memberships (`history.ts`), and the item calls answer
 for it as kind `blueprint`.
 
-Calls: `list_blueprints(context_id?, status?)` (all, those applying everywhere for null, or those applying in a context:
+Calls: `list_blueprints(context_id?, status?)` (all, Global's, which apply everywhere, for null, or those applying in a context:
 its own, the contexts above it and the global ones), `get_blueprint`, `list_blueprint_proposals(conversation_id?)` (new
 ones and changes, each with its whole text and a change with the blueprint as it reads), `add_blueprint`,
 `change_blueprint`, `retire_blueprint`, `remove_blueprint`, `save_as_blueprint(conversation_id)` (a message in that
@@ -907,7 +945,7 @@ own derived data, made and ended as the rules always did. Ending a link the user
 `close_graph_link`, a call with a level under the action policy though never offered to an engine (`maintenance_api`
 in `policy/policy.ts`, listed in Settings → Action policy after the engine's calls): at `background` it is applied and
 listed in the run; at `restricted` it is left and the run says so; otherwise it is proposed, once (a waiting or rejected
-proposal for that link stops another), in the conversation "Background maintenance" (`maintenance`, in no context,
+proposal for that link stops another), in the conversation "Background maintenance" (`maintenance`, in Global,
 marked as a background job's so it is never the pane's default), where approving or rejecting it is recorded.
 Similarity, `same_as` and Suggest links make proposals by nature. No job changes another app; Suggest links runs at
 presence `background` under the same screen and taint rules as any run.

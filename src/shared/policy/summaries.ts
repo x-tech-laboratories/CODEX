@@ -8,6 +8,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { contexts, items } from "../contexts/schema.ts";
 import { conversation_collector } from "../conversations/model.ts";
+import { context_or_global } from "../contexts/model.ts";
 import { drizzle_of } from "../feature.ts";
 import { checked_schedule, describe_schedule } from "../jobs/schedule.ts";
 import { jobs } from "../jobs/schema.ts";
@@ -100,7 +101,7 @@ function job_words(database: SqlDatabase, lead: string, fields: Args): string {
       parts.push(`on the schedule ${JSON.stringify(fields.schedule)}`);
     }
   }
-  if (fields.context_id !== undefined) parts.push(fields.context_id ? `in ${context_name(database, fields.context_id)}` : "in no context");
+  if (fields.context_id !== undefined) parts.push(`in ${context_name(database, context_or_global(fields.context_id as string | null))}`);
   if (fields.instruction !== undefined) parts.push(`doing ${quote(fields.instruction)}`);
   if (fields.only_when_changed === true) parts.push("only when its context changed");
   if (fields.limits !== undefined) parts.push(`within ${JSON.stringify(fields.limits)}`);

@@ -187,7 +187,7 @@ describe("indexing", () => {
 
     const state = await setup.fixture.calls.get_index_state();
     // The messages, kept with no conversation as an older device would, became a conversation item in the kitchen.
-    expect(state).toMatchObject({ items: 3, contexts: 3, messages: 1, pending: 0, withheld: 0, embedder: { id: "fake-embedder", label: "Fake embedder", model: "words-1", dimensions: 512, is_local: true }, last_error: "", is_working: false });
+    expect(state).toMatchObject({ items: 3, contexts: 4, messages: 1, pending: 0, withheld: 0, embedder: { id: "fake-embedder", label: "Fake embedder", model: "words-1", dimensions: 512, is_local: true }, last_error: "", is_working: false });
     expect(state.embedded).toBe(state.chunks);
     expect(state.embedders).toEqual([{ id: "fake-embedder", label: "Fake embedder" }]);
     const car = setup.index.prepare("SELECT body, content FROM docs WHERE key LIKE 'item:notes:n-car'").get() as { body: string; content: string };
@@ -471,7 +471,7 @@ describe("searching", () => {
     );
     expect(found.find((hit) => hit.kind === "message")!.id).toBe(general.id);
     // A context with no notes has no excerpt, rather than its name again.
-    expect((await setup.fixture.calls.search_index("home"))[0]).toMatchObject({ kind: "context", where: [], excerpt: "" });
+    expect((await setup.fixture.calls.search_index("home"))[0]).toMatchObject({ kind: "context", where: [{ id: "global", name: "Global" }], excerpt: "" });
     // Words that do not all match fall back to any of them.
     expect((await setup.fixture.calls.search_index("worktop zebra")).length).toBeGreaterThan(0);
     void kitchen;

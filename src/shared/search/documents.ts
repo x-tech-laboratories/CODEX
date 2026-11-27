@@ -12,6 +12,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { inArray, ne } from "@x-tech-laboratories/x-libs/drizzle";
 import { blueprint_collector, blueprint_item_id } from "../blueprints/model.ts";
 import { blueprints } from "../blueprints/schema.ts";
+import { global_context_id } from "../contexts/model.ts";
 import { context_items, contexts, items } from "../contexts/schema.ts";
 import { conversation_messages } from "../conversations/schema.ts";
 import { conversation_collector, conversation_item_id } from "../conversations/model.ts";
@@ -172,14 +173,15 @@ function parse_names(json: string): string[] {
 
 // ── Places ───────────────────────────────────────────────────────────────────
 
-// Every context's name and parent, by id, to say where a hit is and to scope a search to a context and those inside it.
+// Every context's name and parent, by id, to say where a hit is and to scope a search to a context and those inside it;
+// one with no parent, as an older device may sync in, sits under Global.
 export function context_tree(database: SqlDatabase): Map<string, { name: string; parent_id: string | null }> {
   return new Map(
     drizzle_of(database)
       .select({ id: contexts.id, name: contexts.name, parent_id: contexts.parent_id })
       .from(contexts)
       .all()
-      .map((row) => [row.id, { name: row.name, parent_id: row.parent_id }]),
+      .map((row) => [row.id, { name: row.name, parent_id: row.id === global_context_id ? null : (row.parent_id ?? global_context_id) }]),
   );
 }
 

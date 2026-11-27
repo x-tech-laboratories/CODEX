@@ -7,6 +7,7 @@ import { NumberField, Segmented, Select, Switch } from "@x-tech-laboratories/x-l
 import { Dialog, open_dialog } from "@x-tech-laboratories/x-libs/web/react/dialog";
 import { FormGroup, FormRow } from "@x-tech-laboratories/x-libs/web/react/layout";
 
+import { global_context_id, global_first } from "../../shared/contexts/model.ts";
 import { default_limits, type IntervalUnit, type Job, type JobFields } from "../../shared/jobs/model.ts";
 import { attempt, calls, succeeds, use_data } from "../api.ts";
 
@@ -58,7 +59,7 @@ function JobDialog({ job, context_id, on_close }: { job: Job | null; context_id:
         <textarea id="job-instruction" rows={4} value={fields.instruction} onChange={(event) => change({ instruction: event.target.value })} />
       </FormRow>
       <FormRow label="Works in" id="job-context">
-        <Select<string> bare id="job-context" label="Works in" value={fields.context_id ?? ""} options={[["", "No context"], ...(contexts.data ?? []).map((context): [string, string] => [context.id, context.name])]} on_change={(value) => change({ context_id: value || null })} />
+        <Select<string> bare id="job-context" label="Works in" value={fields.context_id ?? global_context_id} options={global_first(contexts.data ?? []).map((context): [string, string] => [context.id, context.name])} on_change={(value) => change({ context_id: value })} />
       </FormRow>
       <FormRow label="Runs" id="job-when">
         <Segmented<"every" | "at">

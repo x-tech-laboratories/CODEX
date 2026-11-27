@@ -1,5 +1,5 @@
 // Blueprints: workflows the user taught, each with when it applies and its rules and ordered steps, kept as items of
-// kind "blueprint" in the contexts they apply in, or in none when they apply everywhere. What the user writes is
+// kind "blueprint" in the contexts they apply in, Global when they apply everywhere. What the user writes is
 // active at once; what an engine or a program writes is only proposed, and only the user at CODEX's page makes it
 // active, after reading it.
 
@@ -212,7 +212,7 @@ async function save_as_blueprint(_database: SqlDatabase, conversation_id: string
 
 // ── Contexts going ───────────────────────────────────────────────────────────
 
-// Blueprints left in no context by a removed context go with it rather than come to apply everywhere.
+// Blueprints no other context holds go with a removed context rather than come to apply everywhere.
 when_items_left((database, item_ids) => {
   for (const id of item_ids.map(blueprint_of_item).filter((each): each is string => each !== null)) if (has_blueprint(database, id)) delete_blueprint_records(database, id);
 });
@@ -223,7 +223,7 @@ const blueprint_param = { name: "id", schema: id_of("blueprint") };
 const title_schema = text("A short title, such as “Sort the mail”.");
 const applies_schema = text("When it applies: one sentence naming the task, which recall matches the user's message against.");
 const body_schema = text("The rules and the steps in order, in Markdown, naming the tool a step uses where that helps.");
-const where_schema = { type: ["string", "null"], description: "The context it applies in, and in those inside it, from list_contexts; null for everywhere." };
+const where_schema = { type: ["string", "null"], description: "The context it applies in, and in those inside it, from list_contexts; null for Global, so it applies everywhere." };
 const ids_schema = { type: "array", items: { type: "string" }, minItems: 1, description: "Ids of proposed blueprints or proposed changes, from list_blueprint_proposals." } as const;
 
 export const blueprints_feature = define_feature({
@@ -251,7 +251,7 @@ export const blueprints_feature = define_feature({
       description:
         "Lists blueprints, workflows the user taught (each with a title, when it applies, its status, where it applies, and how often it was used): every one when no context is given, those that apply everywhere for null, or those that apply in a context (its own, those of the contexts above it, and those that apply everywhere).",
       params: [
-        { name: "context_id", schema: { type: ["string", "null"], description: "A context's id, from list_contexts; null for those that apply everywhere; left out for all." }, optional: true },
+        { name: "context_id", schema: { type: ["string", "null"], description: "A context's id, from list_contexts; null or Global for those that apply everywhere; left out for all." }, optional: true },
         { name: "status", schema: { type: "string", enum: blueprint_statuses, description: "Only those proposed, active or retired." }, optional: true },
       ],
     },

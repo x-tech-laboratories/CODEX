@@ -9,6 +9,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
 import { current_caller } from "../caller.ts";
+import { context_or_global } from "../contexts/model.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { migrations } from "./migrations/index.ts";
 import { background_defaults, background_settings, maintenance_prefix, type BackgroundState, type Job, type JobFields, type JobRun } from "./model.ts";
@@ -29,7 +30,7 @@ function now_of(): number {
 
 function list_jobs(database: SqlDatabase, context_id?: string | null): Job[] {
   const rows = drizzle_of(database).select().from(jobs).orderBy(asc(jobs.title), asc(jobs.id)).all();
-  const wanted = context_id === undefined ? rows : rows.filter((row) => (row.context_id || null) === (context_id || null));
+  const wanted = context_id === undefined ? rows : rows.filter((row) => context_or_global(row.context_id) === context_or_global(context_id));
   return wanted.map((row) => as_job(database, row, now_of()));
 }
 
@@ -178,7 +179,7 @@ const fields_schema = (all: boolean) => ({
   properties: {
     title: text("A short title, such as “Morning review”."),
     instruction: text("What the assistant is to do each time, written as the user would ask it."),
-    context_id: { type: ["string", "null"], description: "The context it works in, from list_contexts; null for none." },
+    context_id: { type: ["string", "null"], description: "The context it works in, from list_contexts; null for Global, where it covers everything." },
     schedule: schedule_schema,
     only_when_changed: { type: "boolean", description: "Run only when something in its context changed since its last run; no engine call is made otherwise." },
     limits: limits_schema,
@@ -198,7 +199,7 @@ export const jobs_feature = define_feature({
     list_jobs: {
       description:
         "Lists the assistant's own recurring jobs, each with its title, instruction, context, schedule in plain words, whether it runs only when its context changed, its limits, whether it is on, its latest run and when it falls due next. The user's own recurring tasks are in X-Tasks, not here.",
-      params: [{ name: "context_id", schema: { type: ["string", "null"], description: "Only the jobs of this context, or those in none for null; left out for all." }, optional: true }],
+      params: [{ name: "context_id", schema: { type: ["string", "null"], description: "Only the jobs of this context, Global's for null; left out for all." }, optional: true }],
     },
     get_job: { description: "Gets one job with its latest runs, newest first: when each ran, on which device, with which engine, what it used, applied and proposed, and how it ended.", params: [job_param] },
     list_job_runs: {

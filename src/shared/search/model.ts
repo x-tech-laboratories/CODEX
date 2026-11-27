@@ -24,7 +24,7 @@ export interface SearchHit {
   item_kind: string;
   uri: string;
   // Where it is: the contexts holding an item, the context a context sits in, the contexts holding the conversation
-  // a message is in (none for a top-level context or a conversation in no context), or the contexts an entity is
+  // a message is in (none for Global itself), or the contexts an entity is
   // linked to, directly or through their items.
   where: HitPlace[];
   // The conversation a message is in, by id and title, which its uri opens; null for anything else.

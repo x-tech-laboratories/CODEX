@@ -356,7 +356,7 @@ describe("the assistant's pane", () => {
     // A rejection reads as the user's, never as the policy refusing it.
     await waitFor(() => expect(screen.getAllByText("rejected by you")).toHaveLength(2));
     expect(screen.queryByText("not permitted")).toBeNull();
-    expect(fixture.calls.list_contexts().map((context) => context.name)).toEqual(["Kitchen"]);
+    expect(fixture.calls.list_contexts().map((context) => context.name)).toEqual(["Global", "Kitchen"]);
 
     fireEvent.click(screen.getByRole("button", { name: "More for this conversation" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Delete…" }));
@@ -365,7 +365,7 @@ describe("the assistant's pane", () => {
 
     await waitFor(() => expect(fixture.calls.list_conversations(kitchen)).toEqual([]));
     expect(await screen.findByText("A new conversation about this context: ask about it, or ask CODEX to change it.")).toBeTruthy();
-    expect(fixture.calls.list_contexts().map((context) => context.name)).toEqual(["Kitchen"]);
+    expect(fixture.calls.list_contexts().map((context) => context.name)).toEqual(["Global", "Kitchen"]);
   });
 
   it("starts another conversation, switches between them while one is written, shows which are running, and renames one from its head", async () => {

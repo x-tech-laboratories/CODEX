@@ -82,8 +82,9 @@ describe("contexts", () => {
 
     expect(store.list_contexts(false).map((context) => [context.name, context.parent_id, context.position])).toEqual([
       ["Beds", garden, 0],
-      ["Garden", null, 0],
-      ["Taxes", null, 1],
+      ["Garden", "global", 0],
+      ["Global", null, 0],
+      ["Taxes", "global", 1],
     ]);
     expect(() => store.move_context(garden, beds, null)).toThrow("inside itself");
     store.move_context(taxes, garden, null);
@@ -100,11 +101,11 @@ describe("contexts", () => {
     expect(store.get_context(garden)).toMatchObject({ name: "Allotment", notes: "Plot 14" });
 
     store.set_context_archived(garden, true);
-    expect(store.list_contexts(false).map((context) => context.id)).toEqual([beds]);
-    expect(store.list_contexts(true)).toHaveLength(2);
+    expect(store.list_contexts(false).map((context) => context.id)).toEqual([beds, "global"]);
+    expect(store.list_contexts(true)).toHaveLength(3);
 
     store.remove_context(garden);
-    expect(store.list_contexts(true)).toEqual([]);
+    expect(store.list_contexts(true).map((context) => context.id)).toEqual(["global"]);
     expect(() => store.get_context(garden)).toThrow("no context");
   });
 });
@@ -227,7 +228,7 @@ describe("import and export", () => {
     const file = JSON.stringify(store.export_contexts());
 
     const other = open_methods();
-    expect(other.import_contexts(file)).toEqual({ contexts: 1, items: 1 });
+    expect(other.import_contexts(file)).toEqual({ contexts: 2, items: 1 });
     expect(other.get_context(garden).items[0]).toMatchObject({ title: "Order seeds", note: "Before March" });
     expect(() => other.import_contexts(JSON.stringify({ app: "x-tasks" }))).toThrow("not a CODEX export");
     expect(() => other.import_contexts(JSON.stringify({ app: "codex", kind: "contexts", version: 9 }))).toThrow("newer");
@@ -237,11 +238,15 @@ describe("import and export", () => {
     const store = open_methods();
     const garden = store.add_context("Garden", null);
     store.add_item([garden], "fake", held.t1!, "Before March");
-    const file = JSON.stringify({ ...store.export_contexts(), app: "x-context" });
+    const exported = store.export_contexts();
+    // X-Context had no Global: its top-level contexts come in under this one's.
+    const tables = { ...exported.tables, contexts: exported.tables.contexts.filter((row) => row.id !== "global").map((row) => ({ ...row, parent_id: null })) };
+    const file = JSON.stringify({ ...exported, tables, app: "x-context" });
 
     const other = open_methods();
     expect(other.import_contexts(file)).toEqual({ contexts: 1, items: 1 });
     expect(other.get_context(garden).items[0]).toMatchObject({ title: "Order seeds", note: "Before March" });
+    expect(other.get_context(garden).parent_id).toBe("global");
   });
 });
 
@@ -387,5 +392,29 @@ describe("contexts from a feed group", () => {
     other.import_contexts(JSON.stringify(store.export_contexts()));
     expect(other.get_context(id).seeded_from).toEqual({ collector: "fake", group_id: "area", label: "Area" });
     expect(store.get_context(store.add_context("Plain", null)).seeded_from).toBeNull();
+  });
+});
+
+describe("Global", () => {
+  it("is the root every context sits under, renamed and given notes but never moved, archived or deleted", () => {
+    const store = open_methods();
+    expect(store.list_contexts(false)).toEqual([{ id: "global", parent_id: null, name: "Global", position: 0, is_archived: false, item_count: 0 }]);
+    const garden = store.add_context("Garden");
+    const taxes = store.add_context("Taxes", garden);
+    store.move_context(taxes, null);
+    expect(store.get_context(taxes).parent_id).toBe("global");
+    expect(store.get_context(garden).parent_id).toBe("global");
+
+    store.rename_context("global", "Everything");
+    store.set_context_notes("global", "Answer in British English.");
+    expect(store.get_context("global")).toMatchObject({ name: "Everything", notes: "Answer in British English.", parent_id: null });
+    expect(() => store.remove_context("global")).toThrow("cannot be moved, archived or deleted");
+    expect(() => store.move_context("global", garden)).toThrow("cannot be moved");
+    expect(() => store.set_context_archived("global", true)).toThrow("cannot be moved");
+    expect(() => store.move_context(garden, store.add_context("Beds", garden))).toThrow("inside itself");
+
+    // Items can be kept directly in Global.
+    store.add_item(["global"], "fake", held.t1!, "");
+    expect(store.get_context("global").items.map((item) => item.title)).toEqual(["Order seeds"]);
   });
 });

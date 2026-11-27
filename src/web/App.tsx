@@ -12,6 +12,7 @@ import { SignInForm, use_account } from "@x-tech-laboratories/x-libs/web/react/s
 import { theme_choice } from "@x-tech-laboratories/x-libs/web/theme";
 import { use_watch } from "@x-tech-laboratories/x-libs/web/react/watch";
 
+import { global_context_id } from "../shared/contexts/model.ts";
 import { attempt, calls, data_watch, page, use_data } from "./api.ts";
 import { AssistantPane } from "./assistant/AssistantPane.tsx";
 import { BlueprintsPage } from "./blueprints/BlueprintsPage.tsx";
@@ -122,7 +123,7 @@ function Pages({ me, on_sign_out }: { me: Me | null; on_sign_out?: () => void })
       brand_icon={brand_icon}
       views={sidebar_views(waiting.data ?? 0)}
       active={section === "blueprint" ? "blueprints" : section}
-      sidebar={<ContextTree active_id={context_id} />}
+      sidebar={<ContextTree active_id={context_id ?? global_context_id} />}
       sidebar_foot={<SidebarFoot section={section} show_users={is_admin} />}
       theme={theme}
       view_key={view_key}
@@ -140,7 +141,7 @@ function Pages({ me, on_sign_out }: { me: Me | null; on_sign_out?: () => void })
         open: assistant_open,
         on_open_change: set_assistant_open,
         width: { default_width: 380, min: 300, max: 720, storage_key: "codex-assistant-width" },
-        content: <AssistantPane context_id={context_id} />,
+        content: <AssistantPane context_id={context_id ?? global_context_id} />,
       }}
     >
       <Fragment key={view_key}>{view()}</Fragment>

@@ -8,6 +8,7 @@ import { confirm_dialog, Dialog, open_dialog } from "@x-tech-laboratories/x-libs
 import { FormRow } from "@x-tech-laboratories/x-libs/web/react/layout";
 import type { MenuItem } from "@x-tech-laboratories/x-libs/web/menus";
 
+import { global_context_id } from "../../shared/contexts/model.ts";
 import type { ContextSummary } from "../../shared/contexts/model.ts";
 import { new_blueprint } from "../blueprints/BlueprintView.tsx";
 import { job_dialog } from "../jobs/JobDialog.tsx";
@@ -65,7 +66,7 @@ export function NameDialog({ title, label = "Name", allow_empty = false, initial
 export function new_context(parent_id: string | null = null): void {
   open_dialog((close) => (
     <NameDialog
-      title={parent_id ? "New context inside" : "New context"}
+      title={parent_id && parent_id !== global_context_id ? "New context inside" : "New context"}
       initial=""
       submit_label="Add"
       on_close={close}
@@ -94,13 +95,17 @@ export function delete_context(context: { id: string; name: string }, on_deleted
   });
 }
 
-// The menu a context shows on a right-click or its More button.
+// The menu a context shows on a right-click or its More button; Global, the root, can only be renamed.
 export function context_menu(context: ContextSummary, on_deleted?: () => void): MenuItem[] {
-  return [
+  const shared: MenuItem[] = [
     { label: "New context inside", run: () => new_context(context.id) },
     { label: "New blueprint…", run: () => new_blueprint(context) },
     { label: "New job…", run: () => job_dialog({ context_id: context.id }) },
     { label: "Rename…", run: () => rename_context(context) },
+  ];
+  if (context.id === global_context_id) return shared;
+  return [
+    ...shared,
     { label: context.is_archived ? "Bring back" : "Archive", run: () => void succeeds(() => calls().set_context_archived(context.id, !context.is_archived)) },
     { label: "Delete…", danger: true, separator_before: true, run: () => delete_context(context, on_deleted) },
   ];

@@ -6,7 +6,7 @@ import { index, integer, sqliteTable, text } from "@x-tech-laboratories/x-libs/d
 
 // ── Tables ───────────────────────────────────────────────────────────────────
 
-// A conversation with the assistant, kept as an item of kind "conversation" in the contexts that hold it, or in none.
+// A conversation with the assistant, kept as an item of kind "conversation" in the contexts that hold it, Global at least.
 export const conversations = sqliteTable("conversations", {
   // A new id, or for one kept before conversations were items, the id of the context it belonged to, or "general".
   id: text().primaryKey(),

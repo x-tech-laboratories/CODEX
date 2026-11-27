@@ -113,7 +113,7 @@ export interface ConversationSummary {
   message_count: number;
   // A reply is being written in it now.
   is_running: boolean;
-  // The contexts holding it, by id and name; none for a conversation in no context.
+  // The contexts holding it, by id and name; Global at least once the store has caught up.
   contexts: { id: string; name: string }[];
   // Where it opens, such as codex://conversation/<id>.
   link: string;
@@ -165,7 +165,7 @@ export interface AssistantStatus {
 export const conversation_collector = "conversation";
 export const conversation_kind = "conversation";
 
-// The id of the general conversation kept before conversations were items; it became a conversation in no context.
+// The id of the general conversation kept before conversations were items; it became a conversation in Global.
 export const old_general_conversation = "general";
 
 export function conversation_item_id(conversation_id: string): string {

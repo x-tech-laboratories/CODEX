@@ -3,7 +3,7 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { and, asc, count, desc, eq, inArray, like, notInArray, or, sql, synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
+import { and, asc, count, desc, eq, inArray, isNull, like, ne, notInArray, or, sql, synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
 import { in_transaction, type SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
@@ -14,7 +14,7 @@ import { conversation_collector } from "../conversations/model.ts";
 import { finding_collector } from "../interests/model.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { migrations } from "./migrations/index.ts";
-import type { CardPlace, ContextDetail, ContextItem, ContextSummary, ContextView, FollowedFeed, Item, KeptItem, RefreshReport, SeededFrom } from "./model.ts";
+import { context_or_global, global_context_id, scope_of, type CardPlace, type ContextDetail, type ContextItem, type ContextSummary, type ContextView, type FollowedFeed, type Item, type KeptItem, type RefreshReport, type SeededFrom } from "./model.ts";
 import { context_feeds, context_items, context_seeds, context_tables, context_views, contexts, items } from "./schema.ts";
 
 // ── Reading ──────────────────────────────────────────────────────────────────
@@ -47,7 +47,12 @@ function list_contexts(database: SqlDatabase, include_archived = false): Context
     .where(include_archived ? undefined : eq(contexts.is_archived, 0))
     .orderBy(asc(contexts.position), asc(contexts.name))
     .all()
-    .map((row) => ({ id: row.id, parent_id: row.parent_id, name: row.name, position: row.position, is_archived: row.is_archived === 1, item_count: counts.get(row.id) ?? 0 }));
+    .map((row) => ({ id: row.id, parent_id: parent_of_row(row), name: row.name, position: row.position, is_archived: row.is_archived === 1, item_count: counts.get(row.id) ?? 0 }));
+}
+
+// Global has no parent; any other context with none, as an older device may sync in, sits under Global.
+function parent_of_row(row: { id: string; parent_id: string | null }): string | null {
+  return row.id === global_context_id ? null : (row.parent_id ?? global_context_id);
 }
 
 function context_row(database: SqlDatabase, id: string) {
@@ -92,7 +97,7 @@ function get_context(database: SqlDatabase, id: string): ContextDetail {
   }));
   return {
     id: row.id,
-    parent_id: row.parent_id,
+    parent_id: parent_of_row(row),
     name: row.name,
     notes: row.notes,
     position: row.position,
@@ -236,10 +241,12 @@ function next_position(database: SqlDatabase, parent_id: string | null): number 
   return (row?.last ?? -1) + 1;
 }
 
-function add_context(database: SqlDatabase, name: string, parent_id: string | null = null): string {
+// Every context goes under another; null or none given puts it directly under Global.
+function add_context(database: SqlDatabase, name: string, given_parent: string | null = null): string {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Give the context a name.");
-  if (parent_id !== null) context_row(database, parent_id);
+  const parent_id = context_or_global(given_parent);
+  context_row(database, parent_id);
   const id = new_id();
   drizzle_of(database).insert(contexts).values({ id, parent_id, name: trimmed, position: next_position(database, parent_id), created_at: now() }).run();
   return id;
@@ -253,10 +260,14 @@ function subtree_of(database: SqlDatabase, id: string): string[] {
   return found;
 }
 
-function move_context(database: SqlDatabase, id: string, parent_id: string | null, position: number | null = null): void {
+const global_fixed = "Global is the root that holds every other context, so it cannot be moved, archived or deleted; it can be renamed.";
+
+function move_context(database: SqlDatabase, id: string, given_parent: string | null, position: number | null = null): void {
   context_row(database, id);
-  if (parent_id !== null && subtree_of(database, id).includes(parent_id)) throw new Error("A context cannot go inside itself.");
-  if (parent_id !== null) context_row(database, parent_id);
+  if (id === global_context_id) throw new Error(global_fixed);
+  const parent_id = context_or_global(given_parent);
+  if (subtree_of(database, id).includes(parent_id)) throw new Error("A context cannot go inside itself.");
+  context_row(database, parent_id);
   drizzle_of(database)
     .update(contexts)
     .set({ parent_id, position: position ?? next_position(database, parent_id) })
@@ -276,6 +287,7 @@ export function when_items_left(listener: ItemsLeft): void {
 
 function remove_context(database: SqlDatabase, id: string): void {
   context_row(database, id);
+  if (id === global_context_id) throw new Error(global_fixed);
   const removed = subtree_of(database, id);
   const db = drizzle_of(database);
   const held = db.select({ item_id: context_items.item_id }).from(context_items).where(inArray(context_items.context_id, removed)).all().map((row) => row.item_id);
@@ -346,7 +358,7 @@ function remove_item(database: SqlDatabase, context_id: string, item_id: string)
   const is_last = memberships.length === 1 && memberships[0]!.context_id === context_id;
   const collector = is_last ? db.select({ collector: items.collector }).from(items).where(eq(items.id, item_id)).get()?.collector : undefined;
   if (collector === conversation_collector) throw new Error("This is the last context holding that conversation; delete it with delete_conversation, or move it with move_item.");
-  // A blueprint left in no context would apply everywhere, so that is only done on purpose, with place_blueprint.
+  // A blueprint left in no context would apply everywhere, as one in Global does, so that is only done on purpose, with place_blueprint.
   if (collector === blueprint_collector) throw new Error("This is the last context holding that blueprint; delete it with remove_blueprint, move it with move_item, or make it apply everywhere on its page.");
   db.delete(context_items)
     .where(and(eq(context_items.context_id, context_id), eq(context_items.item_id, item_id)))
@@ -361,7 +373,7 @@ function kept_item_row(database: SqlDatabase, item_id: string) {
   return row;
 }
 
-// Puts an item CODEX already keeps, such as one in another context or a conversation in none, in more contexts.
+// Puts an item CODEX already keeps, such as one in another context, in more contexts.
 function add_item_to_contexts(database: SqlDatabase, item_id: string, context_ids: string[], note = ""): void {
   if (context_ids.length === 0) throw new Error("Pick at least one context.");
   kept_item_row(database, item_id);
@@ -510,7 +522,8 @@ async function list_feed_group_news(database: SqlDatabase, context_id: string): 
 
 // Brings followed feeds in step, then asks each collector what became of its items, in one context or everywhere: new
 // titles and states are kept, and an item its app no longer has is marked missing rather than dropped.
-async function refresh_items(database: SqlDatabase, context_id: string | null = null): Promise<RefreshReport> {
+async function refresh_items(database: SqlDatabase, given_context: string | null = null): Promise<RefreshReport> {
+  const context_id = scope_of(given_context);
   const db = drizzle_of(database);
   const report = empty_report();
   const collectors = await running_collectors(database);
@@ -547,6 +560,27 @@ async function refresh_items(database: SqlDatabase, context_id: string | null = 
     });
   }
   return report;
+}
+
+// ── Global ───────────────────────────────────────────────────────────────────
+
+// Keeps Global the root, as the migration made it: there, at the top and never archived, every other top-level
+// context under it, and CODEX's own conversations and blueprints in no context held by it. A device not yet updated can
+// sync in a context at the top level or a conversation in none, so this runs on every open and write; the fixed id and
+// the memberships' keys make every device write the same rows, so sync merges them. It writes only what is out of place.
+export function ensure_global(database: SqlDatabase): void {
+  const db = drizzle_of(database);
+  const global = db.select().from(contexts).where(eq(contexts.id, global_context_id)).get();
+  if (!global) db.insert(contexts).values({ id: global_context_id, parent_id: null, name: "Global", position: 0, created_at: now() }).run();
+  else if (global.parent_id !== null || global.is_archived !== 0) db.update(contexts).set({ parent_id: null, is_archived: 0 }).where(eq(contexts.id, global_context_id)).run();
+  db.update(contexts).set({ parent_id: global_context_id }).where(and(isNull(contexts.parent_id), ne(contexts.id, global_context_id))).run();
+  const held = db.selectDistinct({ item_id: context_items.item_id }).from(context_items);
+  const loose = db
+    .select({ id: items.id })
+    .from(items)
+    .where(and(inArray(items.collector, [conversation_collector, blueprint_collector]), ne(items.status, "missing"), notInArray(items.id, held)))
+    .all();
+  for (const row of loose) db.insert(context_items).values({ context_id: global_context_id, item_id: row.id, note: "", added_at: now() }).onConflictDoNothing().run();
 }
 
 // ── Import and export ────────────────────────────────────────────────────────
@@ -638,12 +672,14 @@ const found_item_schema = {
 
 const context_ids_schema = { type: "array", items: { type: "string" }, minItems: 1, description: "The ids of the contexts to add it to, from list_contexts." } as const;
 const collector_schema = text("The collector's id, from list_collectors, such as x-tasks, trilium, files, links or email.");
-const nullable_context = { type: ["string", "null"], description: "A context's id, or null for none." } as const;
+const nullable_context = { type: ["string", "null"], description: "A context's id, from list_contexts; null for Global, the root every other context sits under." } as const;
 
 export const contexts_feature = define_feature({
   id: "contexts",
   migrations: migrations.map((migration) => migration.statements),
   tables: synced_tables(context_tables),
+  on_open: ensure_global,
+  after_write: ensure_global,
   methods: {
     list_contexts,
     get_context,
@@ -667,6 +703,7 @@ export const contexts_feature = define_feature({
     },
     set_context_archived: (database: SqlDatabase, id: string, is_archived: boolean): void => {
       context_row(database, id);
+      if (id === global_context_id) throw new Error(global_fixed);
       drizzle_of(database).update(contexts).set({ is_archived: is_archived ? 1 : 0 }).where(eq(contexts.id, id)).run();
     },
     move_context,
@@ -695,7 +732,7 @@ export const contexts_feature = define_feature({
   },
   api: {
     list_contexts: {
-      description: "Lists the contexts, each a project or area of life, as a tree by parent_id, with how many items each holds.",
+      description: "Lists the contexts, each a project or area of life, as a tree by parent_id, with how many items each holds. Global, id \"global\", is the root: every other context sits under it, its notes apply to every conversation, and it can hold items of its own.",
       params: [{ name: "include_archived", schema: { type: "boolean", description: "Whether archived contexts are listed too; they are not unless true." }, optional: true }],
     },
     get_context: {
@@ -814,14 +851,14 @@ export const contexts_feature = define_feature({
     },
     export_contexts: { description: "Exports every context, item and membership as one JSON object.", params: [] },
     add_context: {
-      description: "Adds a context and gives back its id.",
+      description: "Adds a context under another, or directly under Global, and gives back its id.",
       params: [
         { name: "name", schema: text("Its name, such as a project's.") },
         { name: "parent_id", schema: nullable_context, optional: true },
       ],
     },
     rename_context: {
-      description: "Renames a context.",
+      description: "Renames a context, Global included.",
       params: [
         { name: "id", schema: id_of("context") },
         { name: "name", schema: text("The new name.") },
@@ -835,14 +872,14 @@ export const contexts_feature = define_feature({
       ],
     },
     set_context_archived: {
-      description: "Archives a context, hiding it from the list, or brings it back.",
+      description: "Archives a context, hiding it from the list, or brings it back. Global cannot be archived.",
       params: [
         { name: "id", schema: id_of("context") },
         { name: "is_archived", schema: { type: "boolean", description: "True to archive, false to bring back." } },
       ],
     },
     move_context: {
-      description: "Moves a context under another, or to the top level.",
+      description: "Moves a context under another, or directly under Global for null. Global itself cannot be moved.",
       params: [
         { name: "id", schema: id_of("context") },
         { name: "parent_id", schema: nullable_context },
@@ -850,7 +887,7 @@ export const contexts_feature = define_feature({
       ],
     },
     remove_context: {
-      description: "Deletes a context and every context inside it; the items stay in their own apps.",
+      description: "Deletes a context and every context inside it; the items stay in their own apps. Global cannot be deleted.",
       params: [{ name: "id", schema: id_of("context") }],
       destructive: true,
     },
@@ -888,7 +925,7 @@ export const contexts_feature = define_feature({
       ],
     },
     add_item_to_contexts: {
-      description: "Puts an item CODEX already keeps, such as one in another context or a conversation in no context, in more contexts, with a note on why.",
+      description: "Puts an item CODEX already keeps, such as one in another context, in more contexts, with a note on why.",
       params: [
         { name: "item_id", schema: id_of("item") },
         { name: "context_ids", schema: context_ids_schema },
@@ -904,7 +941,7 @@ export const contexts_feature = define_feature({
       ],
     },
     refresh_items: {
-      description: "Asks each collector what became of its items, in one context or everywhere, keeping new titles and states and marking missing the ones gone.",
+      description: "Asks each collector what became of its items, in one context or, for Global or null, everywhere, keeping new titles and states and marking missing the ones gone.",
       params: [{ name: "context_id", schema: nullable_context, optional: true }],
     },
     import_contexts: {

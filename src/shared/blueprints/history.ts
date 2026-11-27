@@ -6,6 +6,7 @@
 import type { HistoryWatch } from "@x-tech-laboratories/x-libs/history";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
+import { global_context_id } from "../contexts/model.ts";
 import { insert_row } from "../graph/history.ts";
 import { blueprint_item_id } from "./model.ts";
 import { refresh_blueprint_items } from "./records.ts";
@@ -36,7 +37,9 @@ export const blueprint_history = {
   },
   name_of: (snapshot: Snapshot): string => String(snapshot.blueprints?.[0]?.title ?? "Blueprint"),
   summary: (snapshot: Snapshot): string => {
-    const places = snapshot.context_items?.length ?? 0;
-    return `${String(snapshot.blueprints?.[0]?.status ?? "")}, ${places === 0 ? "applies everywhere" : `in ${places} context${places === 1 ? "" : "s"}`}`;
+    const held = snapshot.context_items ?? [];
+    const places = held.length;
+    const everywhere = places === 0 || (places === 1 && held[0]!.context_id === global_context_id);
+    return `${String(snapshot.blueprints?.[0]?.status ?? "")}, ${everywhere ? "applies everywhere" : `in ${places} context${places === 1 ? "" : "s"}`}`;
   },
 };

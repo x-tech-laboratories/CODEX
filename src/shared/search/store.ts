@@ -42,7 +42,7 @@ export const search_feature = define_feature({
         "Searches everything CODEX keeps, by its words and, once an embedder is set up, by its meaning: items with their text from their apps, contexts with their notes, and the conversations' messages. Gives back the best first, each with its kind, a short excerpt around the match and where it is: the contexts holding an item, the context a context sits in, or the context whose conversation holds a message.",
       params: [
         { name: "query", schema: text("What to look for, in plain words.") },
-        { name: "context_id", schema: { type: ["string", "null"], description: "Search only this context and every context inside it; null or left out for everything." }, optional: true },
+        { name: "context_id", schema: { type: ["string", "null"], description: "Search only this context and every context inside it; Global, null or left out for everything." }, optional: true },
         { name: "limit", schema: { type: "integer", minimum: 1, maximum: most_hits, description: `How many to give back; ${default_hits} unless given.` }, optional: true },
       ],
     },

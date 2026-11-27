@@ -8,6 +8,7 @@ import { add_message } from "../src/shared/conversations/messages.ts";
 import type { ToolCallRecord } from "../src/shared/conversations/model.ts";
 import { add_conversation_record, has_conversation } from "../src/shared/conversations/records.ts";
 import { engine_tools, max_result_chars, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
+import { record_history } from "../src/shared/history/store.ts";
 import { brings_outside_content, changing_calls, decide } from "../src/shared/policy/policy.ts";
 import { summarize_call } from "../src/shared/policy/summaries.ts";
 import { open_plugin_tools } from "../src/shared/tools/offered.ts";
@@ -21,7 +22,11 @@ afterEach(async () => {
 
 // The tools a run in a conversation in no context gets, calling the fixture's store as the host does.
 function tools_of(fixture: Fixture, conversation_id = "general"): { context: ToolContext; tools: ReturnType<typeof engine_tools>; decided: string[] } {
-  if (!has_conversation(fixture.database, conversation_id)) add_conversation_record(fixture.database, null, conversation_id);
+  // Made as a bound call would make it, with History recording the conversation joining Global.
+  if (!has_conversation(fixture.database, conversation_id)) {
+    add_conversation_record(fixture.database, null, conversation_id);
+    record_history(fixture.database);
+  }
   const decided: string[] = [];
   const context: ToolContext = {
     database: () => fixture.database,
@@ -339,7 +344,7 @@ describe("proposals", () => {
     const [remove] = fixture.calls.list_proposals(conversation_id);
 
     expect(await fixture.calls.resolve_proposal(remove!.id, "approve")).toMatchObject({ status: "approved" });
-    expect(fixture.calls.list_contexts()).toEqual([]);
+    expect(fixture.calls.list_contexts().map((context) => context.id)).toEqual(["global"]);
     expect(() => fixture.calls.get_conversation(conversation_id)).toThrow("There is no conversation");
     expect(fixture.calls.list_proposals()).toEqual([]);
   });
@@ -433,16 +438,16 @@ describe("undoing applied changes", () => {
     const [add, remove] = fixture.calls.list_proposals("general");
     await fixture.calls.resolve_proposal(add!.id, "approve");
     await fixture.calls.resolve_proposal(remove!.id, "approve");
-    expect(fixture.calls.list_contexts(false).map((context) => context.name)).toEqual(["Garden"]);
+    expect(fixture.calls.list_contexts(false).map((context) => context.name)).toEqual(["Global", "Garden"]);
     const events = fixture.calls.get_conversation("general").messages;
     const undos = fixture.calls.list_change_undos("general");
     expect(undos.map((each) => each.state)).toEqual(["possible", "possible"]);
 
     fixture.calls.undo_change(events[1]!.id, remove!.id);
-    expect(fixture.calls.list_contexts(false).map((context) => context.name).sort()).toEqual(["Garden", "Home", "Kitchen"]);
+    expect(fixture.calls.list_contexts(false).map((context) => context.name).sort()).toEqual(["Garden", "Global", "Home", "Kitchen"]);
     expect(fixture.calls.get_context(kitchen).items.map((item) => item.title)).toEqual(["Tiles"]);
     fixture.calls.undo_change(events[0]!.id, add!.id);
-    expect(fixture.calls.list_contexts(false).map((context) => context.name).sort()).toEqual(["Home", "Kitchen"]);
+    expect(fixture.calls.list_contexts(false).map((context) => context.name).sort()).toEqual(["Global", "Home", "Kitchen"]);
   });
 
   it("says a change History keeps nothing of, such as a refresh, cannot be undone", async () => {

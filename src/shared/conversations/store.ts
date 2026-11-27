@@ -1,4 +1,4 @@
-// Conversations: any number in each context, and those in no context, each kept as an item of kind "conversation"
+// Conversations: any number in each context, Global included, each kept as an item of kind "conversation"
 // so it lists, searches and moves like any other item. Sending a message starts a run where the store lives and
 // answers at once; the reply streams to open pages and is kept as a message when it ends.
 
@@ -55,7 +55,7 @@ function delete_conversation(database: SqlDatabase, id: string): void {
   delete_conversation_records(database, id);
 }
 
-// Conversations left in no context by a removed context go with it: their messages, proposals and any reply being
+// Conversations no other context holds when theirs is removed go with it: their messages, proposals and any reply being
 // written. History can bring the context back, but not them.
 function forget_left_conversations(database: SqlDatabase, item_ids: string[]): void {
   for (const id of item_ids.map(conversation_of_item).filter((each): each is string => each !== null)) {
@@ -68,7 +68,7 @@ when_items_left(forget_left_conversations);
 
 // ── Feature ──────────────────────────────────────────────────────────────────
 
-const context_param = { name: "context_id", schema: { type: ["string", "null"], description: "A context's id, from list_contexts, or null for no context." } };
+const context_param = { name: "context_id", schema: { type: ["string", "null"], description: "A context's id, from list_contexts, or null for Global, the root context." } };
 const conversation_param = { name: "id", schema: id_of("conversation") };
 
 export const conversations_feature = define_feature({
@@ -79,7 +79,7 @@ export const conversations_feature = define_feature({
   api: {
     list_conversations: {
       description:
-        "Lists the conversations with the assistant held in one context, or, for null, those in no context, most recently used first: each with its title, when it was last used, how many messages it has, whether a reply is being written in it now and the contexts holding it.",
+        "Lists the conversations with the assistant held in one context, Global for null, most recently used first: each with its title, when it was last used, how many messages it has, whether a reply is being written in it now and the contexts holding it.",
       params: [{ ...context_param, optional: true }],
     },
     get_conversation: {
@@ -93,9 +93,9 @@ export const conversations_feature = define_feature({
     },
     send_message: {
       description:
-        "Sends the user's message to the assistant and starts the reply, which is told about the context given; it answers at once with the conversation's id and the run's id, and the reply is kept in the conversation when it ends. Left out, the conversation is the context's most recently used one, or a new one when it has none; null starts a new one in that context, or in no context. One reply is written at a time per conversation.",
+        "Sends the user's message to the assistant and starts the reply, which is told about the context given; it answers at once with the conversation's id and the run's id, and the reply is kept in the conversation when it ends. Left out, the conversation is the context's most recently used one, or a new one when it has none; null starts a new one in that context. One reply is written at a time per conversation.",
       params: [
-        { ...context_param, schema: { ...context_param.schema, description: "The context the user has open, which the assistant is told about, or null for none." } },
+        { ...context_param, schema: { ...context_param.schema, description: "The context the user has open, which the assistant is told about; null for Global, where it covers everything." } },
         { name: "message", schema: text("The message, in Markdown.") },
         { name: "conversation_id", schema: { type: ["string", "null"], description: "The conversation's id, from list_conversations; null for a new one." }, optional: true },
       ],

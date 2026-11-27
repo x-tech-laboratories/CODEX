@@ -82,7 +82,7 @@ describe("blueprints the user writes", () => {
     expect(fixture.calls.get_blueprint(in_garden).status).toBe("active");
 
     fixture.calls.place_blueprint(in_garden, null);
-    expect(fixture.calls.get_blueprint(in_garden).contexts).toEqual([]);
+    expect(fixture.calls.get_blueprint(in_garden).contexts).toEqual([{ id: "global", name: "Global" }]);
     fixture.calls.place_blueprint(in_garden, kitchen);
     expect(fixture.calls.get_blueprint(in_garden).contexts).toEqual([{ id: kitchen, name: "Kitchen" }]);
 

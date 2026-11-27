@@ -9,6 +9,7 @@ import { clip_snippet } from "@x-tech-laboratories/x-libs/items";
 import { in_transaction, type SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import type { FoundItem } from "../collectors/collector.ts";
+import { context_or_global, global_context_id } from "../contexts/model.ts";
 import { context_items, contexts, items } from "../contexts/schema.ts";
 import { drizzle_of, new_id } from "../feature.ts";
 import { job_runs, jobs } from "../jobs/schema.ts";
@@ -132,20 +133,15 @@ export function summaries_of(database: SqlDatabase, ids: string[], running: (id:
     .sort((first, second) => second.last_used_at.localeCompare(first.last_used_at) || first.id.localeCompare(second.id));
 }
 
-// The conversations a context holds, or, for null, those in no context.
+// The conversations a context holds, Global's for null.
 export function conversation_ids_in(database: SqlDatabase, context_id: string | null): string[] {
-  const db = drizzle_of(database);
-  if (context_id !== null) {
-    return db
-      .select({ item_id: context_items.item_id })
-      .from(context_items)
-      .innerJoin(items, eq(items.id, context_items.item_id))
-      .where(and(eq(context_items.context_id, context_id), eq(items.collector, conversation_collector)))
-      .all()
-      .map((row) => row.item_id.slice(conversation_collector.length + 1));
-  }
-  const held = new Set(db.selectDistinct({ item_id: context_items.item_id }).from(context_items).where(sql`${context_items.item_id} LIKE ${`${conversation_collector}:%`}`).all().map((row) => row.item_id));
-  return db.select({ id: conversations.id }).from(conversations).all().map((row) => row.id).filter((id) => !held.has(conversation_item_id(id)));
+  return drizzle_of(database)
+    .select({ item_id: context_items.item_id })
+    .from(context_items)
+    .innerJoin(items, eq(items.id, context_items.item_id))
+    .where(and(eq(context_items.context_id, context_or_global(context_id)), eq(items.collector, conversation_collector)))
+    .all()
+    .map((row) => row.item_id.slice(conversation_collector.length + 1));
 }
 
 // ── Items ────────────────────────────────────────────────────────────────────
@@ -187,13 +183,13 @@ export function refresh_conversation_items(database: SqlDatabase, ids: string[])
 
 // ── Writing ──────────────────────────────────────────────────────────────────
 
-// Makes a conversation, in the context given or in none, and gives back its id.
+// Makes a conversation in the context given, Global for null, and gives back its id.
 export function add_conversation_record(database: SqlDatabase, context_id: string | null, id: string = new_id()): string {
   in_transaction(database, () => {
     const now = new Date().toISOString();
     drizzle_of(database).insert(conversations).values({ id, title: "", created_at: now }).onConflictDoNothing().run();
     refresh_conversation_items(database, [id]);
-    if (context_id !== null) drizzle_of(database).insert(context_items).values({ context_id, item_id: conversation_item_id(id), note: "", added_at: now }).onConflictDoNothing().run();
+    drizzle_of(database).insert(context_items).values({ context_id: context_or_global(context_id), item_id: conversation_item_id(id), note: "", added_at: now }).onConflictDoNothing().run();
   });
   return id;
 }
@@ -218,7 +214,7 @@ export function delete_conversation_records(database: SqlDatabase, id: string): 
 
 // Messages and proposals whose conversation has no row, as every conversation kept before conversations were items,
 // and any a device still on that shape syncs in: each becomes a conversation, in the context whose id it has when that
-// context exists, or in none. A conversation with no messages was never kept, so empty ones are left behind.
+// context exists, or in Global. A conversation with no messages was never kept, so empty ones are left behind.
 export function adopt_stray_conversations(database: SqlDatabase): string[] {
   const db = drizzle_of(database);
   const known = new Set(db.select({ id: conversations.id }).from(conversations).all().map((row) => row.id));
@@ -233,7 +229,7 @@ export function adopt_stray_conversations(database: SqlDatabase): string[] {
     for (const [id, first] of strays) {
       db.insert(conversations).values({ id, title: "", created_at: first }).onConflictDoNothing().run();
       refresh_conversation_items(database, [id]);
-      if (existing.has(id)) db.insert(context_items).values({ context_id: id, item_id: conversation_item_id(id), note: "", added_at: first }).onConflictDoNothing().run();
+      db.insert(context_items).values({ context_id: existing.has(id) ? id : global_context_id, item_id: conversation_item_id(id), note: "", added_at: first }).onConflictDoNothing().run();
     }
   });
   return [...strays.keys()];
