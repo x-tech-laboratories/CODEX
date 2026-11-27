@@ -217,6 +217,21 @@ dialog showing the exact topic, never ticked with others; a mood still never mak
    `node-llama-cpp` (a stub stands in), so it cannot load a GGUF file itself. The eval (recorded jobs, a hosted
    baseline) is not built: no recording of runs exists yet, since it needs an unsynced per-device switch and folder
    that both hosts lack.*
+10. **A specialist agent per plugin (to do, marked important by the owner on 2026-11-27).** Instead of one run seeing
+    every collector's, plugin's and MCP server's tools, each becomes a specialist with fresh context and only its own
+    tools, and the orchestrating run sees CODEX's core calls plus one "ask the <plugin> agent" tool per specialist.
+    - **Why:** SmartHarness built this (its doc 1, "Agents") and measured it: on its scaled eval (26 servers, 116 tools,
+      22 tasks) a 4B model passed 0/66 with one flat tool list and 54/66 with specialists, with tool choice at 18%
+      against 91%. CODEX's flat list grows with every plugin added.
+    - **Where:** CODEX's engine layer, so every engine gets it. Specialists are generated from what is installed, with
+      optional guidance per plugin, not hand-written files. Every specialist call still goes through the action
+      policy, fencing, tainting, hosted screening and the hosted log.
+    - **When it runs:** on for local engines and many plugins, off for large hosted models, user-settable.
+    - **SmartHarness engine:** CODEX passes its generated specialists and tools in, which needs SmartHarness to accept
+      agents and tools from the caller instead of its own folders.
+    - **Costs:** a routing call plus a run per specialist, so more model calls; context lost at hand-offs, answered as
+      SmartHarness does by pinning the user's own words into every brief.
+    - **Order:** after the local gpt-oss-20b engine is set up and a real-model run gives a baseline to measure against.
 
 **Sources to start with:** X-Tasks and Trilium, read-only until the bugs are ironed out.
 
