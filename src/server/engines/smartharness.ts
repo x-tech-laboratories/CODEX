@@ -303,7 +303,7 @@ export function harness_engine(settings: () => SettingValues, options: HarnessEn
       const queue = new EventQueue();
       let model_calls = 0;
       let tool_calls = 0;
-      const offered = offered_tools(request.tools, tool_set_of(values.tool_set), limits.context_size);
+      const offered = offered_tools(request.tools, tool_set_of(values.tool_set), limits.context_size, request.instructions);
       let bridge: ToolBridge | null = null;
       try {
         if (input.left_out > 0) yield { type: "notice", text: `The ${input.left_out === 1 ? "oldest message was" : `${input.left_out.toLocaleString("en")} oldest messages were`} left out of what SmartHarness read, to fit its context.` };

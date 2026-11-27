@@ -4,7 +4,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import type { EngineEvent, EngineRequest, EngineTools, ToolDefinition, ToolSet } from "./engine.ts";
-import { calibrate, chars_per_token, fit_request, least_ratio, refused, type Fit } from "./fitting.ts";
+import { calibrate, chars_per_token, default_chars_per_token, fit_request, least_ratio, refused, tools_chars, type Fit } from "./fitting.ts";
 
 // ── Chat models ──────────────────────────────────────────────────────────────
 
@@ -83,7 +83,7 @@ export interface DirectOptions {
   max_tokens: number;
   // Rounds of tool calls before the last, which has no tools.
   max_rounds: number;
-  // Which tools the model is offered; automatic offers the core set to a context under `core_below` tokens.
+  // Which tools the model is offered; automatic offers the full set only when it fits in under `full_share` of the context.
   tool_set?: ToolSet;
   // Names the engine and model whose measured characters per token the estimate uses.
   calibration_key?: string;
@@ -93,13 +93,16 @@ export interface DirectOptions {
 
 export const direct_defaults: DirectOptions = { context_size: 8192, max_tokens: 4096, max_rounds: 20 };
 
-// Below this context size the automatic tool set is the core one.
-export const core_below = 16_384;
+// The share of the context the full tool set and the instructions may take for automatic to offer it.
+export const full_share = 0.5;
 
-// The tools the model is offered for a tool set and context size.
-export function offered_tools(tools: EngineTools, tool_set: ToolSet = "auto", context_size: number = direct_defaults.context_size): ToolDefinition[] {
-  const core = tool_set === "core" || (tool_set === "auto" && context_size < core_below);
-  return core && tools.core ? tools.core : tools.definitions;
+// The tools the model is offered for a tool set and context size; automatic offers the full set only when its
+// definitions and the instructions take under `full_share` of the context, and the core set otherwise.
+export function offered_tools(tools: EngineTools, tool_set: ToolSet = "auto", context_size: number = direct_defaults.context_size, instructions = "", ratio = default_chars_per_token): ToolDefinition[] {
+  if (!tools.core || tool_set === "all") return tools.definitions;
+  if (tool_set === "core") return tools.core;
+  const full = Math.ceil((tools_chars(tools.definitions) + instructions.length) / ratio);
+  return full < context_size * full_share ? tools.definitions : tools.core;
 }
 
 // ── Arguments ────────────────────────────────────────────────────────────────
@@ -196,10 +199,10 @@ function plain_of(error: unknown, options: DirectOptions): PlainError {
 export async function* run_direct(model: ChatModel, request: EngineRequest, signal: AbortSignal, options: DirectOptions = direct_defaults): AsyncGenerator<EngineEvent> {
   const messages: ChatMessage[] = [{ role: "system", content: request.instructions }, ...request.conversation.map((turn): ChatMessage => (turn.role === "user" ? { role: "user", content: turn.text } : { role: "assistant", content: turn.text }))];
   const key = options.calibration_key ?? "";
-  const tools = offered_tools(request.tools, options.tool_set, options.context_size);
+  let ratio = chars_per_token(key);
+  const tools = offered_tools(request.tools, options.tool_set, options.context_size, request.instructions, ratio);
   const could_use_core = request.tools.core !== undefined && tools !== request.tools.core;
   const told = new Set<string>();
-  let ratio = chars_per_token(key);
   let said = "";
   // A background job may allow fewer rounds than the engine's own limit.
   const max_rounds = Math.max(1, Math.min(options.max_rounds, request.limits?.max_rounds ?? options.max_rounds));

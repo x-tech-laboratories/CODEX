@@ -149,8 +149,8 @@ name and its context size. The model has to support tool calls to read or change
 tokens cautiously at first and then by what the server reports each request cost, tightening at once when a request
 comes in larger than estimated and loosening as reports show room, so requests grow toward what fits. When the
 conversation is too long it first shortens the middle of over-long earlier messages, then leaves out the oldest
-messages, then shortens the middle of your newest one, for that request alone, saying so in the pane. Below 16,384 tokens of context it offers the model a core set of sixteen tools
-(the reads, the most-used changes and the proposing calls, briefly described) instead of all of them, which keeps the prompt to about a
+messages, then shortens the middle of your newest one, for that request alone, saying so in the pane. When all the tools would take half the context or more it offers the model a core set of twenty-one tools
+(the reads, reading and adding from the source apps, the most-used changes and the proposing calls, briefly described) instead of all of them, which keeps the prompt to about a
 quarter; **Tools offered** in the engine's settings chooses **Automatic**, **Core set** or **All tools**. Expect a
 4B model on a CPU at 8,192 tokens to spend a minute or more reading the prompt before its first word, longer on a
 cold start, and a reasoning model to think for a while first, which the pane shows as it goes. If the context is too
