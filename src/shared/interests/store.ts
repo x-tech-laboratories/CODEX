@@ -128,6 +128,7 @@ export const interests_feature = define_feature({
       ],
     },
     add_interest: {
+      page_only: true,
       description: "Adds an interest the user typed, accepted at once. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         { name: "topic", schema: topic_schema },
@@ -135,6 +136,7 @@ export const interests_feature = define_feature({
       ],
     },
     accept_interest: {
+      page_only: true,
       description:
         "Accepts an interest with its topic as the user read and perhaps edited it, the exact text a search engine is sent. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
@@ -143,6 +145,7 @@ export const interests_feature = define_feature({
       ],
     },
     set_interest_state: {
+      page_only: true,
       description: "Pauses or drops an interest, or puts it back to proposed; its findings stay. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         { name: "id", schema: id_of("interest") },
@@ -150,6 +153,7 @@ export const interests_feature = define_feature({
       ],
     },
     set_max_interests: {
+      page_only: true,
       description: `Sets the most interests accepted at once, from ${max_accepted_bounds[0]} to ${max_accepted_bounds[1]}. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.`,
       params: [{ name: "most", schema: { type: "integer", description: "The most accepted at once." } }],
     },

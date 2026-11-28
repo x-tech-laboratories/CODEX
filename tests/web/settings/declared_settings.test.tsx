@@ -20,8 +20,8 @@ import { use_mcp_connector, type McpConnector } from "../../../src/shared/mcp/co
 import type { McpServerRecord } from "../../../src/shared/mcp/model.ts";
 import type { ContextMethods } from "../../../src/shared/store.ts";
 import { set_page_api } from "../../../src/web/api.ts";
-import { declared_value } from "../../../src/web/declared.tsx";
-import { forget_page_plugins } from "../../../src/web/plugins.tsx";
+import { declared_value } from "../../../src/web/declared/declared.tsx";
+import { forget_page_plugins } from "../../../src/web/plugins/plugins.tsx";
 import { SettingsView } from "../../../src/web/settings/SettingsView.tsx";
 import { start_fixture } from "../../fixtures/assistant_fixture.ts";
 

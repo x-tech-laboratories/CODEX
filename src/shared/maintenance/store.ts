@@ -105,6 +105,7 @@ export const maintenance_feature = define_feature({
       params: [],
     },
     set_maintenance_job: {
+      page_only: true,
       description: "Turns one maintenance job on or off, or changes its budget. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         { name: "key", schema: { type: "string", enum: maintenance_keys, description: "The job: index, embed, rules, similarity, tidy, suggest, research or digest." } },

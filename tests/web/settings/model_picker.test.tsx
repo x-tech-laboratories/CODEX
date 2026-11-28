@@ -20,7 +20,7 @@ import type { ContextMethods } from "../../../src/shared/store.ts";
 import { data_watch, set_page_api } from "../../../src/web/api.ts";
 import { AssistantPane } from "../../../src/web/assistant/AssistantPane.tsx";
 import { may_load, model_label } from "../../../src/web/engines/ModelPicker.tsx";
-import { forget_page_plugins } from "../../../src/web/plugins.tsx";
+import { forget_page_plugins } from "../../../src/web/plugins/plugins.tsx";
 import { SettingsView } from "../../../src/web/settings/SettingsView.tsx";
 import { start_fixture, type Fixture } from "../../fixtures/assistant_fixture.ts";
 

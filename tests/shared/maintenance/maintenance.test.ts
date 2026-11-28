@@ -18,7 +18,7 @@ import { digest_lines } from "../../../src/shared/maintenance/jobs.ts";
 import { keep_maintaining, run_maintenance_job, settle_maintenance, tick, use_maintenance_host, type MaintenanceHost } from "../../../src/shared/maintenance/loop.ts";
 import { maintenance_jobs } from "../../../src/shared/maintenance/model.ts";
 import { mood_state } from "../../../src/shared/mood/mood.ts";
-import { page_only_methods } from "../../../src/shared/page_api.ts";
+import { page_only_methods } from "../../../src/shared/store.ts";
 import { count_changed, open_index, settle_index, use_search_index } from "../../../src/shared/search/indexer.ts";
 import { page_only, settings_store } from "../../../src/shared/store.ts";
 import { start_fixture, type Fixture } from "../../fixtures/assistant_fixture.ts";

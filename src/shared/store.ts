@@ -24,7 +24,7 @@ import { items_feature } from "./items/store.ts";
 import { jobs_feature } from "./jobs/store.ts";
 import { maintenance_feature } from "./maintenance/store.ts";
 import { mood_feature } from "./mood/store.ts";
-import { is_read_only, page_only_methods, page_only_refusal } from "./page_api.ts";
+import { is_read_only, page_only_refusal } from "./page_api.ts";
 import { policy_feature } from "./policy/store.ts";
 import { privacy_feature } from "./privacy/store.ts";
 import { search_feature } from "./search/store.ts";
@@ -69,28 +69,13 @@ export function open_store(database: SqlDatabase): void {
 
 // ── Calls ────────────────────────────────────────────────────────────────────
 
+// Every feature's calls as one type, from the list above.
+type Intersection<Union> = (Union extends unknown ? (each: Union) => void : never) extends (each: infer Both) => void ? Both : never;
+
+type FeatureMethods = Intersection<(typeof features)[number]["methods"]>;
+
 const all_methods = {
-  ...(Object.assign({}, ...features.map((feature) => feature.methods)) as typeof settings_feature.methods &
-    typeof contexts_feature.methods &
-    typeof history_feature.methods &
-    typeof conversations_feature.methods &
-    typeof policy_feature.methods &
-    typeof privacy_feature.methods &
-    typeof search_feature.methods &
-    typeof graph_feature.methods &
-    typeof items_feature.methods &
-    typeof sources_feature.methods &
-    typeof blueprints_feature.methods &
-    typeof jobs_feature.methods &
-    typeof maintenance_feature.methods &
-    typeof inbox_feature.methods &
-    typeof tools_feature.methods &
-    typeof mcp_feature.methods &
-    typeof mood_feature.methods &
-    typeof interests_feature.methods &
-    typeof declared_feature.methods &
-    typeof guidance_feature.methods &
-    typeof engines_feature.methods),
+  ...(Object.assign({}, ...features.map((feature) => feature.methods)) as FeatureMethods),
 };
 
 type Bound<Methods> = {
@@ -104,10 +89,11 @@ export const method_names = Object.keys(all_methods) as (keyof ContextMethods & 
 
 export { is_read_only };
 
-// What every call does and takes, for programs other than the page, the calls only the user may make marked page-only.
-export const context_api = Object.fromEntries(
-  Object.entries(Object.assign({}, ...features.map((feature) => feature.api)) as ApiSpec<ContextMethods>).map(([method, spec]) => [method, page_only_methods.has(method) ? { ...spec, page_only: true } : spec]),
-) as ApiSpec<ContextMethods>;
+// What every call does and takes, for programs other than the page, the calls only the user may make marked page-only in their own feature.
+export const context_api = Object.assign({}, ...features.map((feature) => feature.api)) as ApiSpec<ContextMethods>;
+
+// The calls only the user at the page may make, as their features mark them.
+export const page_only_methods: ReadonlySet<string> = new Set(Object.entries(context_api).filter(([, spec]) => spec.page_only).map(([method]) => method));
 
 // The calls and setting writes only the user at the page may make, as the server's sign-in and both MCP endpoints refuse them.
 export const page_only = page_only_calls(context_api, { rule: settings_store.is_user_only_call, refusal: page_only_refusal });

@@ -206,10 +206,12 @@ export const mcp_feature = define_feature({
       params: [],
     },
     add_mcp_server: {
+      page_only: true,
       description: "Adds an MCP server after listing its tools, which starts a local one; a local one runs only on this device. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [{ name: "fields", schema: fields_schema }],
     },
     change_mcp_server: {
+      page_only: true,
       description: "Changes an MCP server, listing its tools again when how it is reached changed. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         { name: "id", schema: id_of("MCP server") },
@@ -217,10 +219,12 @@ export const mcp_feature = define_feature({
       ],
     },
     refresh_mcp_server: {
+      page_only: true,
       description: "Lists an MCP server's tools again; a local one only on the device it runs on. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [{ name: "id", schema: id_of("MCP server") }],
     },
     move_mcp_server_here: {
+      page_only: true,
       description:
         "Makes a local MCP server run on this device instead of the one that added it, starting it here to list its tools. The program and arguments given must be the ones stored, as shown to the user. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
@@ -238,6 +242,7 @@ export const mcp_feature = define_feature({
       ],
     },
     remove_mcp_server: {
+      page_only: true,
       description: "Removes an MCP server, stopping a local one. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [{ name: "id", schema: id_of("MCP server") }],
       destructive: true,

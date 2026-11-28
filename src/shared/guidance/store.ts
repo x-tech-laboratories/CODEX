@@ -46,6 +46,7 @@ export const guidance_feature = define_feature({
   methods: { set_plugin_guidance },
   api: {
     set_plugin_guidance: {
+      page_only: true,
       description:
         "Keeps the user's guidance, in Markdown, on how one tool plugin or source app works, which the assistant's specialist for it is given whole and the conversation shortened; empty text takes it away. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [

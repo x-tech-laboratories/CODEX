@@ -8,11 +8,11 @@ import { SettingsDialogRow } from "@x-tech-laboratories/x-libs/web/react/dialog"
 import { SettingRow } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 
-import { declared_words, type DeclaredServerSummary, type DeclaredSummary } from "../shared/declared/model.ts";
-import { attempt, calls, use_data } from "./api.ts";
-import { engine_manifests } from "../shared/engines/manifests.ts";
-import { DeclaredModelRow } from "./engines/ModelPicker.tsx";
-import { ToolRows } from "./tools/ToolSettings.tsx";
+import { declared_words, type DeclaredServerSummary, type DeclaredSummary } from "../../shared/declared/model.ts";
+import { attempt, calls, use_data } from "../api.ts";
+import { engine_manifests } from "../../shared/engines/manifests.ts";
+import { DeclaredModelRow } from "../engines/ModelPicker.tsx";
+import { ToolRows } from "../tools/ToolSettings.tsx";
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 

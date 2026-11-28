@@ -13,7 +13,8 @@ import { reply_ended, reply_started } from "../../../src/shared/conversations/ac
 import { use_assistant_host } from "../../../src/shared/conversations/host.ts";
 import { openai_embeddings_manifest, openai_embedder_id } from "../../../src/shared/embedders/manifests.ts";
 import { add_message } from "../../../src/shared/conversations/messages.ts";
-import { engine_tools, wait_for_runs, type ToolContext } from "../../../src/shared/conversations/run.ts";
+import { wait_for_runs } from "../../../src/shared/conversations/run.ts";
+import { engine_tools, type ToolContext } from "../../../src/shared/conversations/tools.ts";
 import { embed_pending, open_index, settle_index, sync_documents, use_search_index, index_now, keep_indexing, poke_index } from "../../../src/shared/search/indexer.ts";
 import { open_screen } from "../../../src/shared/privacy/screen.ts";
 import { chunk_text, fts_query, fuse_ranks, text_hash, unit, to_blob, from_blob } from "../../../src/shared/search/text.ts";

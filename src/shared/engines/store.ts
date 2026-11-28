@@ -81,6 +81,7 @@ export const engines_feature = define_feature({
       params: [plugin_param],
     },
     set_engine_model: {
+      page_only: true,
       description:
         "Chooses the model an engine answers with from the next reply on. For an engine this computer's configuration declares, the choice is kept on this device alone and holds over the declared model; an empty name, or the declared one, goes back to it. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [plugin_param, { name: "model", schema: text("The model's name on the engine's endpoint, as list_engine_models gives it, or any name it takes.") }],

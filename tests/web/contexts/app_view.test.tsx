@@ -20,7 +20,7 @@ import { set_page_api } from "../../../src/web/api.ts";
 import { App } from "../../../src/web/App.tsx";
 import { group_by_kind } from "../../../src/web/contexts/ContextView.tsx";
 import { groups_of, kinds_of, plural_of } from "../../../src/web/contexts/FeedDialogs.tsx";
-import { forget_page_plugins } from "../../../src/web/plugins.tsx";
+import { forget_page_plugins } from "../../../src/web/plugins/plugins.tsx";
 
 // The page's calls answered by a real store on a throwaway database, as the desktop app would, which needs no sign-in.
 function fake_page(database = new DatabaseSync(":memory:")): ContextMethods {

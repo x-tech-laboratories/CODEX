@@ -17,12 +17,12 @@ import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
 
 import type { DesktopSettings } from "../../shared/desktop.ts";
 import { attempt, calls, data_watch, page, set_setting, show_error, use_settings } from "../api.ts";
-import { read_picked, save_text } from "../files.ts";
+import { read_picked, save_text } from "./files.ts";
 import { engine_section, policy_section } from "../assistant/AssistantSettings.tsx";
 import { interests_section } from "../interests/InterestSettings.tsx";
 import { mood_section } from "../mood/MoodSettings.tsx";
 import { assistant_jobs_section, background_section, maintenance_section } from "../jobs/BackgroundSettings.tsx";
-import { CollectorRows } from "../plugins.tsx";
+import { CollectorRows } from "../plugins/plugins.tsx";
 import { hosted_log_section } from "../privacy/PrivacySettings.tsx";
 import { index_section } from "../search/IndexSettings.tsx";
 

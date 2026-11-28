@@ -124,6 +124,7 @@ export const privacy_feature = define_feature({
       params: [],
     },
     set_source_mark: {
+      page_only: true,
       description: "Turns one of a collector plugin's marks on or off. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         { name: "plugin_id", schema: text("The collector plugin's id, such as codex.x-tasks, or an app's key such as codex.items/app.x-tasks, from list_source_marks.") },

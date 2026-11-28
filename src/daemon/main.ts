@@ -1,42 +1,31 @@
-// The desktop app's daemon: everything CODEX does without a window, being the database, sync, backups, history, the
-// MCP endpoint and the collectors' refreshes. The window reaches it over a Unix socket with the same calls a browser makes to the web server, and
-// closing the window leaves it running.
+// The desktop app's daemon: the runtime every host shares, run beside this computer's database and synced with a
+// server, with what only a desktop has: its own settings, notifications, a local MCP endpoint and stopping when unused.
+// The window reaches it over a Unix socket with the same calls a browser makes to the web server.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 
 import fastify, { type FastifyInstance } from "fastify";
 import { Notifier } from "@x-tech-laboratories/x-libs/agent/desktop_notify";
-import { keep_backing_up, type BackupSchedule } from "@x-tech-laboratories/x-libs/backups";
 import { create_certificate_trust } from "@x-tech-laboratories/x-libs/certificates";
 import { create_local_mcp } from "@x-tech-laboratories/x-libs/electron/mcp";
 import { DaemonRunningError, listen_on_socket } from "@x-tech-laboratories/x-libs/local_daemon";
 import { register_call_table } from "@x-tech-laboratories/x-libs/server/call_table";
-import { EventStream } from "@x-tech-laboratories/x-libs/server/events";
 import { register_error_replies, register_lenient_json_body } from "@x-tech-laboratories/x-libs/server/replies";
-import { sqlite_backups } from "@x-tech-laboratories/x-libs/server/sqlite_backups";
-import { create_sync_client, sync_device_methods } from "@x-tech-laboratories/x-libs/sync_client";
-import { file_sync_storage } from "@x-tech-laboratories/x-libs/sync_file_storage";
 
-import { codex_backup_naming, read_schedule } from "../shared/backups.ts";
 import { context_bridge } from "../shared/bridge.ts";
 import { read_desktop_settings, type DaemonMethods, type DesktopSettings } from "../shared/desktop.ts";
-import { mcp_instructions } from "../shared/mcp.ts";
-import { stop_all_runs } from "../shared/conversations/run.ts";
-import { conversation_event, type DeviceMethods } from "../shared/page_api.ts";
-import { after_index_change, bind_methods, context_api, is_read_only, needs_upgrade, open_store, page_only, start_assistant, sync_engine } from "../shared/store.ts";
-import { register_context_calls } from "../server/calls.ts";
-import { load_collectors } from "../server/collectors/index.ts";
-import { declared_file_of, keep_declared } from "../server/declared.ts";
-import { keep_refreshing } from "../server/refreshing.ts";
-import { keep_indexing, open_index } from "../shared/search/indexer.ts";
-import { keep_maintaining } from "../shared/maintenance/loop.ts";
-import { keep_running_jobs } from "../shared/jobs/runner.ts";
 import type { JobRun } from "../shared/jobs/model.ts";
+import { mcp_instructions } from "../shared/mcp.ts";
+import type { DeviceMethods } from "../shared/page_api.ts";
+import { bind_methods, context_api, is_read_only, page_only } from "../shared/store.ts";
+import { register_context_calls } from "../server/calls.ts";
+import { declared_file_of } from "../server/declared.ts";
+import { start_runtime } from "../server/runtime.ts";
+import { sync_client_role } from "../server/sync.ts";
 import { socket_of } from "./profile.ts";
 
 // ── Profile ──────────────────────────────────────────────────────────────────
@@ -51,74 +40,27 @@ const socket_path = socket_of(process.env, database_path, false);
 const version = process.env.CODEX_VERSION || "0.0.0";
 // The built daemon sits in out/main, and resources/ beside out/ both in the source tree and in the package.
 const icon_path = process.env.CODEX_ICON || join(import.meta.dirname, "../../resources/icon.png");
-
 const profile = dirname(database_path);
-const backups_folder = join(profile, "backups");
+const device = `CODEX on ${hostname()}`;
 
 // How long the daemon waits after its last window closed before it stops, when it is not to keep running in the background.
 const unused_exit_ms = 30_000;
 const unused_check_ms = 5000;
 
-// ── Database ─────────────────────────────────────────────────────────────────
+// ── Desktop settings ─────────────────────────────────────────────────────────
 
-function open_database(): DatabaseSync {
-  const opened = new DatabaseSync(database_path!);
-  opened.exec("PRAGMA journal_mode = WAL");
-  return opened;
+const desktop_file = join(profile, "desktop.json");
+
+function read_desktop(): DesktopSettings {
+  return read_desktop_settings(existsSync(desktop_file) ? JSON.parse(readFileSync(desktop_file, "utf8")) : null);
 }
-
-mkdirSync(profile, { recursive: true });
-let database = open_database();
-
-// Every window's event stream, told when the data changed or sync's status moved.
-const changes = new EventStream();
-const announce_change = (): void => changes.announce_change();
-
-// Replies run here, beside the database, and stream to every window as they are written.
-start_assistant({ database: () => database, announce: announce_change, emit: (event) => changes.send(JSON.stringify(event), { event: conversation_event }) });
-
-// ── Backups ──────────────────────────────────────────────────────────────────
-
-const kept = sqlite_backups({
-  folder: () => {
-    mkdirSync(backups_folder, { recursive: true });
-    return backups_folder;
-  },
-  naming: codex_backup_naming,
-  database: () => database,
-  database_path: () => database_path,
-  close: () => database.close(),
-  open: () => {
-    database = open_database();
-    open_store(database);
-  },
-  after_restore: (restored) => sync_engine.forget_history(restored),
-});
-
-if (needs_upgrade(database)) await kept.create();
-open_store(database);
-
-// ── Collectors ───────────────────────────────────────────────────────────────
-
-await load_collectors(join(profile, "plugins"), true);
-// What this computer's configuration declares, read again when its file changes; its MCP servers are listed in the background.
-const declared = keep_declared(declared_file_of(process.env), () => database, announce_change);
-void declared.reload();
-// Tells the user when items vanished from their apps, one notice replacing the last.
-const notifier = new Notifier({ app_name: "CODEX", icons: { app: icon_path }, on_error: (message) => console.error(message) });
-const refreshing = keep_refreshing(() => database, {
-  on_change: announce_change,
-  on_report: (report) => {
-    if (report.missing === 0 || !read_desktop().notify_missing) return;
-    const items = report.missing === 1 ? "An item is" : `${report.missing} items are`;
-    void notifier.show({ key: "missing", title: "Items gone", body: `${items} no longer in its app; it is marked missing in its contexts.`, icon: "app" });
-  },
-});
-
-// ── Jobs ─────────────────────────────────────────────────────────────────────
 
 // Whether a window is in front, as the window tells; nothing about the Inbox is shown while the user is looking.
 let window_in_front = false;
+
+// ── Notifications ────────────────────────────────────────────────────────────
+
+const notifier = new Notifier({ app_name: "CODEX", icons: { app: icon_path }, on_error: (message) => console.error(message) });
 
 // What a finished run left waiting, in a line, or nothing when it left nothing.
 function waiting_words(run: JobRun): string {
@@ -128,55 +70,36 @@ function waiting_words(run: JobRun): string {
   return "";
 }
 
-// Only once this device is chosen to run them; a job that leaves something waiting says so while the window is not in front.
-const jobs = keep_running_jobs({
-  database: () => database,
-  device: `CODEX on ${hostname()}`,
-  now: () => Date.now(),
-  on_finished: (run) => {
+// ── Runtime ──────────────────────────────────────────────────────────────────
+
+const runtime = await start_runtime({
+  database_path,
+  index_path: join(profile, "codex-index.db"),
+  backups_folder: join(profile, "backups"),
+  profile,
+  plugins_folder: join(profile, "plugins"),
+  desktop_plugins: true,
+  declared_file: declared_file_of(process.env),
+  device,
+  kind: "desktop",
+  restore: "reopen",
+  sync: sync_client_role(device),
+  // Tells the user when items vanished from their apps, one notice replacing the last.
+  on_refresh_report: (report) => {
+    if (report.missing === 0 || !read_desktop().notify_missing) return;
+    const items = report.missing === 1 ? "An item is" : `${report.missing} items are`;
+    void notifier.show({ key: "missing", title: "Items gone", body: `${items} no longer in its app; it is marked missing in its contexts.`, icon: "app" });
+  },
+  // A job that leaves something waiting says so while the window is not in front.
+  on_job_finished: (run) => {
     const words = waiting_words(run);
     if (!words || window_in_front || !read_desktop().notify_inbox) return;
     void notifier.show({ key: "inbox", title: "Waiting in the Inbox", body: words, url: "codex://inbox", icon: "app" });
   },
 });
 
-// ── Search index ─────────────────────────────────────────────────────────────
-
-// A file of its own beside the database, never synced or backed up, and rebuilt from the store if it is deleted.
-const index = new DatabaseSync(join(profile, "codex-index.db"));
-index.exec("PRAGMA journal_mode = WAL");
-open_index(index);
-const indexing = keep_indexing({ database: () => database, index: () => index });
-
-// The maintenance jobs: this device's own index and embeddings, and, on the device chosen for background work, the
-// graph's upkeep and the daily digest, each within its budget.
-const maintaining = keep_maintaining({ database: () => database, index: () => index, device: `CODEX on ${hostname()}`, kind: "desktop", now: () => Date.now(), on_change: () => after_index_change(database) });
-
-// The schedule belongs to this device, so it is kept beside the database rather than in the synced settings.
-const schedule_file = join(profile, "backup-schedule.json");
-
-function read_backup_schedule(): BackupSchedule {
-  return read_schedule(existsSync(schedule_file) ? JSON.parse(readFileSync(schedule_file, "utf8")) : null);
-}
-
-const backing_up = keep_backing_up(kept, read_backup_schedule);
-
-// ── Sync ─────────────────────────────────────────────────────────────────────
-
 // Server certificates the user trusted, such as a home server's self-signed one, handed to Node's own fetch.
 const certificates = create_certificate_trust({ file: join(profile, "trusted-certificates.json"), use_in_node: true });
-
-const sync = create_sync_client({
-  engine: sync_engine,
-  database: () => database,
-  storage: file_sync_storage({ file: join(profile, "sync.json"), back_up_before_download: async () => void (await kept.create()) }),
-  data_name: "context data",
-  device_name: `CODEX on ${hostname()}`,
-  on_remote_change: announce_change,
-  on_status: (status) => changes.send(JSON.stringify(status), { event: "sync_status" }),
-});
-
-// ── MCP ──────────────────────────────────────────────────────────────────────
 
 // Off until turned on in Settings; a change made through it reaches the open window and syncs like any other.
 const local_mcp = create_local_mcp({
@@ -188,36 +111,13 @@ const local_mcp = create_local_mcp({
   page_only,
   settings_file: join(profile, "mcp.json"),
   default_port: 3922,
-  call: (method, args) => context_bridge.dispatch(bind_methods(() => database, announce_change, "program"), method, args),
+  call: (method, args) => context_bridge.dispatch(bind_methods(runtime.database, () => runtime.announce(), "program"), method, args),
 });
-
-// ── Desktop settings ─────────────────────────────────────────────────────────
-
-const desktop_file = join(profile, "desktop.json");
-
-function read_desktop(): DesktopSettings {
-  return read_desktop_settings(existsSync(desktop_file) ? JSON.parse(readFileSync(desktop_file, "utf8")) : null);
-}
 
 // ── Calls ────────────────────────────────────────────────────────────────────
 
 function device_methods(): DeviceMethods {
-  return {
-    ...sync_device_methods(sync),
-    list_backups: kept.list,
-    create_backup: () => kept.create(),
-    // The restored data no longer matches the server's, so sync waits until the user picks which copy wins.
-    restore_backup: async (name) => {
-      sync.disconnect();
-      await kept.restore(name);
-    },
-    remove_backup: kept.remove,
-    get_backup_schedule: read_backup_schedule,
-    set_backup_schedule: (schedule) => {
-      writeFileSync(schedule_file, JSON.stringify(read_schedule(schedule), null, 2));
-      void backing_up.check();
-    },
-  };
+  return { ...runtime.sync.methods, ...runtime.backups };
 }
 
 function daemon_methods(shut_down: () => void): DaemonMethods {
@@ -235,12 +135,12 @@ async function build_daemon(shut_down: () => void): Promise<FastifyInstance> {
   register_lenient_json_body(daemon);
   register_error_replies(daemon);
   // A change from one window reaches the others; the one that made it already shows it.
-  const tell_others = (client_id: string): void => changes.announce_change(client_id);
+  const tell_others = (client_id: string): void => runtime.announce(client_id);
   await daemon.register(
     async (api) => {
-      changes.register(api, "/events");
+      runtime.changes.register(api, "/events");
       // The socket is readable by the user alone and is how the desktop window reaches the daemon, so it is the page.
-      register_context_calls(api, () => database, changes);
+      register_context_calls(api, runtime.database, runtime.changes);
       register_call_table(api, "/device", device_methods(), { is_read_only, on_change: tell_others });
       register_call_table(api, "/certificates", certificates.methods, { is_read_only });
       register_call_table(api, "/local_mcp", local_mcp.methods, { is_read_only });
@@ -262,18 +162,12 @@ async function main(): Promise<void> {
     if (is_stopping) return;
     is_stopping = true;
     clearInterval(unused_timer);
-    stop_all_runs();
-    refreshing.stop();
-    declared.stop();
-    void jobs.stop();
-    void maintaining.stop().then(() => indexing.stop()).then(() => index.close());
-    sync.stop();
-    backing_up.stop();
-    void daemon
-      .close()
+    void runtime
+      .stop()
+      .then(() => daemon.close())
       .then(() => local_mcp.stop())
       .finally(() => {
-        database.close();
+        runtime.database().close();
         process.exit(0);
       });
   }
@@ -287,13 +181,13 @@ async function main(): Promise<void> {
   }
   console.log(`codex daemon on ${socket_path}, using ${database_path}`);
 
-  sync.start();
+  runtime.sync.start();
   void local_mcp.start();
 
   // Without "Keep running in the background", the daemon stops a while after its last window has gone.
   let unused_since = Date.now();
   unused_timer = setInterval(() => {
-    if (changes.client_count > 0 || read_desktop().keep_running_in_background) unused_since = Date.now();
+    if (runtime.changes.client_count > 0 || read_desktop().keep_running_in_background) unused_since = Date.now();
     else if (Date.now() - unused_since >= unused_exit_ms) shut_down();
   }, unused_check_ms);
 

@@ -17,7 +17,7 @@ import { open_plugin_host } from "../../../src/shared/collectors/host.ts";
 import { declarations, declared_summary, use_declared, with_declared, without_declared } from "../../../src/shared/declared/current.ts";
 import { declarable_plugin_ids, read_declarations, type DeclaredConfig } from "../../../src/shared/declared/model.ts";
 import { use_mcp_connector } from "../../../src/shared/mcp/connector.ts";
-import { page_only_methods } from "../../../src/shared/page_api.ts";
+import { page_only_methods } from "../../../src/shared/store.ts";
 import { context_api, page_only } from "../../../src/shared/store.ts";
 import { open_plugin_tools } from "../../../src/shared/tools/offered.ts";
 import { start_fixture } from "../../fixtures/assistant_fixture.ts";

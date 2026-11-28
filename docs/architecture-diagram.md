@@ -17,11 +17,12 @@ flowchart LR
   subgraph Desktop["Desktop app"]
     Main["src/main<br/>window · tray · login entry"]
     Preload["src/preload"]
-    Daemon["src/daemon<br/>owns codex.db, sync, backups,<br/>refreshing, local MCP"]
+    Daemon["src/daemon<br/>desktop settings, notices,<br/>local MCP, sync client"]
   end
 
   subgraph Server["src/server"]
     App["app.ts<br/>REST api/call/method<br/>OpenAPI · MCP · accounts/tokens"]
+    Runtime["runtime.ts<br/>store · backups · collectors · index<br/>maintenance · jobs · assistant<br/>sync slot (sync.ts)"]
     Refresh["refreshing.ts<br/>refresh every N min"]
     Declared["declared.ts<br/>keep_declared / watch_config"]
   end
@@ -35,13 +36,14 @@ flowchart LR
   PageApi -- "desktop host: IPC" --> Preload --> Main
   Main -- "HTTP over daemon.sock" --> Daemon
 
-  App --> Store
-  Daemon --> Store
-  Refresh --> Store
+  App --> Runtime
+  Daemon --> Runtime
+  Runtime --> Store
+  Runtime --> Refresh --> Store
+  Runtime --> Declared
   Daemon -. "sync_client" .-> Sync
   Store --> Index
   DeclFile --> Declared --> Store
-  DeclFile --> Daemon
 ```
 
 ## 2. Inside the store (src/shared)
@@ -155,8 +157,8 @@ flowchart LR
 **What the three pictures show**
 
 1. One React page runs on two hosts. In a browser it calls the server over `POST api/call/<method>`. In the desktop
-   app it goes through IPC to Electron's main process, then over HTTP to the daemon's socket. The server or the daemon
-   owns the SQLite store. The search index is a separate SQLite file that can be rebuilt at any time, and only the
+   app it goes through IPC to Electron's main process, then over HTTP to the daemon's socket. The server and the daemon
+   run the same runtime around the SQLite store, differing in how they are reached and how they sync. The search index is a separate SQLite file that can be rebuilt at any time, and only the
    daemon syncs.
 2. Conversations, blueprints and findings are all items in contexts, so History, search and the graph handle them the
    way they handle a task or a note. An engine never touches the store directly. Every tool call goes back through the

@@ -6,7 +6,7 @@ import type { JobFields } from "../../../src/shared/jobs/model.ts";
 import { check_jobs, context_mark, job_running, keep_running_jobs, use_job_host, wait_for_job } from "../../../src/shared/jobs/runner.ts";
 import { register_device } from "../../../src/shared/jobs/records.ts";
 import { checked_schedule, describe_schedule, is_due, next_due } from "../../../src/shared/jobs/schedule.ts";
-import { page_only_methods } from "../../../src/shared/page_api.ts";
+import { page_only_methods } from "../../../src/shared/store.ts";
 import { bind_methods, settings_store } from "../../../src/shared/store.ts";
 import { start_fixture, type Fixture } from "../../fixtures/assistant_fixture.ts";
 

@@ -54,7 +54,7 @@ runs" below).
 
 The contexts migration `20261127152615_global` (a custom drizzle-kit step after the released ones) makes Global with
 `INSERT OR IGNORE`, puts every context with no parent under it, and gives Global a membership of every conversation and
-blueprint in no context that is not deleted. `ensure_global` (`src/shared/contexts/store.ts`) does the same on every
+blueprint in no context that is not deleted. `ensure_global` (`src/shared/contexts/records.ts`) does the same on every
 open and every write, writing only what is out of place, so what a device not yet updated syncs in (a context at the
 top level, a conversation in none) is taken in at the next write; until then `list_contexts`, `get_context`, search's
 tree and the blueprints' climb read a context with no parent as under Global. It also puts Global back at the top,
@@ -95,7 +95,7 @@ The plugins live where they can run. The network ones (X-Tasks, Trilium, links, 
 bookmarks reads a copy of a Firefox profile's `places.sqlite` in `src/server/collectors/bookmarks.ts`. The server and
 the daemon hand the store every plugin at start with `load_collectors`, the plugins folder's included; only the daemon
 adds the desktop plugins, Firefox bookmarks among them, since a server has no Firefox profile. The page runs
-its own plugin host over the same records only to show each plugin's settings (`src/web/plugins.tsx`).
+its own plugin host over the same records only to show each plugin's settings (`src/web/plugins/plugins.tsx`).
 
 ### Apps answering the item calls
 
@@ -405,14 +405,22 @@ naming the file and never its content). Nothing declared is stored or synced:
   `tool_plugins` and policy settings, off and at `proposal` until the user sets them.
 - **The page**: `get_declared_config` (page-only, like `refresh_declared_mcp_server`) gives `declared_summary`: each
   entry's settings, which fields are read from files, the declared servers' tools and every problem, never a file's
-  content. `src/web/declared.tsx` shows a declared plugin's settings read-only in place of its controls, the declared
+  content. `src/web/declared/declared.tsx` shows a declared plugin's settings read-only in place of its controls, the declared
   engine and embedder in place of their choices, a row per declared MCP server with Refresh and its tools' switches,
   and the file's own problems under Plugins, each marked "Set by this computer's configuration".
 
-## The desktop daemon
+## The hosts
 
-As in every X-app: `src/daemon/main.ts` is plain Node on Electron's own binary, owning the database, sync, backups,
-refreshing, missing-item notices and the local MCP endpoint, and serving the page's calls on
+The server and the desktop daemon run one runtime, `start_runtime` in `src/server/runtime.ts`: it opens the database,
+backs it up before an upgrade, brings the store up to date, and runs the collectors, the declared configuration, the
+refreshes, the search index, the maintenance and the assistant's jobs and the assistant, stopping them in one order. A
+host gives it a role: where its files are, `kind` (`server` or `desktop`), how a restore takes effect (`staged` for the
+next start on the server, `reopen` on the desktop) and a sync slot (`src/server/sync.ts`): the server's exchange
+(`sync_hub`) or the desktop's client (`sync_client_role`).
+
+`src/server/main.ts` adds the accounts, the HTTP calls, OpenAPI, MCP and the page (`src/server/app.ts`). As in every
+X-app, `src/daemon/main.ts` is plain Node on Electron's own binary, adding the desktop's own settings, the missing-item
+and Inbox notices, the local MCP endpoint and stopping when unused, and serving the page's calls on
 `$XDG_RUNTIME_DIR/codex/daemon.sock`. `src/main/index.ts` keeps the window, the tray (`src/main/tray_menu.ts`) and
 the login entry.
 

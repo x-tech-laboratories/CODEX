@@ -12,7 +12,7 @@ import type { ContextPluginApi } from "../../../src/shared/collectors/host.ts";
 import { use_assistant_host } from "../../../src/shared/conversations/host.ts";
 import type { ContextMethods } from "../../../src/shared/store.ts";
 import { set_page_api } from "../../../src/web/api.ts";
-import { forget_page_plugins } from "../../../src/web/plugins.tsx";
+import { forget_page_plugins } from "../../../src/web/plugins/plugins.tsx";
 import { SettingsView } from "../../../src/web/settings/SettingsView.tsx";
 import { tool_facts } from "../../../src/web/tools/ToolSettings.tsx";
 import { start_fixture, type Fixture } from "../../fixtures/assistant_fixture.ts";

@@ -3,7 +3,7 @@ import type { ChangeEvent } from "react";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { read_picked, save_text } from "../../src/web/files.ts";
+import { read_picked, save_text } from "../../../src/web/settings/files.ts";
 
 function picked(files: File[]): ChangeEvent<HTMLInputElement> {
   const input = document.createElement("input");

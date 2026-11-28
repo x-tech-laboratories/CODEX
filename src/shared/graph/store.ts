@@ -626,10 +626,12 @@ export const graph_feature = define_feature({
       ],
     },
     accept_graph_proposals: {
+      page_only: true,
       description: "Accepts proposed links and entities; a link's proposed entities are accepted with it. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [{ name: "ids", schema: ids_schema }],
     },
     reject_graph_proposals: {
+      page_only: true,
       description:
         "Rejects proposed links and entities, which are remembered so the same is never proposed again; a rejected entity takes the links proposed to it along. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [{ name: "ids", schema: ids_schema }],

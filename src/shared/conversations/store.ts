@@ -9,7 +9,7 @@ import { settings_of } from "@x-tech-laboratories/x-libs/settings";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
-import { when_items_left } from "../contexts/store.ts";
+import { when_items_left } from "../contexts/records.ts";
 import { engine_setting } from "../engines/engine.ts";
 import { define_feature } from "../feature.ts";
 import { list_proposals_of } from "../policy/proposals.ts";

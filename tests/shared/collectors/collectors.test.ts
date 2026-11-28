@@ -10,7 +10,7 @@ import { email_plugin, forget_x_tasks_paths, html_text, trilium_plugin, web_addr
 import { app_info, type Collector } from "../../../src/shared/collectors/collector.ts";
 import type { ContextPluginApi } from "../../../src/shared/collectors/host.ts";
 import { files_plugin, find_files, folders_of, look_up_files, most_content_bytes, read_text_files } from "../../../src/server/collectors/files.ts";
-import { status_of } from "../../../src/web/plugins.tsx";
+import { status_of } from "../../../src/web/plugins/plugins.tsx";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

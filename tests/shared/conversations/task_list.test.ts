@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { use_assistant_host } from "../../../src/shared/conversations/host.ts";
 import { one_at_a_time_line } from "../../../src/shared/conversations/instructions.ts";
 import { add_conversation_record } from "../../../src/shared/conversations/records.ts";
-import { engine_tools, wait_for_runs, type ToolContext } from "../../../src/shared/conversations/run.ts";
+import { wait_for_runs } from "../../../src/shared/conversations/run.ts";
+import { engine_tools, type ToolContext } from "../../../src/shared/conversations/tools.ts";
 import { own_specialists, specialist_instructions } from "../../../src/shared/conversations/specialists.ts";
 import {
   calls_before_nudge,

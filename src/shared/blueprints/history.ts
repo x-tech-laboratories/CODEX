@@ -3,13 +3,17 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
+import { eq } from "@x-tech-laboratories/x-libs/drizzle";
 import type { HistoryWatch } from "@x-tech-laboratories/x-libs/history";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { global_context_id } from "../contexts/model.ts";
+import { context_items, contexts } from "../contexts/schema.ts";
+import { drizzle_of } from "../feature.ts";
 import { insert_row } from "../graph/history.ts";
 import { blueprint_item_id } from "./model.ts";
 import { refresh_blueprint_items } from "./records.ts";
+import { blueprints } from "./schema.ts";
 
 // ── Kind ─────────────────────────────────────────────────────────────────────
 
@@ -29,10 +33,12 @@ export const blueprint_history = {
   },
   // A place in a context that is gone is left out.
   apply: (database: SqlDatabase, id: string, snapshot: Snapshot): void => {
-    database.prepare("DELETE FROM blueprints WHERE id = ?").run(id);
-    database.prepare("DELETE FROM context_items WHERE item_id = ?").run(blueprint_item_id(id));
+    const db = drizzle_of(database);
+    db.delete(blueprints).where(eq(blueprints.id, id)).run();
+    db.delete(context_items).where(eq(context_items.item_id, blueprint_item_id(id))).run();
+    const context_exists = (context_id: string) => db.select({ id: contexts.id }).from(contexts).where(eq(contexts.id, context_id)).get() !== undefined;
     for (const row of snapshot.blueprints ?? []) insert_row(database, "blueprints", row);
-    for (const place of snapshot.context_items ?? []) if (database.prepare("SELECT 1 FROM contexts WHERE id = ?").get(String(place.context_id))) insert_row(database, "context_items", place);
+    for (const place of snapshot.context_items ?? []) if (context_exists(String(place.context_id))) insert_row(database, "context_items", place);
     refresh_blueprint_items(database, [id]);
   },
   name_of: (snapshot: Snapshot): string => String(snapshot.blueprints?.[0]?.title ?? "Blueprint"),

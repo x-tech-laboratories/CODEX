@@ -9,8 +9,8 @@ import { Loaded } from "@x-tech-laboratories/x-libs/web/react/states";
 import { keep_thinking_setting } from "../../shared/conversations/model.ts";
 import type { PolicyEntry, PolicyLevel } from "../../shared/policy/model.ts";
 import { attempt, calls, set_setting, succeeds, use_data } from "../api.ts";
-import { use_declared } from "../declared.tsx";
-import { EngineRows } from "../plugins.tsx";
+import { use_declared } from "../declared/declared.tsx";
+import { EngineRows } from "../plugins/plugins.tsx";
 import { PluginToolLevels } from "../tools/ToolSettings.tsx";
 
 // ── Engine ───────────────────────────────────────────────────────────────────

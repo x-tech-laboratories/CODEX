@@ -10,21 +10,21 @@ import { SettingsDialogRow } from "@x-tech-laboratories/x-libs/web/react/dialog"
 import { PluginSettings, use_plugins } from "@x-tech-laboratories/x-libs/web/react/plugins";
 import { Skeleton } from "@x-tech-laboratories/x-libs/web/react/states";
 
-import { app_info, plugins_setting } from "../shared/collectors/collector.ts";
-import { bundled_manifests } from "../shared/collectors/manifests.ts";
-import { embedder_manifests } from "../shared/embedders/manifests.ts";
-import { engine_manifests } from "../shared/engines/manifests.ts";
-import { mcp_manifest, mcp_plugin_id } from "../shared/mcp/model.ts";
-import { tool_manifests } from "../shared/tools/manifests.ts";
-import { calls } from "./api.ts";
-import { DeclaredPluginSettings, DeclaredProblems, DeclaredServerRows, use_declared } from "./declared.tsx";
-import { CollectorGuidance } from "./guidance/GuidanceField.tsx";
-import { SourceMarks } from "./privacy/PrivacySettings.tsx";
-import { ItemSourceRows } from "./sources/ItemSources.tsx";
-import { McpServerRows } from "./mcp/McpServers.tsx";
-import { EngineSettings } from "./engines/ModelPicker.tsx";
-import { OtherToolPluginRows, ToolPluginSettings } from "./tools/ToolSettings.tsx";
-import { item_sources_plugin_id } from "../shared/sources/model.ts";
+import { app_info, plugins_setting } from "../../shared/collectors/collector.ts";
+import { bundled_manifests } from "../../shared/collectors/manifests.ts";
+import { embedder_manifests } from "../../shared/embedders/manifests.ts";
+import { engine_manifests } from "../../shared/engines/manifests.ts";
+import { mcp_manifest, mcp_plugin_id } from "../../shared/mcp/model.ts";
+import { tool_manifests } from "../../shared/tools/manifests.ts";
+import { calls } from "../api.ts";
+import { DeclaredPluginSettings, DeclaredProblems, DeclaredServerRows, use_declared } from "../declared/declared.tsx";
+import { CollectorGuidance } from "../guidance/GuidanceField.tsx";
+import { SourceMarks } from "../privacy/PrivacySettings.tsx";
+import { ItemSourceRows } from "../sources/ItemSources.tsx";
+import { McpServerRows } from "../mcp/McpServers.tsx";
+import { EngineSettings } from "../engines/ModelPicker.tsx";
+import { OtherToolPluginRows, ToolPluginSettings } from "../tools/ToolSettings.tsx";
+import { item_sources_plugin_id } from "../../shared/sources/model.ts";
 
 // ── Host ─────────────────────────────────────────────────────────────────────
 
