@@ -226,6 +226,12 @@ Decided 2026-11-26 (doc 4): the knowledge graph, the event queue, the Inbox and 
 
 ## Other proposals
 
+### Choose a specialist without a model call
+
+**Not built:** with **Specialists** on, the model decides which `ask_<plugin>` to call. Proposed: train a classifier on the embedder CODEX already runs for search. For each plugin, embed its tool descriptions plus a few example requests, then fit logistic regression over the plugins (or just take the nearest centroid). Use it to pre-pick the specialist, or to shorten the list of specialists the model sees, and skip the routing call when the top score is clear. **Risk:** CODEX's requests mix topics more than a benchmark's do, so the router may be wrong more often. **How to test:** label a sample of real requests by the plugin they needed and measure how often the top pick, and the top two, are right.
+
+Evidence from MOSAIC (2026-11-07, a local experiment now deleted): MiniLM-L6 embeddings with logistic regression, trained on 2,000 prompts per domain, routed 100% of held-out prompts across five well-separated domains (python, sql, medicine, law, chemistry). The same experiment found that per-domain LoRA experts on Qwen2.5-0.5B beat one LoRA trained on every domain on perplexity in all five domains. On MMLU accuracy they won only in medicine (0.54 vs 0.52) and lost in law (0.49 vs 0.51) and chemistry (0.33 vs 0.41). Per-topic adapters are therefore no reason to change CODEX's models.
+
 ### Mascot: more moods
 
 **Not built:** more states mapped to moods. Candidates (state in `src/renderer/runState.ts`): a clarification or approval waiting (`clarifications` not empty; curious), background research working (`backgroundStatus` not `Idle`; focused), daemon unreachable (`connection: 'unavailable'`; worried, today `asleep`), the user cancelling (`cancelling`; startled), resuming from suspend or connecting at launch (waking), a final answer arriving (`phase: 'final'`; excited). Needs a priority order when several hold at once (e.g. worried, asleep, startled, curious, thinking, focused, calm), with happy/sad/excited as brief moments rather than states. The removed CSS mascot also had an antenna pulse while thinking, floating z's while asleep and a slow head bob (git history); RoboBuddy draws none of these.
