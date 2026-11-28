@@ -12,7 +12,9 @@ import type { ConversationEvent } from "../src/shared/conversations/model.ts";
 import { wait_for_runs } from "../src/shared/conversations/run.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { data_watch, set_page_api } from "../src/web/api.ts";
-import { AssistantPane, nested_parts, ProposalCard, Thinking, ToolCallRow } from "../src/web/assistant/AssistantPane.tsx";
+import { AssistantPane, ProposalCard } from "../src/web/assistant/AssistantPane.tsx";
+import { CallTree, call_nodes, grouped_parts, nested_parts } from "../src/web/assistant/CallTree.tsx";
+import { Thinking } from "../src/web/assistant/Thinking.tsx";
 import { Mascot } from "../src/web/assistant/Mascot.tsx";
 import { lasting_mood, moment_after, mood_summary, screen_placement } from "../src/web/assistant/mascot.ts";
 import { moods as moods_of } from "../src/shared/mood/model.ts";
@@ -115,10 +117,16 @@ describe("the assistant's pane", () => {
 
     expect(await screen.findByText(/it is empty/)).toBeTruthy();
     expect(screen.getByText("What is here?", { selector: ".from-user p" })).toBeTruthy();
-    const call = screen.getByText("list_contexts").closest("details")!;
-    expect(call.open).toBe(false);
+    const call = screen.getByText("list_contexts").closest<HTMLElement>(".tree-item")!;
     expect(within(call).getByText("done")).toBeTruthy();
-    expect(within(call).getByText(/"name": "Kitchen"/)).toBeTruthy();
+    // Its arguments and result show only once its row is picked.
+    expect(screen.queryByText(/"name": "Kitchen"/)).toBeNull();
+    fireEvent.click(screen.getByText("list_contexts"));
+    const detail = screen.getByLabelText("list_contexts in detail");
+    expect(within(detail).getByText("made by CODEX")).toBeTruthy();
+    expect(within(detail).getByText(/"name": "Kitchen"/)).toBeTruthy();
+    fireEvent.click(screen.getByText("list_contexts", { selector: ".tree-label code" }));
+    expect(screen.queryByLabelText("list_contexts in detail")).toBeNull();
     // The call shows where it was made: after the text written before it, before the text after it.
     const before_call = screen.getByText("Kitchen", { selector: ".from-assistant strong" });
     const after_call = screen.getByText(/it is empty/);
@@ -551,39 +559,66 @@ describe("the assistant's pane", () => {
 // ── Parts ────────────────────────────────────────────────────────────────────
 
 describe("a specialist's calls", () => {
-  it("are listed inside the ask that made them, each with its outcome, a proposal as the user decided it", () => {
+  it("are rows under the ask that made them, named by id path, each with its outcome, a proposal as the user decided it", () => {
     const nested = [
       { id: "specialist_1", name: "mcp_budget__list_budgets", arguments: {}, result: "main", is_error: false, outcome: "ran" as const },
       { id: "specialist_2", name: "mcp_budget__add_budget", arguments: { name: "Trip" }, result: "", is_error: false, outcome: "proposed" as const, proposal_id: "p1" },
     ];
-    const { container } = render(<ToolCallRow call={{ id: "t1", name: "ask_budget", arguments: { request: "Add a trip budget." }, result: "Proposed it.", is_error: false, outcome: "ran", calls: nested }} decisions={new Map([["p1", "approved"]])} />);
-    const inside = container.querySelector(".tool-call-nested")!;
-    expect(screen.getByText("The specialist's calls")).toBeTruthy();
-    expect(within(inside as HTMLElement).getByText("mcp_budget__list_budgets")).toBeTruthy();
-    expect(within(inside as HTMLElement).getByText("mcp_budget__add_budget")).toBeTruthy();
-    expect(inside.querySelectorAll(".tool-call").length).toBe(2);
+    const ask = { id: "t1", name: "ask_budget", arguments: { request: "Add a trip budget." }, result: "Proposed it.", is_error: false, outcome: "ran" as const, calls: nested };
+    const read = { id: "t2", name: "list_contexts", arguments: {}, result: "[]", is_error: false, outcome: "ran" as const };
+    expect(call_nodes([ask, read]).map(({ id, parent_id, position }) => [id, parent_id, position])).toEqual([
+      ["t1", null, 0],
+      ["t1/specialist_1", "t1", 0],
+      ["t1/specialist_2", "t1", 1],
+      ["t2", null, 1],
+    ]);
+    render(<CallTree calls={[ask, read]} decisions={new Map([["p1", "approved"]])} />);
+    const tree = screen.getByRole("tree", { name: "CODEX's calls" });
+    const ask_row = within(tree).getByText("ask_budget").closest<HTMLElement>(".tree-item")!;
+    expect(ask_row.getAttribute("aria-level")).toBe("1");
+    expect(within(ask_row).getByText("→ budget specialist")).toBeTruthy();
+    const group = within(ask_row).getByRole("group");
+    expect(within(group).getByText("mcp_budget__list_budgets").closest(".tree-item")!.getAttribute("aria-level")).toBe("2");
+    expect(within(within(group).getByText("mcp_budget__add_budget").closest<HTMLElement>(".tree-item")!).getByText("approved by you")).toBeTruthy();
+    expect(within(tree).getByText("list_contexts").closest(".tree-item")!.getAttribute("aria-level")).toBe("1");
+
+    // A specialist's call says in its detail who made it, and the ask folds its calls away.
+    fireEvent.click(within(group).getByText("mcp_budget__add_budget"));
+    expect(within(screen.getByLabelText("mcp_budget__add_budget in detail")).getByText("made by the budget specialist, asked by CODEX")).toBeTruthy();
+    fireEvent.click(within(ask_row).getByRole("button", { name: "Collapse ask_budget" }));
+    expect(screen.queryByText("mcp_budget__list_budgets")).toBeNull();
   });
 
-  it("offer a change the specialist made for undoing, found by its id path under the ask", () => {
+  it("offer a change the specialist made for undoing on its row, found by its id path under the ask", () => {
     const nested = [{ id: "specialist_1", name: "rename_context", arguments: { name: "Cooking" }, result: "Done.", is_error: false, outcome: "ran" as const, applied_by: "engine_auto" as const }];
     const asked: string[] = [];
-    const undo_of = (call_id: string) => (asked.push(call_id), { message_id: "m1", call_id, state: "impossible" as const, reason: "Cooking has changed since." });
-    render(<ToolCallRow call={{ id: "t1", name: "ask_contexts", arguments: {}, result: "Renamed.", is_error: false, outcome: "ran", calls: nested }} undo_of={undo_of} />);
-    expect(asked).toEqual(["t1/specialist_1"]);
-    expect(screen.getByText("Cooking has changed since.")).toBeTruthy();
+    const undo_of = (path: string) => (asked.push(path), path === "t1/specialist_1" ? { message_id: "m1", call_id: path, state: "impossible" as const, reason: "Cooking has changed since." } : undefined);
+    render(<CallTree calls={[{ id: "t1", name: "ask_contexts", arguments: {}, result: "Renamed.", is_error: false, outcome: "ran", calls: nested }]} undo_of={undo_of} />);
+    expect(asked).toEqual(expect.arrayContaining(["t1", "t1/specialist_1"]));
+    const row = screen.getByText("rename_context").closest<HTMLElement>(".tree-item")!;
+    expect(within(row).getByText("Cooking has changed since.")).toBeTruthy();
   });
 
-  it("show the specialist's thinking among its calls, where it happened", () => {
+  it("show the specialist's thinking among its calls, where it happened, in the ask's detail", () => {
     const nested = [{ id: "specialist_1", name: "mcp_budget__list_budgets", arguments: {}, result: "main", is_error: false, outcome: "ran" as const }];
     const thinking = [
       { text: "List them first.", text_at: 0, calls_before: 0 },
       { text: "Main is there.", text_at: 0, calls_before: 1 },
     ];
-    render(<ToolCallRow call={{ id: "t1", name: "ask_budget", arguments: {}, result: "Done.", is_error: false, outcome: "ran", calls: nested, thinking }} />);
-    const first = screen.getByText("List them first.");
-    const call = screen.getByText("mcp_budget__list_budgets");
+    render(<CallTree calls={[{ id: "t1", name: "ask_budget", arguments: {}, result: "Done.", is_error: false, outcome: "ran", calls: nested, thinking }]} />);
+    expect(screen.queryByText("List them first.")).toBeNull();
+    fireEvent.click(screen.getByText("ask_budget"));
+    const detail = screen.getByLabelText("ask_budget in detail");
+    const first = within(detail).getByText("List them first.");
+    const call = within(detail).getByText("mcp_budget__list_budgets");
     expect(first.compareDocumentPosition(call) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(call.compareDocumentPosition(screen.getByText("Main is there.")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(call.compareDocumentPosition(within(detail).getByText("Main is there.")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("make one tree of calls made one after another, a new one after text or thinking between them", () => {
+    const call = (id: string) => ({ call: { id, name: "list_contexts", arguments: {}, result: "", is_error: false, outcome: "ran" as const } });
+    const grouped = grouped_parts([call("a"), call("b"), { text: "Then." }, call("c"), { thinking: "Hm." }, call("d")]);
+    expect(grouped.map((part) => ("calls" in part ? part.calls.map((each) => each.id).join("+") : "text" in part ? part.text : part.thinking))).toEqual(["a+b", "Then.", "c", "Hm.", "d"]);
   });
 });
 
@@ -618,13 +653,16 @@ describe("a specialist at work", () => {
     expect(page_state().tool_calls[0]!.thinking).toEqual([{ text: "Look at the contexts.", text_at: 0, calls_before: 0 }]);
     expect(page_state().text).toBe("");
 
-    const row = screen.getByText("ask_contexts").closest("details")!;
-    expect(row.open).toBe(true);
-    expect(await within(row).findByText("Reading them now.")).toBeTruthy();
-    expect(within(row).getByText("Look at the contexts.")).toBeTruthy();
-    expect(within(row).getByText("Thinking…")).toBeTruthy();
+    // The ask at work is picked on its own, its detail streaming what the specialist thinks and writes.
+    const row = screen.getByText("ask_contexts", { selector: ".tree-label code" }).closest<HTMLElement>(".tree-item")!;
+    expect(row.getAttribute("aria-selected")).toBe("true");
+    expect(within(row).getByText("→ contexts specialist")).toBeTruthy();
     expect(within(row).getByText(/Asking the contexts specialist… \d+s/)).toBeTruthy();
-    expect(within(row).getByRole("progressbar", { name: "Asking the contexts specialist" })).toBeTruthy();
+    const detail = screen.getByLabelText("ask_contexts in detail");
+    expect(await within(detail).findByText("Reading them now.")).toBeTruthy();
+    expect(within(detail).getByText("Look at the contexts.")).toBeTruthy();
+    expect(within(detail).getByText("Thinking…")).toBeTruthy();
+    expect(within(detail).getByRole("progressbar", { name: "Asking the contexts specialist" })).toBeTruthy();
 
     await act(async () => {
       release();
@@ -641,7 +679,8 @@ describe("a specialist at work", () => {
   });
 
   it("says whom it asks by the ask's name on a page opened after it began, and sets its text after its thinking at each call", () => {
-    render(<ToolCallRow call={{ id: "t1", name: "ask_x_tasks", arguments: {}, result: "", is_error: false, outcome: "pending", calls: [] }} />);
+    render(<CallTree calls={[{ id: "t1", name: "ask_x_tasks", arguments: {}, result: "", is_error: false, outcome: "pending", calls: [] }]} />);
+    expect(screen.getByText("→ x tasks specialist")).toBeTruthy();
     expect(screen.getByText(/Asking the x tasks specialist…/)).toBeTruthy();
 
     const call = { id: "s1", name: "list_contexts", arguments: {}, result: "", is_error: false, outcome: "ran" as const };
