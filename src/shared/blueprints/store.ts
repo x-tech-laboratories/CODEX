@@ -10,7 +10,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
 import { current_caller } from "../caller.ts";
-import { when_items_left } from "../contexts/store.ts";
+import { when_items_left } from "../contexts/records.ts";
 import { assistant_host } from "../conversations/host.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { parse_sources } from "../privacy/sources.ts";
