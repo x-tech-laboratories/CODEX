@@ -11,7 +11,7 @@ import { use_assistant_host } from "../../../src/shared/conversations/host.ts";
 import { forget_item_prefixes as forget_prefixes } from "@x-tech-laboratories/x-libs/item_client";
 import type { ContextMethods } from "../../../src/shared/store.ts";
 import { set_page_api } from "../../../src/web/api.ts";
-import { forget_page_plugins } from "../../../src/web/plugins.tsx";
+import { forget_page_plugins } from "../../../src/web/plugins/plugins.tsx";
 import { SettingsView } from "../../../src/web/settings/SettingsView.tsx";
 import { start_fixture, type Fixture } from "../../fixtures/assistant_fixture.ts";
 import { start_fake_item_app, type FakeItemApp } from "../../fixtures/fake_item_app.ts";

@@ -9,7 +9,7 @@ import { Dialogs } from "@x-tech-laboratories/x-libs/web/react/dialog";
 import type { DeviceMethods } from "../../../src/shared/page_api.ts";
 import { setting_defaults, type ContextMethods } from "../../../src/shared/store.ts";
 import { set_page_api } from "../../../src/web/api.ts";
-import { forget_page_plugins } from "../../../src/web/plugins.tsx";
+import { forget_page_plugins } from "../../../src/web/plugins/plugins.tsx";
 import { SettingsView } from "../../../src/web/settings/SettingsView.tsx";
 
 afterEach(() => {

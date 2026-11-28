@@ -95,7 +95,7 @@ The plugins live where they can run. The network ones (X-Tasks, Trilium, links, 
 bookmarks reads a copy of a Firefox profile's `places.sqlite` in `src/server/collectors/bookmarks.ts`. The server and
 the daemon hand the store every plugin at start with `load_collectors`, the plugins folder's included; only the daemon
 adds the desktop plugins, Firefox bookmarks among them, since a server has no Firefox profile. The page runs
-its own plugin host over the same records only to show each plugin's settings (`src/web/plugins.tsx`).
+its own plugin host over the same records only to show each plugin's settings (`src/web/plugins/plugins.tsx`).
 
 ### Apps answering the item calls
 
@@ -405,7 +405,7 @@ naming the file and never its content). Nothing declared is stored or synced:
   `tool_plugins` and policy settings, off and at `proposal` until the user sets them.
 - **The page**: `get_declared_config` (page-only, like `refresh_declared_mcp_server`) gives `declared_summary`: each
   entry's settings, which fields are read from files, the declared servers' tools and every problem, never a file's
-  content. `src/web/declared.tsx` shows a declared plugin's settings read-only in place of its controls, the declared
+  content. `src/web/declared/declared.tsx` shows a declared plugin's settings read-only in place of its controls, the declared
   engine and embedder in place of their choices, a row per declared MCP server with Refresh and its tools' switches,
   and the file's own problems under Plugins, each marked "Set by this computer's configuration".
 

@@ -12,8 +12,8 @@ import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
 import type { IndexState } from "../../shared/search/model.ts";
 import { calls, set_setting, succeeds, use_data } from "../api.ts";
 import { ReplyError } from "../assistant/AssistantPane.tsx";
-import { DeclaredChoice, use_declared } from "../declared.tsx";
-import { EmbedderRows } from "../plugins.tsx";
+import { DeclaredChoice, use_declared } from "../declared/declared.tsx";
+import { EmbedderRows } from "../plugins/plugins.tsx";
 
 // ── State ────────────────────────────────────────────────────────────────────
 

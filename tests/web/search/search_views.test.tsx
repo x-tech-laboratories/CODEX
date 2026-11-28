@@ -17,7 +17,7 @@ import type { ContextMethods } from "../../../src/shared/store.ts";
 import { set_page_api } from "../../../src/web/api.ts";
 import { group_hits, HomeView } from "../../../src/web/contexts/HomeView.tsx";
 import { row_icon } from "../../../src/web/contexts/kinds.tsx";
-import { forget_page_plugins } from "../../../src/web/plugins.tsx";
+import { forget_page_plugins } from "../../../src/web/plugins/plugins.tsx";
 import { embedding_words, held_words, StateRows } from "../../../src/web/search/IndexSettings.tsx";
 import { SettingsView } from "../../../src/web/settings/SettingsView.tsx";
 import { start_fixture, type Fixture } from "../../fixtures/assistant_fixture.ts";

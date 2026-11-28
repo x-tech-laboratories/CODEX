@@ -16,8 +16,8 @@ import type { EngineSummary } from "../../shared/conversations/model.ts";
 import type { EndpointModel, ModelState } from "../../shared/engines/engine.ts";
 import type { EngineModels } from "../../shared/engines/store.ts";
 import { attempt, calls } from "../api.ts";
-import { use_declared } from "../declared.tsx";
-import { start_page_plugins } from "../plugins.tsx";
+import { use_declared } from "../declared/declared.tsx";
+import { start_page_plugins } from "../plugins/plugins.tsx";
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 
