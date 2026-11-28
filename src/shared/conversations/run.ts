@@ -51,6 +51,7 @@ import {
   specialist_groups,
   specialist_limits,
   specialist_request,
+  stream_throttle,
   type CollectorSource,
   type Nest,
   type SpecialistGroup,
@@ -391,7 +392,7 @@ export function engine_tools(context: ToolContext): EngineTools {
     const name = group.name;
     const request = given && typeof given === "object" && typeof given.request === "string" ? given.request.trim() : "";
     if (!request) return decided(name, { outcome: "failed" }, { result: "Tool error: missing argument request.", is_error: true });
-    const nest: Nest = host.nest?.(name) ?? { calls: [], thought: () => undefined, changed: () => undefined };
+    const nest: Nest = host.nest?.(name, group.label) ?? { calls: [], thought: () => undefined, wrote: () => undefined, changed: () => undefined };
     const child: ToolContext = {
       ...context,
       only: new Set(group.own ? group.own.calls : [...(group.collector?.calls ?? []), ...group.tools.map((tool) => tool.name)]),
@@ -787,7 +788,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
       max_rounds: Math.min(specialist_limits.max_rounds, options.limits?.max_rounds ?? specialist_limits.max_rounds),
       max_tool_calls: specialist_limits.max_tool_calls,
       on_usage: (input_tokens, output_tokens) => count_usage(run, input_tokens, output_tokens),
-      nest: (ask_name) => nest_of(run, ask_name, host),
+      nest: (ask_name, label) => nest_of(run, ask_name, label, host),
     },
     on_decided: (name, record) => note_decision(run, name, record),
   });
@@ -811,16 +812,29 @@ function note_decision(run: Run, name: string, record: Pick<ToolCallRecord, "out
   return id;
 }
 
-// The ask call being made under this name, whose specialist's calls go under it and reach open pages as it changes.
-function nest_of(run: Run, ask_name: string, host: AssistantHost): Nest | null {
+// The ask call being made under this name, whose specialist's calls go under it and reach open pages as it changes,
+// its thinking and text streamed to them a few times a second.
+function nest_of(run: Run, ask_name: string, label: string, host: AssistantHost): Nest | null {
   const call = run.state.tool_calls.findLast((each) => each.name === ask_name && each.outcome === "pending");
   if (!call) return null;
   const calls = (call.calls ??= []);
+  const base = { conversation_id: run.conversation_id, run_id: run.state.run_id, call_id: call.id };
+  // Its thinking is kept as it is sent, so a page loading the run meanwhile and the events after agree.
+  const stream = stream_throttle((piece) => {
+    if (piece.kind === "reasoning") call.thinking = add_thinking(call.thinking ?? [], piece.text, 0, piece.calls_before);
+    host.emit({ ...base, type: piece.kind === "reasoning" ? "specialist_reasoning" : "specialist_text", text: piece.text, calls_before: piece.calls_before });
+  });
+  host.emit({ ...base, type: "specialist_started", label });
   return {
     calls,
     // A specialist's text is not kept, so its thinking is placed among its calls alone.
-    thought: (text) => void (call.thinking = add_thinking(call.thinking ?? [], text, 0, calls.length)),
-    changed: () => host.emit({ conversation_id: run.conversation_id, run_id: run.state.run_id, type: "tool_result", call: structuredClone(call) }),
+    thought: (text) => stream.add({ kind: "reasoning", text, calls_before: calls.length }),
+    wrote: (text) => stream.add({ kind: "text", text, calls_before: calls.length }),
+    // What streamed so far goes first, so the call sent after it already holds that thinking.
+    changed: () => {
+      stream.flush();
+      host.emit({ conversation_id: run.conversation_id, run_id: run.state.run_id, type: "tool_result", call: structuredClone(call) });
+    },
   };
 }
 

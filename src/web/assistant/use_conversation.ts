@@ -6,18 +6,44 @@
 import { useEffect, useRef, useState } from "react";
 import type { Resource } from "@x-tech-laboratories/x-libs/web/react/states";
 
-import { add_thinking, type Conversation, type ConversationEvent, type RunState } from "../../shared/conversations/model.ts";
+import { add_thinking, type Conversation, type ConversationEvent, type RunState, type ThinkingPiece } from "../../shared/conversations/model.ts";
 import { page, use_data } from "../api.ts";
 
 // ── Runs ─────────────────────────────────────────────────────────────────────
 
+// A specialist being asked, as the page heard it: who, since when, and its text so far, each stretch placed among its calls.
+export interface LiveSpecialist {
+  label: string;
+  started_at: number;
+  text: ThinkingPiece[];
+}
+
 // A reply as far as the events have brought it; finished once its end is heard, until the kept message replaces it.
 export interface LiveRun extends RunState {
   finished: boolean;
+  // The specialists asked in it, by the ask call's id; shown only while the reply is written.
+  specialists: Record<string, LiveSpecialist>;
 }
 
 function empty_run(run_id: string, engine = "", model = "", started_at = ""): LiveRun {
-  return { run_id, engine, model, started_at, text: "", thinking: [], tool_calls: [], notices: [], finished: false };
+  return { run_id, engine, model, started_at, text: "", thinking: [], tool_calls: [], notices: [], finished: false, specialists: {} };
+}
+
+// A reply the store gave, for the events to carry on from.
+export function live_from(run: RunState): LiveRun {
+  return { ...run, finished: false, specialists: {} };
+}
+
+// The reply after one event about the specialist asked through one of its calls.
+type SpecialistEvent = Extract<ConversationEvent, { type: "specialist_started" | "specialist_reasoning" | "specialist_text" }>;
+
+function next_specialist(run: LiveRun, event: SpecialistEvent): LiveRun {
+  const specialist = run.specialists[event.call_id] ?? { label: "", started_at: Date.now(), text: [] };
+  if (event.type === "specialist_started") return { ...run, specialists: { ...run.specialists, [event.call_id]: { ...specialist, label: event.label, started_at: Date.now() } } };
+  if (event.type === "specialist_text") return { ...run, specialists: { ...run.specialists, [event.call_id]: { ...specialist, text: add_thinking(specialist.text, event.text, 0, event.calls_before) } } };
+  // Its thinking goes where the run keeps it, so the call the run sends next replaces it with the same.
+  const tool_calls = run.tool_calls.map((call) => (call.id === event.call_id ? { ...call, thinking: add_thinking(call.thinking ?? [], event.text, 0, event.calls_before) } : call));
+  return { ...run, tool_calls };
 }
 
 // The reply after one event; events for another run start it afresh. Each stretch of thinking is placed where the reply
@@ -30,6 +56,7 @@ export function next_run(run: LiveRun | null, event: ConversationEvent): LiveRun
   if (event.type === "notice") return { ...current, notices: [...current.notices, event.text] };
   if (event.type === "tool_call") return { ...current, tool_calls: [...current.tool_calls, event.call] };
   if (event.type === "tool_result") return { ...current, tool_calls: current.tool_calls.map((call) => (call.id === event.call.id ? event.call : call)) };
+  if (event.type === "specialist_started" || event.type === "specialist_reasoning" || event.type === "specialist_text") return next_specialist(current, event);
   return { ...current, finished: true };
 }
 
@@ -54,7 +81,7 @@ export function use_conversation(id: string | null): OpenConversation {
     set_live(null);
     return page().on_conversation((event) => {
       if (event.conversation_id !== id) return;
-      set_live((run) => next_run(run ?? (stored_run.current ? { ...stored_run.current, finished: false } : null), event));
+      set_live((run) => next_run(run ?? (stored_run.current ? live_from(stored_run.current) : null), event));
       if (event.type === "finished") set_ended({ error: event.error, key: (ends.current += 1), run_id: event.run_id });
     });
   }, [id]);
@@ -65,7 +92,7 @@ export function use_conversation(id: string | null): OpenConversation {
     if (loaded && loaded.run === null) set_live((run) => (run?.finished ? null : run));
   }, [loaded]);
 
-  const stored = loaded?.run ? { ...loaded.run, finished: false } : null;
+  const stored = loaded?.run ? live_from(loaded.run) : null;
   const run = live && !(stored && stored.run_id !== live.run_id) ? live : stored;
   return { conversation, run, ended };
 }

@@ -257,6 +257,11 @@
   overflow-y: auto;
 }
 
+/* Shown once the reader scrolls up, centred under the messages. */
+.assistant-jump {
+  align-self: center;
+}
+
 .chat-message {
   display: flex;
   flex-direction: column;
@@ -314,10 +319,12 @@
   flex-shrink: 0;
 }
 
+/* The thinking scrolls on its own, never handing its scroll on to the messages around it. */
 .reply-thinking-text {
   max-height: 10lh;
   margin: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   white-space: pre-wrap;
 }
 

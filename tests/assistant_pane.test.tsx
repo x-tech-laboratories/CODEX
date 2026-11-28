@@ -12,12 +12,12 @@ import type { ConversationEvent } from "../src/shared/conversations/model.ts";
 import { wait_for_runs } from "../src/shared/conversations/run.ts";
 import type { ContextMethods } from "../src/shared/store.ts";
 import { data_watch, set_page_api } from "../src/web/api.ts";
-import { AssistantPane, ProposalCard, Thinking, ToolCallRow } from "../src/web/assistant/AssistantPane.tsx";
+import { AssistantPane, nested_parts, ProposalCard, Thinking, ToolCallRow } from "../src/web/assistant/AssistantPane.tsx";
 import { Mascot } from "../src/web/assistant/Mascot.tsx";
 import { lasting_mood, moment_after, mood_summary, screen_placement } from "../src/web/assistant/mascot.ts";
 import { moods as moods_of } from "../src/shared/mood/model.ts";
 import { want_conversation } from "../src/web/assistant/selection.ts";
-import { next_run } from "../src/web/assistant/use_conversation.ts";
+import { next_run, type LiveRun } from "../src/web/assistant/use_conversation.ts";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
 
 // RoboBuddy needs a 2D canvas, which jsdom lacks, so a stand-in records the moods it is given.
@@ -208,6 +208,48 @@ describe("the assistant's pane", () => {
     fireEvent.scroll(box);
     rerender(<Thinking text={"a".repeat(120)} />);
     expect(box.scrollTop).toBe(1200);
+
+    // Its own scroll heard only after more text came still counts as at the bottom.
+    rerender(<Thinking text={"a".repeat(150)} />);
+    Object.defineProperty(box, "scrollHeight", { configurable: true, get: () => 3000 });
+    fireEvent.scroll(box);
+    rerender(<Thinking text={"a".repeat(160)} />);
+    expect(box.scrollTop).toBe(3000);
+  });
+
+  it("follows new messages only while the reader is at the bottom, offering to jump back once they scroll up", async () => {
+    const fixture = open_page();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    fixture.set_script(async function* () {
+      yield { type: "text", text: "First part." };
+      await held;
+      yield { type: "text", text: " Second part." };
+      yield { type: "done", text: "First part. Second part." };
+    });
+    const { container } = render(<AssistantPane context_id={null} />);
+    const box = container.querySelector<HTMLElement>(".assistant-messages")!;
+    // jsdom lays nothing out, so the box reports a fixed height and a content height that grows with its text.
+    Object.defineProperty(box, "clientHeight", { configurable: true, get: () => 100 });
+    Object.defineProperty(box, "scrollHeight", { configurable: true, get: () => box.textContent!.length * 10 });
+    await screen.findByRole("textbox", { name: "Message" });
+    type_and_send("Go on");
+    expect(await screen.findByText("First part.")).toBeTruthy();
+    expect(box.scrollTop).toBe(box.scrollHeight);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+
+    box.scrollTop = 50;
+    fireEvent.scroll(box);
+    await act(async () => {
+      release();
+      await wait_for_runs();
+    });
+    expect(await screen.findByText(/Second part/)).toBeTruthy();
+    expect(box.scrollTop).toBe(50);
+
+    fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }));
+    expect(box.scrollTop).toBe(box.scrollHeight);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
   });
 
   it("puts a failure in plain words with its raw detail behind Details, and shows what was left out to fit", async () => {
@@ -545,6 +587,72 @@ describe("a specialist's calls", () => {
   });
 });
 
+describe("a specialist at work", () => {
+  it("streams its thinking and text into the ask's row while it runs, apart from the reply's own text", async () => {
+    const fixture = open_page();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    fixture.set_script(async function* (request) {
+      if (request.instructions.startsWith("You are CODEX's ")) {
+        yield { type: "reasoning", text: "Look at " };
+        yield { type: "reasoning", text: "the contexts." };
+        yield { type: "text", text: "Reading them now." };
+        await held;
+        yield { type: "tool_call", id: "s1", name: "list_contexts", arguments: {} };
+        yield { type: "tool_result", id: "s1", ...(await request.tools.call("list_contexts", {})) };
+        yield { type: "done", text: "There is Global." };
+        return;
+      }
+      yield { type: "tool_call", id: "o1", name: "ask_contexts", arguments: { request: "List them." } };
+      yield { type: "tool_result", id: "o1", ...(await request.tools.call("ask_contexts", { request: "List them." })) };
+      yield { type: "done", text: "Asked." };
+    });
+    render(<AssistantPane context_id={null} />);
+    await screen.findByRole("textbox", { name: "Message" });
+    type_and_send("What contexts are there?");
+
+    // The page state as the events built it, while the specialist is still at work.
+    const page_state = () => fixture.events.reduce<LiveRun | null>((run, event) => next_run(run, event), null)!;
+    await waitFor(() => expect(page_state().specialists.o1?.text).toEqual([{ text: "Reading them now.", text_at: 0, calls_before: 0 }]));
+    expect(page_state().specialists.o1!.label).toBe("contexts");
+    expect(page_state().tool_calls[0]!.thinking).toEqual([{ text: "Look at the contexts.", text_at: 0, calls_before: 0 }]);
+    expect(page_state().text).toBe("");
+
+    const row = screen.getByText("ask_contexts").closest("details")!;
+    expect(row.open).toBe(true);
+    expect(await within(row).findByText("Reading them now.")).toBeTruthy();
+    expect(within(row).getByText("Look at the contexts.")).toBeTruthy();
+    expect(within(row).getByText("Thinking…")).toBeTruthy();
+    expect(within(row).getByText(/Asking the contexts specialist… \d+s/)).toBeTruthy();
+    expect(within(row).getByRole("progressbar", { name: "Asking the contexts specialist" })).toBeTruthy();
+
+    await act(async () => {
+      release();
+      await wait_for_runs();
+    });
+    expect(await screen.findByText("Asked.")).toBeTruthy();
+    // Its text is only shown while it streams: the kept ask holds its calls and thinking alone.
+    const kept = fixture.calls.list_conversations(null)[0]!;
+    const ask = fixture.calls.get_conversation(kept.id).messages[1]!.tool_calls[0]!;
+    expect(ask.calls!.map((call) => call.name)).toEqual(["list_contexts"]);
+    expect(ask.thinking).toEqual([{ text: "Look at the contexts.", text_at: 0, calls_before: 0 }]);
+    expect(JSON.stringify(ask)).not.toContain("Reading them now.");
+    expect(screen.queryByText(/Asking the contexts specialist/)).toBeNull();
+  });
+
+  it("says whom it asks by the ask's name on a page opened after it began, and sets its text after its thinking at each call", () => {
+    render(<ToolCallRow call={{ id: "t1", name: "ask_x_tasks", arguments: {}, result: "", is_error: false, outcome: "pending", calls: [] }} />);
+    expect(screen.getByText(/Asking the x tasks specialist…/)).toBeTruthy();
+
+    const call = { id: "s1", name: "list_contexts", arguments: {}, result: "", is_error: false, outcome: "ran" as const };
+    const parts = nested_parts([call], [{ text: "Think.", text_at: 0, calls_before: 0 }], [
+      { text: "Write.", text_at: 0, calls_before: 0 },
+      { text: "Done.", text_at: 0, calls_before: 1 },
+    ]);
+    expect(parts).toEqual([{ thinking: "Think." }, { text: "Write." }, { call }, { text: "Done." }]);
+  });
+});
+
 describe("the mascot's mood", () => {
   it("sleeps without an engine or a store, thinks while a reply is written, and is happy or sad after one", () => {
     expect(lasting_mood({ has_engine: false, is_reachable: true, is_running: false })).toBe("asleep");
@@ -617,6 +725,19 @@ describe("a reply as its events arrive", () => {
     expect(next_run(run, { ...base, type: "finished", error: "" })!.finished).toBe(true);
     // A page that missed the start still follows the reply.
     expect(next_run(null, { ...base, run_id: "r2", type: "text", text: "x" })).toMatchObject({ run_id: "r2", text: "x" });
+  });
+
+  it("lays a specialist's streamed thinking on its ask's call and keeps its text beside it, even when the start was missed", () => {
+    const base = { conversation_id: "general", run_id: "r1" };
+    const ask = { id: "t1", name: "ask_contexts", arguments: {}, result: "", is_error: false, outcome: "pending" as const, calls: [] };
+    let run = next_run(null, { ...base, type: "tool_call", call: ask });
+    run = next_run(run, { ...base, type: "specialist_reasoning", call_id: "t1", text: "Hm.", calls_before: 0 });
+    run = next_run(run, { ...base, type: "specialist_text", call_id: "t1", text: "So", calls_before: 0 });
+    run = next_run(run, { ...base, type: "specialist_text", call_id: "t1", text: " far.", calls_before: 0 });
+    expect(run!.tool_calls[0]!.thinking).toEqual([{ text: "Hm.", text_at: 0, calls_before: 0 }]);
+    expect(run!.specialists.t1).toMatchObject({ label: "", text: [{ text: "So far.", text_at: 0, calls_before: 0 }] });
+    run = next_run(run, { ...base, type: "specialist_started", call_id: "t1", label: "contexts" });
+    expect(run!.specialists.t1).toMatchObject({ label: "contexts", text: [{ text: "So far." }] });
   });
 
   it("places each stretch of thinking where the reply stood", () => {

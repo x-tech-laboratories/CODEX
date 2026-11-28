@@ -381,9 +381,46 @@ export function specialist_brief(user_message: string, request: string): string 
 // Where a specialist's calls are kept: the ask call's own nested calls, and a way to tell open pages they changed.
 export interface Nest {
   calls: ToolCallRecord[];
-  // Adds a piece of the specialist's thinking after the calls made so far; open pages hear it with the next change.
+  // Adds a piece of the specialist's thinking after the calls made so far, kept and heard by open pages as it streams.
   thought(text: string): void;
+  // Tells open pages a piece of the specialist's text, which is never kept.
+  wrote(text: string): void;
   changed(): void;
+}
+
+// How often at most a specialist's streamed thinking and text reach open pages.
+export const specialist_stream_interval_in_milliseconds = 200;
+
+// One stretch of a specialist's stream waiting to be sent: its thinking or its text, after how many of its calls.
+export interface StreamPiece {
+  kind: "reasoning" | "text";
+  text: string;
+  calls_before: number;
+}
+
+// Gathers streamed pieces and sends them in order, joined while of one kind and place, at most once per interval; flush sends what waits now.
+export function stream_throttle(send: (piece: StreamPiece) => void, interval_in_milliseconds = specialist_stream_interval_in_milliseconds): { add: (piece: StreamPiece) => void; flush: () => void } {
+  let waiting: StreamPiece[] = [];
+  let last_sent = Number.NEGATIVE_INFINITY;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const flush = () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    const pieces = waiting;
+    waiting = [];
+    if (pieces.length > 0) last_sent = Date.now();
+    for (const piece of pieces) send(piece);
+  };
+  const add = (piece: StreamPiece) => {
+    if (!piece.text) return;
+    const last = waiting.at(-1);
+    if (last && last.kind === piece.kind && last.calls_before === piece.calls_before) last.text += piece.text;
+    else waiting.push({ ...piece });
+    const wait = last_sent + interval_in_milliseconds - Date.now();
+    if (wait <= 0) flush();
+    else timer ??= setTimeout(flush, wait);
+  };
+  return { add, flush };
 }
 
 // What the run lends its specialists: the engine, the user's words, the limits, and where usage and calls go.
@@ -394,8 +431,8 @@ export interface SpecialistHost {
   max_tool_calls?: number;
   // Adds a specialist's model round to the run's own count.
   on_usage?: (input_tokens: number, output_tokens: number) => void;
-  // The ask call being made under this name, whose nested calls the specialist's go under.
-  nest?: (ask_name: string) => Nest | null;
+  // The ask call being made under this name for the specialist with this label, whose nested calls the specialist's go under.
+  nest?: (ask_name: string, label: string) => Nest | null;
 }
 
 // Keeps what the policy made of a specialist's call with the call announced under that name; gives back its id.
@@ -423,8 +460,10 @@ export async function run_specialist(host: SpecialistHost, request: EngineReques
   try {
     for await (const event of host.engine.run(request, signal)) {
       if (signal.aborted) break;
-      if (event.type === "text") text += event.text;
-      else if (event.type === "reasoning") nest.thought(event.text);
+      if (event.type === "text") {
+        text += event.text;
+        nest.wrote(event.text);
+      } else if (event.type === "reasoning") nest.thought(event.text);
       else if (event.type === "tool_call") {
         const call: ToolCallRecord = { id: `specialist_${nest.calls.length + 1}`, name: event.name, arguments: event.arguments, result: "", is_error: false, outcome: "pending" };
         nest.calls.push(call);

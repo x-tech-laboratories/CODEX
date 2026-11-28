@@ -2,7 +2,7 @@
 // engine that has only that plugin's tools or that app's read calls, under every safeguard of the run that asked it,
 // and told how its app works.
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 
@@ -25,7 +25,9 @@ import {
   specialist_groups,
   specialist_instructions,
   specialist_limits,
+  stream_throttle,
   user_request_label,
+  type StreamPiece,
 } from "../src/shared/conversations/specialists.ts";
 import { small_context, with_specialists } from "../src/shared/engines/direct.ts";
 import type { EngineEvent, EngineRequest, EngineTools } from "../src/shared/engines/engine.ts";
@@ -315,6 +317,41 @@ describe("a specialist's run", () => {
     const again = fixture.calls.get_conversation(conversation_id).messages[3]!.tool_calls[0]!;
     expect(again.thinking).toBeUndefined();
     expect(again.calls!.map((call) => call.name)).toEqual(["fake__lookup"]);
+  });
+});
+
+describe("a specialist's stream", () => {
+  it("is sent at most once per interval, joined while of one kind and place, in order, and all at once when flushed", () => {
+    vi.useFakeTimers();
+    try {
+      const sent: StreamPiece[] = [];
+      const stream = stream_throttle((piece) => sent.push(piece), 200);
+      stream.add({ kind: "reasoning", text: "Look ", calls_before: 0 });
+      expect(sent).toEqual([{ kind: "reasoning", text: "Look ", calls_before: 0 }]);
+
+      stream.add({ kind: "reasoning", text: "it ", calls_before: 0 });
+      stream.add({ kind: "reasoning", text: "up.", calls_before: 0 });
+      stream.add({ kind: "text", text: "Found", calls_before: 0 });
+      stream.add({ kind: "text", text: "", calls_before: 0 });
+      expect(sent).toHaveLength(1);
+      vi.advanceTimersByTime(200);
+      expect(sent.slice(1)).toEqual([
+        { kind: "reasoning", text: "it up.", calls_before: 0 },
+        { kind: "text", text: "Found", calls_before: 0 },
+      ]);
+
+      stream.add({ kind: "text", text: " it", calls_before: 0 });
+      stream.add({ kind: "text", text: ".", calls_before: 1 });
+      stream.flush();
+      expect(sent.slice(3)).toEqual([
+        { kind: "text", text: " it", calls_before: 0 },
+        { kind: "text", text: ".", calls_before: 1 },
+      ]);
+      vi.advanceTimersByTime(1000);
+      expect(sent).toHaveLength(5);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

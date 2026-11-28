@@ -4,23 +4,23 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { MenuItem } from "@x-tech-laboratories/x-libs/web/menus";
-import { age } from "@x-tech-laboratories/x-libs/web/format";
+import { age, duration } from "@x-tech-laboratories/x-libs/web/format";
 import { AddIcon, ChevronDownIcon, EditIcon, Icon, UndoIcon } from "@x-tech-laboratories/x-libs/web/react/icons";
-import { use_follow_tail } from "@x-tech-laboratories/x-libs/web/react/following";
 import { FormGroup } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Markdown } from "@x-tech-laboratories/x-libs/web/react/markdown";
 import { MenuButton } from "@x-tech-laboratories/x-libs/web/react/menu_button";
 import { Popover, open_context_menu } from "@x-tech-laboratories/x-libs/web/react/menus";
+import { ProgressBar } from "@x-tech-laboratories/x-libs/web/react/progress";
 import { Empty, Skeleton } from "@x-tech-laboratories/x-libs/web/react/states";
 import { use_now } from "@x-tech-laboratories/x-libs/web/react/time";
 import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
 import { use_watch } from "@x-tech-laboratories/x-libs/web/react/watch";
-import { Send, Square } from "lucide-react";
+import { ArrowDown, Send, Square } from "lucide-react";
 
 import { global_context_id } from "../../shared/contexts/model.ts";
-import { call_path_mark, conversation_item_id, reply_parts, type AssistantStatus, type ConversationMessage, type ConversationSummary, type ToolCallRecord } from "../../shared/conversations/model.ts";
+import { call_path_mark, conversation_item_id, reply_parts, type AssistantStatus, type ConversationMessage, type ConversationSummary, type ReplyPart, type ThinkingPiece, type ToolCallRecord } from "../../shared/conversations/model.ts";
 import type { Proposal } from "../../shared/policy/model.ts";
 import type { ChangeUndoState } from "../../shared/policy/undo.ts";
 import { attempt, calls, page, succeeds, use_data } from "../api.ts";
@@ -29,7 +29,8 @@ import { add_to_contexts, delete_conversation, move_to_context, rename_conversat
 import { open_conversation, take_wanted, wanted_watch } from "./selection.ts";
 import { Mascot } from "./Mascot.tsx";
 import { lasting_mood, moment_after, mood_summary, type MascotMood } from "./mascot.ts";
-import { use_conversation, type LiveRun } from "./use_conversation.ts";
+import { use_conversation, type LiveRun, type LiveSpecialist } from "./use_conversation.ts";
+import { use_pinned_scroll } from "./pinned_scroll.ts";
 import { PaneModel } from "../engines/ModelPicker.tsx";
 
 // ── Tool calls ───────────────────────────────────────────────────────────────
@@ -75,46 +76,89 @@ function UndoLine({ undo }: { undo: ChangeUndoState }) {
   );
 }
 
+// A specialist's calls and thinking in order, with its text so far after the thinking before each call.
+export function nested_parts(calls: ToolCallRecord[], thinking: ThinkingPiece[] = [], writing: ThinkingPiece[] = []): ReplyPart[] {
+  const written = writing.filter((piece) => piece.text.trim());
+  const text_at = (calls_before: number) => written.filter((piece) => piece.calls_before === calls_before).map((piece) => ({ text: piece.text }));
+  const parts: ReplyPart[] = [];
+  let calls_seen = 0;
+  for (const part of reply_parts("", calls, thinking)) {
+    if ("call" in part) parts.push(...text_at(calls_seen++));
+    parts.push(part);
+  }
+  parts.push(...written.filter((piece) => piece.calls_before >= calls_seen).map((piece) => ({ text: piece.text })));
+  return parts;
+}
+
+// The specialist being asked and for how long, ticking each second.
+function SpecialistBusy({ label, since }: { label: string; since: number }) {
+  const now = use_now(1000).getTime();
+  return (
+    <span className="muted small">
+      Asking the {label} specialist… {duration(Math.max(0, (now - since) / 1000))}
+    </span>
+  );
+}
+
+// The specialist's label as the ask's name says it, for a page that opened after the ask began.
+const label_of_ask = (name: string) => name.replace(/^ask_/, "").replace(/_/g, " ");
+
 // One call the engine made, folded to its name and outcome; open, its arguments and what came back. A proposed call
 // reads as the user decided it, when they have; an applied change offers its undo underneath. An ask_ tool's call lists
-// its specialist's calls inside it, each read the same way, their undos found by id path.
+// its specialist's calls inside it, each read the same way, their undos found by id path; while the specialist works
+// the row opens on its thinking and text as they stream, and says whom it asks and for how long.
 export function ToolCallRow({
   call,
   decided,
   undo,
   decisions,
   undo_of,
+  specialist,
 }: {
   call: ToolCallRecord;
   decided?: Proposal["status"] | undefined;
   undo?: ChangeUndoState | undefined;
   decisions?: Map<string, Proposal["status"]>;
   undo_of?: (call_id: string) => ChangeUndoState | undefined;
+  specialist?: LiveSpecialist | undefined;
 }) {
+  const asking = call.outcome === "pending" && (specialist !== undefined || call.calls !== undefined);
+  const [since] = useState(() => Date.now());
+  // Once asked, the row opens and stays so, rather than closing under the reader when the specialist finishes.
+  const was_asking = useRef(false);
+  was_asking.current ||= asking;
+  const label = specialist?.label || label_of_ask(call.name);
+  const parts = nested_parts(call.calls ?? [], call.thinking, specialist?.text);
   const made_by = call.applied_by === "user_approval" ? "approved by you" : call.applied_by === "engine_auto" ? "made by the assistant" : "";
   const [words, tone] = (call.outcome === "proposed" && decided && decided_words[decided]) || [outcome_words[call.outcome], outcome_tones[call.outcome]];
   const row = (
     <FormGroup
+      key={was_asking.current ? "asked" : "plain"}
+      open={was_asking.current}
       class_name="tool-call"
       summary={
         <span className="tool-call-summary">
           <code>{call.name}</code>
           <span className={`badge tone-${tone}`}>{words}</span>
           {made_by && <span className="muted small">{made_by}</span>}
+          {asking && <SpecialistBusy label={label} since={specialist?.started_at ?? since} />}
         </span>
       }
     >
+      {asking && <ProgressBar value={null} label={`Asking the ${label} specialist`} />}
       <p className="muted small">Arguments</p>
       <pre className="output">{JSON.stringify(call.arguments, null, 2)}</pre>
-      {((call.calls && call.calls.length > 0) || (call.thinking && call.thinking.length > 0)) && (
+      {parts.length > 0 && (
         <>
           <p className="muted small">The specialist's calls</p>
           <div className="tool-call-nested">
-            {reply_parts("", call.calls ?? [], call.thinking).map((part, at) =>
+            {parts.map((part, at) =>
               "call" in part ? (
                 <ToolCallRow key={part.call.id} call={part.call} decided={part.call.proposal_id ? decisions?.get(part.call.proposal_id) : undefined} undo={undo_of?.(`${call.id}${call_path_mark}${part.call.id}`)} />
+              ) : "thinking" in part ? (
+                <Thinking key={`thinking-${at}`} text={part.thinking} active={call.outcome === "pending"} />
               ) : (
-                "thinking" in part && <Thinking key={`thinking-${at}`} text={part.thinking} active={call.outcome === "pending"} />
+                <Markdown key={`text-${at}`} class_name="tool-call-writing" text={part.text} />
               ),
             )}
           </div>
@@ -165,7 +209,7 @@ export function ReplyError({ error, detail }: { error: string; detail: string })
 // What a reasoning model is thinking, or thought, folded under a Thinking row that opens to about ten lines, following
 // the newest text as it streams unless the reader has scrolled up.
 export function Thinking({ text, active = true }: { text: string; active?: boolean }) {
-  const tail = use_follow_tail<HTMLParagraphElement>(text, active);
+  const tail = use_pinned_scroll<HTMLParagraphElement>(text, active);
   return (
     <FormGroup class_name="reply-thinking" summary={<span className="muted small">{active ? "Thinking…" : "Thinking"}</span>}>
       <p ref={tail.ref} className="muted small reply-thinking-text" onScroll={tail.on_scroll}>
@@ -229,7 +273,7 @@ function Reply({ run }: { run: LiveRun }) {
       <Notices notices={run.notices} />
       {parts.map((part, at) =>
         "call" in part ? (
-          <ToolCallRow key={part.call.id} call={part.call} />
+          <ToolCallRow key={part.call.id} call={part.call} specialist={run.specialists[part.call.id]} />
         ) : "thinking" in part ? (
           <Thinking key={`thinking-${at}`} text={part.thinking} active={!run.finished && at === parts.length - 1} />
         ) : (
@@ -512,7 +556,6 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
     if (conversation.status === "failed") forget_pick();
   }, [conversation.status]);
   const moment = use_moment(end);
-  const list_end = useRef<HTMLDivElement>(null);
   const engine = status.data?.engine ?? null;
   const is_running = run !== null && !run.finished;
   // The mood fades, so it is read again each minute as well as when anything changes.
@@ -530,12 +573,12 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
   const blueprint_proposals = use_data((api) => (shown_id ? api.list_blueprint_proposals(shown_id) : Promise.resolve([])), [shown_id]);
   const label_of = (source: string) => collectors.data?.find((each) => each.id === source)?.label ?? source;
   const asked_text = (id: string) => data?.messages.find((message) => message.id === id)?.text ?? null;
-  const count = (data?.messages.length ?? 0) + waiting.length + (blueprint_proposals.data?.length ?? 0) + (run ? 1 : 0);
-
-  // In braces, since a browser's scrollIntoView may give back a promise, which React would take for a cleanup.
+  // The messages follow what is new only while the reader is at their bottom; another conversation starts at its end.
+  const content = useMemo(() => ({}), [data, run, blueprint_proposals.data]);
+  const tail = use_pinned_scroll<HTMLDivElement>(content);
   useEffect(() => {
-    list_end.current?.scrollIntoView?.({ block: "end" });
-  }, [count]);
+    tail.jump();
+  }, [shown_id]);
 
   return (
     <div className="assistant">
@@ -549,7 +592,7 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
         <Switcher context_id={context_id} list={list.data ?? []} shown={shown} on_pick={pick} />
       </header>
       {status.data && !engine && <NoEngine status={status.data} />}
-      <div className="assistant-messages">
+      <div ref={tail.ref} className="assistant-messages" onScroll={tail.on_scroll}>
         {shown_id && !data ? (
           <Skeleton lines={3} />
         ) : (
@@ -569,8 +612,12 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
             ))}
           </>
         )}
-        <div ref={list_end} />
       </div>
+      {!tail.pinned && (
+        <button type="button" className="assistant-jump" onClick={tail.jump}>
+          <ArrowDown size={14} /> Jump to latest
+        </button>
+      )}
       {engine && <Composer key={shown_id ?? "new"} context_id={context_id} conversation_id={shown_id} is_running={is_running} on_sent={(sent) => (pick(sent.conversation_id), on_sent_run(sent.run_id))} />}
     </div>
   );
