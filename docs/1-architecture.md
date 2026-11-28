@@ -54,7 +54,7 @@ runs" below).
 
 The contexts migration `20261127152615_global` (a custom drizzle-kit step after the released ones) makes Global with
 `INSERT OR IGNORE`, puts every context with no parent under it, and gives Global a membership of every conversation and
-blueprint in no context that is not deleted. `ensure_global` (`src/shared/contexts/store.ts`) does the same on every
+blueprint in no context that is not deleted. `ensure_global` (`src/shared/contexts/records.ts`) does the same on every
 open and every write, writing only what is out of place, so what a device not yet updated syncs in (a context at the
 top level, a conversation in none) is taken in at the next write; until then `list_contexts`, `get_context`, search's
 tree and the blueprints' climb read a context with no parent as under Global. It also puts Global back at the top,
