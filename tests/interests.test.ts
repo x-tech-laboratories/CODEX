@@ -208,7 +208,7 @@ describe("a research run", () => {
     expect(await run_maintenance_job(setup.host, "research")).toMatchObject({ ran: true });
 
     const request = research_request(setup);
-    expect(request.tools.definitions.map((tool) => tool.name).sort()).toEqual([save_finding_name, web_fetch_tool, web_search_tool].sort());
+    expect(request.tools.definitions.map((tool) => tool.name).sort()).toEqual([save_finding_name, web_fetch_tool, web_search_tool, "read_tool_result"].sort());
     expect(request.tools.core).toBeUndefined();
     expect(request.conversation).toEqual([{ role: "user", text: research_message }]);
     expect(request.instructions).toContain("The topic: Growing tomatoes in a cold greenhouse");

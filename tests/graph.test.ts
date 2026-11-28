@@ -355,8 +355,8 @@ describe("proposals", () => {
     expect(conversation.messages[0]).toMatchObject({ role: "user", text: suggest_links_message });
 
     const request = fixture.requests[0]!;
-    // Only the proposals and two reads, fully described, and fewer rounds than a conversation.
-    expect(request.tools.definitions.map((tool) => tool.name).sort()).toEqual([...suggest_tools].sort());
+    // Only the proposals and two reads, fully described, with read_tool_result, and fewer rounds than a conversation.
+    expect(request.tools.definitions.map((tool) => tool.name).sort()).toEqual([...suggest_tools, "read_tool_result"].sort());
     expect(request.tools.core).toBeUndefined();
     expect(request.limits).toEqual({ max_rounds: suggest_rounds });
     // The items with kind, title and snippet, and the entities and links it has.
@@ -430,7 +430,7 @@ describe("proposals", () => {
     const started = await fixture.calls.suggest_links(garden);
     await wait_for_runs();
 
-    expect(offered).toEqual([6, 6, 6, 6, 6, 0]);
+    expect(offered).toEqual([7, 7, 7, 7, 7, 0]);
     const answer = fixture.calls.get_conversation(started.conversation_id).messages[1]!;
     expect(answer).toMatchObject({ text: "Nothing to propose.", error: "" });
     expect(answer.notices).toEqual(["Suggest links proposed nothing this time."]);
