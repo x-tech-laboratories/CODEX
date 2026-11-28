@@ -11,7 +11,8 @@ import { use_assistant_host } from "../../../src/shared/conversations/host.ts";
 import { give_up_line } from "../../../src/shared/conversations/instructions.ts";
 import { keep_thinking_setting } from "../../../src/shared/conversations/model.ts";
 import { add_conversation_record, has_conversation } from "../../../src/shared/conversations/records.ts";
-import { engine_tools, open_collector_sources, run_guidance_part, wait_for_runs, type ToolContext } from "../../../src/shared/conversations/run.ts";
+import { wait_for_runs } from "../../../src/shared/conversations/run.ts";
+import { engine_tools, open_collector_sources, run_guidance_part, type ToolContext } from "../../../src/shared/conversations/tools.ts";
 import {
   ask_name_of,
   collector_groups,

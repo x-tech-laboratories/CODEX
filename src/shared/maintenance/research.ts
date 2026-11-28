@@ -8,7 +8,8 @@
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { add_conversation_record, has_conversation, rename_conversation_record } from "../conversations/records.ts";
-import { find_engine, start_run, stop_run_of, type RunEnd, type RunTool } from "../conversations/run.ts";
+import { find_engine, start_run, stop_run_of, type RunEnd } from "../conversations/run.ts";
+import { type RunTool } from "../conversations/tools.ts";
 import { is_hosted } from "../engines/engine.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
 import { findings_per_run, longest_finding_text, longest_finding_title, longest_topic } from "../interests/model.ts";
