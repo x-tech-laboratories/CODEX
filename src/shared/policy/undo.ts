@@ -5,10 +5,13 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
+import { eq } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import type { ChangeUndo, ConversationMessage, ToolCallRecord } from "../conversations/model.ts";
+import { contexts } from "../contexts/schema.ts";
 import { calls_with_paths } from "../conversations/messages.ts";
+import { drizzle_of } from "../feature.ts";
 import { history_of, type Snapshot } from "../history/store.ts";
 
 // ── Noting ───────────────────────────────────────────────────────────────────
@@ -101,7 +104,7 @@ export function undo_states(database: SqlDatabase, messages: ConversationMessage
 // before what sits inside it.
 export function undo_steps(database: SqlDatabase, undo: ChangeUndo, remove_context: (id: string) => void): void {
   const history = history_of("context");
-  const exists = (id: string) => database.prepare("SELECT 1 FROM contexts WHERE id = ?").get(id) !== undefined;
+  const exists = (id: string) => drizzle_of(database).select({ id: contexts.id }).from(contexts).where(eq(contexts.id, id)).get() !== undefined;
   for (const step of undo.steps.filter((each) => each.before === null)) if (exists(step.item_id)) remove_context(step.item_id);
   const parent_of = (step: ChangeUndo["steps"][number]) => snapshot_of(database, step.before!)?.snapshot.contexts?.[0]?.parent_id;
   let waiting = undo.steps.filter((each) => each.before !== null);

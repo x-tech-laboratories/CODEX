@@ -4,11 +4,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { use_assistant_host } from "../../../src/shared/conversations/host.ts";
 import { add_message } from "../../../src/shared/conversations/messages.ts";
-import type { ToolCallRecord } from "../../../src/shared/conversations/model.ts";
+import { conversation_item_id, type ToolCallRecord } from "../../../src/shared/conversations/model.ts";
 import { add_conversation_record } from "../../../src/shared/conversations/records.ts";
 import { engine_tools, wait_for_runs, type ToolContext } from "../../../src/shared/conversations/run.ts";
 import { run_direct, type ChatModel } from "../../../src/shared/engines/direct.ts";
 import { node_key, parse_node_key } from "../../../src/shared/graph/model.ts";
+import { remove_dangling_links } from "../../../src/shared/graph/writing.ts";
 import { addresses_in, normal_address, rule_link_id, run_rules } from "../../../src/shared/graph/rules.ts";
 import { most_similar_per_item, propose_similar, similarity_link_id, standing_out } from "../../../src/shared/graph/similarity.ts";
 import { proposals_note, suggest_links_message, suggest_rounds, suggest_tools } from "../../../src/shared/graph/store.ts";
@@ -870,5 +871,33 @@ describe("node keys", () => {
   it("name a context, item or entity, and nothing else", () => {
     expect(parse_node_key("item:x-tasks:t1")).toEqual({ kind: "item", id: "x-tasks:t1" });
     expect(parse_node_key("thing:1")).toBeNull();
+  });
+});
+
+describe("dangling links", () => {
+  it("takes away only the links with an end that no longer exists", async () => {
+    const fixture = await start_fixture();
+    const { garden, seeds } = garden_of(fixture);
+    const other = fixture.calls.add_context("Other");
+    const fern = fixture.calls.add_entity("topic", "Fern");
+    const gone = fixture.calls.add_entity("topic", "Moss");
+    add_conversation_record(fixture.database, garden, "chat");
+    const link = (from: string, to: string) => fixture.calls.add_graph_link(from, to, "related_to");
+    const kept_item = link(node_key("item", seeds), node_key("context", garden));
+    const kept_entity = link(node_key("entity", fern), node_key("context", garden));
+    link(node_key("context", other), node_key("entity", fern));
+    link(node_key("entity", gone), node_key("item", seeds));
+    const chat = link(node_key("item", conversation_item_id("chat")), node_key("entity", fern));
+    fixture.database.prepare("DELETE FROM contexts WHERE id = ?").run(other);
+    fixture.database.prepare("DELETE FROM graph_entities WHERE id = ?").run(gone);
+    fixture.database.prepare("UPDATE items SET status = 'missing' WHERE id = ?").run(seeds);
+
+    const removed = remove_dangling_links(fixture.database);
+
+    expect(removed).toBe(2);
+    const left = (fixture.database.prepare("SELECT id FROM graph_links ORDER BY id").all() as { id: string }[]).map((row) => row.id);
+    expect(left.sort()).toEqual([kept_item, kept_entity, chat].sort());
+    fixture.database.prepare("UPDATE items SET status = 'missing' WHERE id = ?").run(conversation_item_id("chat"));
+    expect(remove_dangling_links(fixture.database)).toBe(1);
   });
 });

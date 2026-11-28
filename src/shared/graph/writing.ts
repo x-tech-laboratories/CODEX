@@ -3,10 +3,10 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { eq } from "@x-tech-laboratories/x-libs/drizzle";
+import { and, eq, not, notInArray, or } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
-import { items } from "../contexts/schema.ts";
+import { contexts, items } from "../contexts/schema.ts";
 import { conversation_collector } from "../conversations/model.ts";
 import { conversation_messages } from "../conversations/schema.ts";
 import { drizzle_of, new_id } from "../feature.ts";
@@ -144,18 +144,12 @@ export function resolve_evidence(database: SqlDatabase, evidence: EvidenceInput 
 // Takes away every link with an end that no longer exists: a removed context or entity, an item never kept, or a
 // deleted conversation. An item merely in no context keeps its links, which show again when it is back.
 export function remove_dangling_links(database: SqlDatabase): number {
-  const result = database
-    .prepare(
-      `DELETE FROM graph_links WHERE id IN (
-         SELECT id FROM graph_links l WHERE
-           (l.from_kind = 'context' AND NOT EXISTS (SELECT 1 FROM contexts c WHERE c.id = l.from_id)) OR
-           (l.to_kind = 'context' AND NOT EXISTS (SELECT 1 FROM contexts c WHERE c.id = l.to_id)) OR
-           (l.from_kind = 'entity' AND NOT EXISTS (SELECT 1 FROM graph_entities e WHERE e.id = l.from_id)) OR
-           (l.to_kind = 'entity' AND NOT EXISTS (SELECT 1 FROM graph_entities e WHERE e.id = l.to_id)) OR
-           (l.from_kind = 'item' AND NOT EXISTS (SELECT 1 FROM items i WHERE i.id = l.from_id AND NOT (i.collector = ? AND i.status = 'missing'))) OR
-           (l.to_kind = 'item' AND NOT EXISTS (SELECT 1 FROM items i WHERE i.id = l.to_id AND NOT (i.collector = ? AND i.status = 'missing')))
-       )`,
-    )
-    .run(conversation_collector, conversation_collector);
+  const db = drizzle_of(database);
+  const context_ids = db.select({ id: contexts.id }).from(contexts);
+  const entity_ids = db.select({ id: graph_entities.id }).from(graph_entities);
+  const item_ids = db.select({ id: items.id }).from(items).where(not(and(eq(items.collector, conversation_collector), eq(items.status, "missing"))!));
+  const dangling = (kind: typeof graph_links.from_kind, id: typeof graph_links.from_id) =>
+    or(and(eq(kind, "context"), notInArray(id, context_ids)), and(eq(kind, "entity"), notInArray(id, entity_ids)), and(eq(kind, "item"), notInArray(id, item_ids)));
+  const result = db.delete(graph_links).where(or(dangling(graph_links.from_kind, graph_links.from_id), dangling(graph_links.to_kind, graph_links.to_id))).run();
   return Number(result.changes);
 }

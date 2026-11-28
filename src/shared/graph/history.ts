@@ -4,11 +4,14 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
+import { and, eq, or } from "@x-tech-laboratories/x-libs/drizzle";
 import type { HistoryWatch } from "@x-tech-laboratories/x-libs/history";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
+import { drizzle_of } from "../feature.ts";
 import { node_key, type NodeKind } from "./model.ts";
 import { read_nodes } from "./records.ts";
+import { graph_entities, graph_links } from "./schema.ts";
 
 // ── Snapshots ────────────────────────────────────────────────────────────────
 
@@ -58,8 +61,9 @@ export const entity_history: GraphHistoryKind = {
     return { graph_entities: [{ ...row }], graph_links: (database.prepare(entity_links).all(id, id) as Row[]).map((link) => ({ ...link })) };
   },
   apply: (database, id, snapshot) => {
-    database.prepare("DELETE FROM graph_links WHERE (from_kind = 'entity' AND from_id = ?) OR (to_kind = 'entity' AND to_id = ?)").run(id, id);
-    database.prepare("DELETE FROM graph_entities WHERE id = ?").run(id);
+    const db = drizzle_of(database);
+    db.delete(graph_links).where(or(and(eq(graph_links.from_kind, "entity"), eq(graph_links.from_id, id)), and(eq(graph_links.to_kind, "entity"), eq(graph_links.to_id, id)))).run();
+    db.delete(graph_entities).where(eq(graph_entities.id, id)).run();
     for (const row of snapshot.graph_entities ?? []) insert_row(database, "graph_entities", row);
     for (const row of snapshot.graph_links ?? []) if (link_ends_exist(database, row)) insert_row(database, "graph_links", row);
   },
@@ -86,7 +90,7 @@ export const link_history: GraphHistoryKind = {
     const row = snapshot.graph_links?.[0];
     if (!row) return;
     if (!link_ends_exist(database, row)) throw new Error("One end of this link no longer exists, so it cannot come back.");
-    database.prepare("DELETE FROM graph_links WHERE id = ?").run(id);
+    drizzle_of(database).delete(graph_links).where(eq(graph_links.id, id)).run();
     insert_row(database, "graph_links", row);
   },
   name_of: (snapshot) => {
