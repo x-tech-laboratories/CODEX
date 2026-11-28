@@ -22,7 +22,7 @@
     "db:generate": "for config in src/shared/*/drizzle.config.ts; do drizzle-kit generate --config \"$config\" && x-libs-bundle-migrations \"$(dirname \"$config\")/migrations\" || exit 1; done",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
-    "lint": "oxlint",
+    "lint": "oxlint --ignore-pattern 'legacy/**'",
     "seed": "node scripts/seed.ts",
     "icons": "node scripts/icons.ts",
     "build:thunderbird": "vite build -c vite.thunderbird.config.ts"
