@@ -409,10 +409,18 @@ naming the file and never its content). Nothing declared is stored or synced:
   engine and embedder in place of their choices, a row per declared MCP server with Refresh and its tools' switches,
   and the file's own problems under Plugins, each marked "Set by this computer's configuration".
 
-## The desktop daemon
+## The hosts
 
-As in every X-app: `src/daemon/main.ts` is plain Node on Electron's own binary, owning the database, sync, backups,
-refreshing, missing-item notices and the local MCP endpoint, and serving the page's calls on
+The server and the desktop daemon run one runtime, `start_runtime` in `src/server/runtime.ts`: it opens the database,
+backs it up before an upgrade, brings the store up to date, and runs the collectors, the declared configuration, the
+refreshes, the search index, the maintenance and the assistant's jobs and the assistant, stopping them in one order. A
+host gives it a role: where its files are, `kind` (`server` or `desktop`), how a restore takes effect (`staged` for the
+next start on the server, `reopen` on the desktop) and a sync slot (`src/server/sync.ts`): the server's exchange
+(`sync_hub`) or the desktop's client (`sync_client_role`).
+
+`src/server/main.ts` adds the accounts, the HTTP calls, OpenAPI, MCP and the page (`src/server/app.ts`). As in every
+X-app, `src/daemon/main.ts` is plain Node on Electron's own binary, adding the desktop's own settings, the missing-item
+and Inbox notices, the local MCP endpoint and stopping when unused, and serving the page's calls on
 `$XDG_RUNTIME_DIR/codex/daemon.sock`. `src/main/index.ts` keeps the window, the tray (`src/main/tray_menu.ts`) and
 the login entry.
 

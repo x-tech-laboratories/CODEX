@@ -14,16 +14,17 @@ import { calls_under, register_accounts } from "@x-tech-laboratories/x-libs/serv
 import { AccountStore } from "@x-tech-laboratories/x-libs/server/account_store";
 import type { Accounts } from "@x-tech-laboratories/x-libs/server/passwords";
 import type { BackupMethods } from "@x-tech-laboratories/x-libs/backup_protocol";
-import { register_sync_routes } from "@x-tech-laboratories/x-libs/server/sync_routes";
 import { register_web_folder } from "@x-tech-laboratories/x-libs/server/web_folder";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { context_bridge } from "../shared/bridge.ts";
 import { mcp_instructions as instructions } from "../shared/mcp.ts";
 import { stop_all_runs } from "../shared/conversations/run.ts";
-import { conversation_event, page_only_refusal, user_only_backup_calls, user_only_settings } from "../shared/page_api.ts";
+import { conversation_event, page_only_refusal, user_only_backup_calls } from "../shared/page_api.ts";
 import { bind_methods, context_api, is_read_only, page_only, start_assistant, sync_engine } from "../shared/store.ts";
 import { register_context_calls } from "./calls.ts";
+import type { SyncRole } from "./runtime.ts";
+import { sync_hub } from "./sync.ts";
 
 // ── Options ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,10 @@ export interface AppOptions {
   web_folder: string;
   // The database's backups, which an admin manages from the page; one is taken before a device's data replaces it.
   backups: BackupMethods;
+  // The runtime's event stream, whose assistant it already started; left out, the app starts its own.
+  changes?: EventStream;
+  // The runtime's sync; left out, the server's own exchange.
+  sync?: SyncRole;
 }
 
 // ── Other programs ───────────────────────────────────────────────────────────
@@ -61,10 +66,13 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
     page_only,
   });
 
-  const changes = new EventStream();
   const database = () => options.database;
+  const changes = options.changes ?? new EventStream();
   // A reply streams to every page as it is written; a change it makes is announced to every page, since no page made it.
-  start_assistant({ database, announce: () => changes.announce_change(), emit: (event) => changes.send(JSON.stringify(event), { event: conversation_event }) });
+  if (!options.changes) start_assistant({ database, announce: () => changes.announce_change(), emit: (event) => changes.send(JSON.stringify(event), { event: conversation_event }) });
+  const sync =
+    options.sync ??
+    sync_hub({ database, engine: sync_engine, back_up: async () => void (await options.backups.create_backup()), profile: "", announce: (client_id) => changes.announce_change(client_id), changes });
   app.addHook("onClose", async () => stop_all_runs());
 
   await app.register(
@@ -102,14 +110,7 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
         });
         register_call_table(backups, "/backup", options.backups, { is_read_only });
       });
-      register_sync_routes(api, {
-        engine: sync_engine,
-        database,
-        back_up: async () => void (await options.backups.create_backup()),
-        on_change: (request) => changes.announce_change(changes.client_id_of(request)),
-        // A setting only the user may change syncs only from the user's own devices, never from a program's token.
-        device_only: (change) => change.table === "settings" && user_only_settings.has(change.key),
-      });
+      sync.routes?.(api);
     },
     { prefix: "/api" },
   );

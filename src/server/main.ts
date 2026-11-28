@@ -1,26 +1,19 @@
-// Starts the CODEX web server on the database the config names.
+// Starts the CODEX web server on the database the config names: the runtime every host shares, served to browsers,
+// tokens and MCP clients over HTTP, and the exchange every device syncs against.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 
-import { keep_backing_up } from "@x-tech-laboratories/x-libs/backups";
 import { read_server_config } from "@x-tech-laboratories/x-libs/server/config";
 import { load_accounts } from "@x-tech-laboratories/x-libs/server/passwords";
-import { sqlite_backups, take_staged_restore } from "@x-tech-laboratories/x-libs/server/sqlite_backups";
 
-import { codex_backup_naming, read_schedule } from "../shared/backups.ts";
-import { keep_running_jobs } from "../shared/jobs/runner.ts";
-import { keep_indexing, open_index } from "../shared/search/indexer.ts";
-import { keep_maintaining } from "../shared/maintenance/loop.ts";
-import { after_index_change, needs_upgrade, open_store, sync_engine } from "../shared/store.ts";
 import { build_app } from "./app.ts";
-import { load_collectors } from "./collectors/index.ts";
-import { declared_file_of, keep_declared } from "./declared.ts";
-import { keep_refreshing } from "./refreshing.ts";
+import { declared_file_of } from "./declared.ts";
+import { start_runtime } from "./runtime.ts";
+import { sync_hub } from "./sync.ts";
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -43,95 +36,43 @@ const server_config = read_server_config({
 
 const config = JSON.parse(readFileSync(server_config.values.config!, "utf8")) as ContextConfig;
 const database_path = resolve(config.database);
-const backups_folder = resolve(config.backups_folder);
-
-// ── Database ─────────────────────────────────────────────────────────────────
-
-mkdirSync(dirname(database_path), { recursive: true });
-// A backup restored from the page waits beside the database until the server starts again.
-const restored = take_staged_restore(database_path);
-const database = new DatabaseSync(database_path);
-database.exec("PRAGMA journal_mode = WAL");
-
-// ── Backups ──────────────────────────────────────────────────────────────────
-
-const answer_delay_ms = 500;
-
-// A restore is staged for the next start, then the server stops, once the page has its answer, so its service starts it
-// again on the backup.
-const kept = sqlite_backups({
-  folder: () => {
-    mkdirSync(backups_folder, { recursive: true });
-    return backups_folder;
-  },
-  naming: codex_backup_naming,
-  database: () => database,
-  database_path: () => database_path,
-  after_staging: () => void setTimeout(stop, answer_delay_ms),
-});
-
-if (needs_upgrade(database)) await kept.create();
-open_store(database);
-// The restored data is no longer what the devices last saw, so each chooses again which copy to keep.
-if (restored) sync_engine.forget_history(database);
-
-// The schedule belongs to this server, so it is kept beside the database rather than in the synced settings.
-const schedule_file = join(dirname(database_path), "backup-schedule.json");
-const read_backup_schedule = () => read_schedule(existsSync(schedule_file) ? JSON.parse(readFileSync(schedule_file, "utf8")) : null);
-const backing_up = keep_backing_up(kept, read_backup_schedule);
-
-// ── Collectors ───────────────────────────────────────────────────────────────
-
-await load_collectors(config.plugins_folder ? resolve(config.plugins_folder) : null);
-const refreshing = keep_refreshing(() => database);
-// What the server's configuration declares, when its module names a file; read again when the file changes.
-const declared = keep_declared(declared_file_of(process.env, ""), () => database);
-void declared.reload();
-
-// ── Search index ─────────────────────────────────────────────────────────────
-
-// A file of its own beside the database, never synced or backed up, and rebuilt from the store if it is deleted.
-const index_path = join(dirname(database_path), `${basename(database_path, extname(database_path))}-index.db`);
-const index = new DatabaseSync(index_path);
-index.exec("PRAGMA journal_mode = WAL");
-open_index(index);
-const indexing = keep_indexing({ database: () => database, index: () => index });
-
-// The maintenance jobs: this device's own index and embeddings, and, on the device chosen for background work, the
-// graph's upkeep and the daily digest, each within its budget.
-const maintaining = keep_maintaining({ database: () => database, index: () => index, device: `server on ${hostname()}`, kind: "server", now: () => Date.now(), on_change: () => after_index_change(database) });
 
 // ── Server ───────────────────────────────────────────────────────────────────
 
-const app = await build_app({
-  database,
-  declared: load_accounts("CODEX_PASSWORD_HASH_FILE"),
-  web_folder: server_config.web_folder,
-  backups: {
-    list_backups: kept.list,
-    create_backup: () => kept.create(),
-    restore_backup: kept.restore,
-    remove_backup: kept.remove,
-    get_backup_schedule: read_backup_schedule,
-    set_backup_schedule: (schedule) => {
-      writeFileSync(schedule_file, JSON.stringify(read_schedule(schedule), null, 2));
-      void backing_up.check();
-    },
-  },
+// Read before anything opens, so a missing accounts file stops the server before it touches the database.
+const accounts = load_accounts("CODEX_PASSWORD_HASH_FILE");
+
+const runtime = await start_runtime({
+  database_path,
+  index_path: join(dirname(database_path), `${basename(database_path, extname(database_path))}-index.db`),
+  backups_folder: resolve(config.backups_folder),
+  profile: dirname(database_path),
+  plugins_folder: config.plugins_folder ? resolve(config.plugins_folder) : null,
+  desktop_plugins: false,
+  declared_file: declared_file_of(process.env, ""),
+  device: `server on ${hostname()}`,
+  kind: "server",
+  restore: "staged",
+  stop_soon: () => void stop(),
+  sync: sync_hub,
 });
-// The server runs the assistant's jobs only once the user chose it as the device that does.
-const jobs = keep_running_jobs({ database: () => database, device: `server on ${hostname()}`, now: () => Date.now() });
+
+const app = await build_app({
+  database: runtime.database(),
+  declared: accounts,
+  web_folder: server_config.web_folder,
+  backups: runtime.backups,
+  changes: runtime.changes,
+  sync: runtime.sync,
+});
 
 await app.listen({ host: server_config.host, port: server_config.port });
 console.info(`CODEX is serving http://${server_config.host}:${server_config.port}/`);
 
-function stop(): void {
-  refreshing.stop();
-  declared.stop();
-  void jobs.stop();
-  void maintaining.stop().then(() => indexing.stop()).then(() => index.close());
-  backing_up.stop();
-  void app.close().then(() => database.close());
+async function stop(): Promise<void> {
+  await runtime.stop();
+  await app.close();
+  runtime.database().close();
 }
 
-for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, stop);
+for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => void stop());
