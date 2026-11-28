@@ -137,7 +137,7 @@ describe("a context's Graph view", () => {
     const dialog = await screen.findByRole("dialog");
     expect(dialog.textContent).toContain("Accept 1 proposal?");
     fireEvent.click(within(dialog).getByRole("button", { name: "Accept" }));
-    await waitFor(() => expect(fixture.calls.list_graph_proposals()).toEqual({ links: [], entities: [] }));
+    await waitFor(() => expect(fixture.calls.list_graph_proposals()).toEqual({ links: [], entities: [], left: 0 }));
     expect(fixture.calls.list_graph_decision_counts()).toMatchObject([{ engine: "fake", accepted: 2, rejected: 1 }]);
     await screen.findByText("Nothing is waiting for you.");
   });
@@ -258,7 +258,7 @@ describe("working the graph by hand", () => {
     const confirm = await screen.findByRole("dialog");
     expect(confirm.textContent).toContain("Reject 3 proposals?");
     fireEvent.click(within(confirm).getByRole("button", { name: "Reject" }));
-    await waitFor(() => expect(fixture.calls.list_graph_proposals()).toEqual({ links: [], entities: [] }));
+    await waitFor(() => expect(fixture.calls.list_graph_proposals()).toEqual({ links: [], entities: [], left: 0 }));
     expect(fixture.calls.list_graph_decision_counts()).toMatchObject([{ rejected: 3 }]);
   });
 });

@@ -11,7 +11,7 @@ import type { Engine, EngineRequest, EngineTools, ToolDefinition } from "../engi
 import { untrusted_block } from "../engines/untrusted.ts";
 import { offered_api } from "../policy/policy.ts";
 import { longest_tool_name, namespace_of, type OpenedTool } from "../tools/offered.ts";
-import { give_up_line } from "./instructions.ts";
+import { give_up_line, one_at_a_time_line } from "./instructions.ts";
 import type { ToolCallRecord } from "./model.ts";
 
 // ── Limits ───────────────────────────────────────────────────────────────────
@@ -195,10 +195,10 @@ export const own_specialists: readonly OwnSpecialist[] = [
   {
     name: "ask_graph",
     label: "graph",
-    calls: ["get_node_links", "list_graph_proposals", "propose_entity", "propose_link", "propose_link_drop"],
-    use: "Use it to see how contexts, items and entities (people, organisations, topics, places) are linked and what waits for the user, or to propose an entity, a link or the end of a wrong link; it only proposes.",
+    calls: ["get_node_links", "list_graph_proposals", "propose_entity", "propose_link", "propose_link_drop", "reject_graph_proposals"],
+    use: "Use it to see how contexts, items and entities (people, organisations, topics, places) are linked and what waits for the user, or to propose an entity, a link, the end of a wrong link or rejecting a wrong proposal; it only proposes.",
     guidance:
-      "CODEX keeps a graph linking contexts, items and entities: people, organisations, topics and places. get_node_links shows a node's links with their ids and list_graph_proposals what waits. propose_entity, propose_link and propose_link_drop, which ends a wrong or outdated link, only propose; the user decides.",
+      "CODEX keeps a graph linking contexts, items and entities: people, organisations, topics and places. get_node_links shows a node's links with their ids and list_graph_proposals what waits, a page at a time: give limit for how many and after for the id of the last one seen. propose_entity, propose_link and propose_link_drop, which ends a wrong or outdated link, only propose; reject_graph_proposals proposes rejecting waiting proposals that are wrong or irrelevant, by id; the user decides each.",
   },
   {
     name: "ask_blueprints",
@@ -323,7 +323,7 @@ function remainder_line(limits: { max_rounds: number; max_tool_calls: number }):
 
 // What a specialist is told: whom it serves, what it has, how to answer, its limits, and how its app works.
 export function specialist_instructions(group: SpecialistGroup, tools_part: string, limits: { max_rounds: number; max_tool_calls: number } = specialist_limits): string {
-  const remainder = `${remainder_line(limits)}\n${give_up_line}`;
+  const remainder = `${remainder_line(limits)}\n${give_up_line}\n${one_at_a_time_line}`;
   if (group.own) {
     return [
       `You are CODEX's ${group.label} specialist. You work for another assistant, which answers the user and has asked you to do one thing with CODEX's ${group.label} calls, the only tools you have.`,

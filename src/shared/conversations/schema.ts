@@ -13,6 +13,8 @@ export const conversations = sqliteTable("conversations", {
   // The name the user gave it; empty while it goes by its first message.
   title: text().notNull().default(""),
   created_at: text().notNull(),
+  // The assistant's task list for the job in hand, as a JSON list of steps, each with its status and a note.
+  task_list: text().notNull().default("[]"),
 });
 
 // One message of a conversation: the user's, the engine's answer, or an event such as an approved change.

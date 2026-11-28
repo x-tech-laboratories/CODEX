@@ -18,6 +18,7 @@ import { conversation_of_item, keep_thinking_setting, type AssistantStatus, type
 import { adopt_stray_conversations, conversation_ids_in, conversation_row, delete_conversation_records, rename_conversation_record, summaries_of } from "./records.ts";
 import { find_engine, is_running, run_state, start_run, stop_run_of } from "./run.ts";
 import { conversation_tables } from "./schema.ts";
+import { read_task_list, set_task_list_tool, write_task_list, type TaskStep } from "./task_list.ts";
 
 // ── Calls ────────────────────────────────────────────────────────────────────
 
@@ -28,7 +29,11 @@ function list_conversations(database: SqlDatabase, context_id: string | null = n
 function get_conversation(database: SqlDatabase, id: string): Conversation {
   conversation_row(database, id);
   const [summary] = summaries_of(database, [id], is_running);
-  return { ...summary!, messages: list_messages(database, id), proposals: list_proposals_of(database, id), run: run_state(id) };
+  return { ...summary!, messages: list_messages(database, id), proposals: list_proposals_of(database, id), run: run_state(id), task_list: read_task_list(database, id) };
+}
+
+function set_conversation_task_list(database: SqlDatabase, id: string, steps: unknown): TaskStep[] {
+  return write_task_list(database, id, steps);
 }
 
 async function get_assistant_status(database: SqlDatabase): Promise<AssistantStatus> {
@@ -75,7 +80,7 @@ export const conversations_feature = define_feature({
   id: "conversations",
   migrations: migrations.map((migration) => migration.statements),
   tables: synced_tables(conversation_tables),
-  methods: { list_conversations, get_conversation, get_assistant_status, send_message, stop_reply, rename_conversation, delete_conversation },
+  methods: { list_conversations, get_conversation, get_assistant_status, send_message, stop_reply, rename_conversation, delete_conversation, set_conversation_task_list },
   api: {
     list_conversations: {
       description:
@@ -84,7 +89,7 @@ export const conversations_feature = define_feature({
     },
     get_conversation: {
       description:
-        "Gets one conversation with the assistant: every message oldest first, each answer with the engine and model that wrote it, the tool calls it made and what a reasoning model thought, where it happened, the changes proposed in it, and the reply being written now, if any.",
+        "Gets one conversation with the assistant: every message oldest first, each answer with the engine and model that wrote it, the tool calls it made and what a reasoning model thought, where it happened, the changes proposed in it, the reply being written now, if any, and the assistant's task list for the job in hand.",
       params: [conversation_param],
     },
     get_assistant_status: {
@@ -112,6 +117,11 @@ export const conversations_feature = define_feature({
       description: "Deletes a conversation with every message and proposal in it, from every context holding it, and stops a reply being written there.",
       params: [conversation_param],
       destructive: true,
+    },
+    set_conversation_task_list: {
+      description:
+        "Replaces the assistant's task list in a conversation, the steps it keeps for the job in hand, and gives back what was kept; an empty list clears it. Each step has its text, a status (todo, doing, done or skipped) and a short note.",
+      params: [conversation_param, { name: "steps", schema: set_task_list_tool.parameters.properties.steps }],
     },
   },
   setting_defaults: { [engine_setting]: "", [keep_thinking_setting]: true },

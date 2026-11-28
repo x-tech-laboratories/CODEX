@@ -155,6 +155,8 @@ export interface ProposedLink extends GraphLink {
 export interface GraphProposals {
   links: ProposedLink[];
   entities: GraphEntity[];
+  // How many more wait after this page, links then entities; 0 when nothing was left out.
+  left: number;
 }
 
 // How the user decided the proposals of one maker, the signal later work learns from.

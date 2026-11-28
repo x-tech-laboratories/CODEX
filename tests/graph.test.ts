@@ -12,7 +12,7 @@ import { node_key, parse_node_key } from "../src/shared/graph/model.ts";
 import { addresses_in, normal_address, rule_link_id, run_rules } from "../src/shared/graph/rules.ts";
 import { most_similar_per_item, propose_similar, similarity_link_id, standing_out } from "../src/shared/graph/similarity.ts";
 import { proposals_note, suggest_links_message, suggest_rounds, suggest_tools } from "../src/shared/graph/store.ts";
-import { brings_outside_content, changing_calls, core_tools, offered_api, proposable_spec, proposing_calls } from "../src/shared/policy/policy.ts";
+import { approval_only_calls, brings_outside_content, changing_calls, core_tools, offered_api, proposable_spec, proposing_calls } from "../src/shared/policy/policy.ts";
 import { open_screen } from "../src/shared/privacy/screen.ts";
 import { count_changed, open_index, sync_documents, use_search_index, type IndexPass } from "../src/shared/search/indexer.ts";
 import { run_maintenance_job } from "../src/shared/maintenance/loop.ts";
@@ -313,7 +313,7 @@ describe("proposals", () => {
     expect(JSON.parse((await tools.call("propose_link", { from: shop, to: seeds, type: "related_to" })).result)).toMatchObject({ outcome: "refused" });
     expect(JSON.parse((await tools.call("propose_entity", { kind: "person", name: "bob" })).result)).toMatchObject({ outcome: "refused" });
     expect(JSON.parse((await tools.call("propose_link", { from: seeds, to: other.id, type: "about" })).result)).toMatchObject({ outcome: "refused" });
-    expect(fixture.calls.list_graph_proposals()).toEqual({ links: [], entities: [] });
+    expect(fixture.calls.list_graph_proposals()).toEqual({ links: [], entities: [], left: 0 });
     // Rejected links are kept, and drawn only when asked for.
     expect(fixture.calls.get_graph(null, { statuses: ["rejected"] }).links.map((link) => link.id).sort()).toEqual([about.id, related.id].sort());
 
@@ -322,11 +322,10 @@ describe("proposals", () => {
     expect(fixture.calls.add_graph_link(seeds, shop, "related_to")).toBe(related.id);
   });
 
-  it("are accepted and rejected only at the page: never by a token, MCP or an engine", () => {
-    for (const method of ["accept_graph_proposals", "reject_graph_proposals"]) {
-      expect(page_only.is_page_only(method)).toBe(true);
-      expect(Object.keys(offered_api)).not.toContain(method);
-    }
+  it("are accepted and rejected only at the page: never by a token, MCP or an engine, which may only propose rejecting one", () => {
+    for (const method of ["accept_graph_proposals", "reject_graph_proposals"]) expect(page_only.is_page_only(method)).toBe(true);
+    expect(Object.keys(offered_api)).not.toContain("accept_graph_proposals");
+    expect(approval_only_calls.has("reject_graph_proposals")).toBe(true);
     expect(page_only.is_page_only("propose_link")).toBe(false);
   });
 
@@ -478,9 +477,12 @@ describe("dropping links", () => {
   it("is proposing, offered with the graph's reads, and never closes, removes or rejects a link itself", () => {
     expect(proposing_calls.has("propose_link_drop")).toBe(true);
     expect(changing_calls()).not.toContain("propose_link_drop");
-    expect(Object.keys(offered_api)).toEqual(expect.arrayContaining(["get_node_links", "list_graph_proposals", "propose_link_drop"]));
-    for (const never of ["close_graph_link", "remove_graph_link", "reject_graph_proposals", "accept_graph_proposals"]) expect(Object.keys(offered_api)).not.toContain(never);
-    expect(Object.keys(core_tools)).toEqual(expect.arrayContaining(["get_node_links", "list_graph_proposals", "propose_link_drop"]));
+    expect(Object.keys(offered_api)).toEqual(expect.arrayContaining(["get_node_links", "list_graph_proposals", "propose_link_drop", "reject_graph_proposals"]));
+    for (const never of ["close_graph_link", "remove_graph_link", "accept_graph_proposals"]) expect(Object.keys(offered_api)).not.toContain(never);
+    // Rejecting a proposal is offered only as a proposal, so it has no level to raise.
+    expect(changing_calls()).not.toContain("reject_graph_proposals");
+    expect(page_only.is_page_only("reject_graph_proposals")).toBe(true);
+    expect(Object.keys(core_tools)).toEqual(expect.arrayContaining(["get_node_links", "list_graph_proposals", "propose_link_drop", "reject_graph_proposals"]));
     expect(brings_outside_content("list_graph_proposals")).toBe(true);
     expect(brings_outside_content("get_node_links")).toBe(true);
     expect(proposable_spec("reject_graph_proposals")).toBeDefined();
@@ -541,6 +543,35 @@ describe("dropping links", () => {
     expect(fixture.calls.get_node_links(seeds).links).toMatchObject([{ id: link.id, status: "rejected" }]);
     expect(JSON.parse((await tools.call("propose_link", { from: seeds, to: shop, type: "about" })).result)).toMatchObject({ outcome: "refused" });
     expect((await tools.call("propose_link_drop", { id: link.id, reason: "Again." })).result).toContain("already rejected");
+  });
+
+  it("lets an engine go through the proposals one at a time and propose rejecting one, which waits for the user whatever the level", async () => {
+    const fixture = start_fixture();
+    const { garden, seeds, shop } = garden_of(fixture);
+    const { tools } = await tools_of(fixture);
+    const first = JSON.parse((await tools.call("propose_link", { from: seeds, to: shop, type: "about" })).result) as { id: string };
+    const second = JSON.parse((await tools.call("propose_link", { from: shop, to: garden, type: "part_of" })).result) as { id: string };
+    const third = JSON.parse((await tools.call("propose_link", { from: seeds, to: garden, type: "part_of" })).result) as { id: string };
+
+    // A page of one, then the next after it, then the last with nothing left.
+    expect(fixture.calls.list_graph_proposals(null, 1)).toMatchObject({ links: [{ id: first.id }], entities: [], left: 2 });
+    expect(fixture.calls.list_graph_proposals(null, 1, first.id)).toMatchObject({ links: [{ id: second.id }], left: 1 });
+    expect(fixture.calls.list_graph_proposals(null, 5, second.id)).toMatchObject({ links: [{ id: third.id }], left: 0 });
+    // Without a limit or an id every one comes, as the page and the Inbox read them.
+    expect(fixture.calls.list_graph_proposals()).toMatchObject({ left: 0 });
+    expect(fixture.calls.list_graph_proposals().links).toHaveLength(3);
+    // An id not among them starts from the first.
+    expect(fixture.calls.list_graph_proposals(null, 1, "gone")).toMatchObject({ links: [{ id: first.id }] });
+
+    // A rejection has no level to raise: it only ever waits for the user, and approving it rejects the link.
+    expect(() => fixture.calls.set_action_level("reject_graph_proposals", "auto")).toThrow("is not a change an engine is offered");
+    const answer = await tools.call("reject_graph_proposals", { ids: [second.id] });
+    expect(answer.result).toContain("waits for the user's approval");
+    expect(fixture.calls.list_graph_proposals().links.map((each) => each.id)).toContain(second.id);
+    const [proposal] = fixture.calls.list_proposals("general");
+    expect(proposal).toMatchObject({ method: "reject_graph_proposals", arguments: { ids: [second.id] }, status: "waiting" });
+    await fixture.calls.resolve_proposal(proposal!.id, "approve");
+    expect(fixture.calls.list_graph_proposals().links.map((each) => each.id)).toEqual([first.id, third.id]);
   });
 
   it("is refused for an unknown link, without a reason, from a program, and once the user said no", async () => {

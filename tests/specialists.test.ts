@@ -705,7 +705,7 @@ describe("CODEX's own specialists", () => {
     for (const view of [tools.specialists!.definitions, tools.specialists!.core!]) expect(view.map((each) => each.name).filter((name) => !name.startsWith("ask_"))).toEqual(["set_mood", "read_tool_result"]);
     expect(tools.specialists!.delegated.map((each) => each.name)).toEqual(expect.arrayContaining(["add_item", "propose_entity", "fake__lookup"]));
     const graph = tools.specialists!.definitions.find((each) => each.name === "ask_graph")!;
-    expect(graph.description).toContain("get_node_links, list_graph_proposals, propose_entity, propose_link, propose_link_drop.");
+    expect(graph.description).toContain("get_node_links, list_graph_proposals, propose_entity, propose_link, propose_link_drop, reject_graph_proposals.");
     expect(graph.parameters).toMatchObject({ required: ["request"] });
 
     // A run offered few calls keeps them as they are.

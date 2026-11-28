@@ -34,5 +34,11 @@ export const migrations: DrizzleMigration[] = [
     "statements": [
       "ALTER TABLE `conversation_messages` ADD `thinking` text DEFAULT '[]' NOT NULL;"
     ]
+  },
+  {
+    "name": "20261128043838_task_list",
+    "statements": [
+      "ALTER TABLE `conversations` ADD `task_list` text DEFAULT '[]' NOT NULL;"
+    ]
   }
 ];

@@ -542,8 +542,13 @@ export const graph_feature = define_feature({
       params: [{ name: "node", schema: node_schema }],
     },
     list_graph_proposals: {
-      description: "Lists the links and entities proposed and waiting for the user, oldest first, each with who proposed it and its evidence, in one context and those inside it or everywhere.",
-      params: [{ name: "context_id", schema: { type: ["string", "null"], description: "A context's id; Global, null or left out for everywhere." }, optional: true }],
+      description:
+        "Lists the links and entities proposed and waiting for the user, links then entities, each oldest first, with who proposed it and its evidence, in one context and those inside it or everywhere; a page at a time when limit or after is given, with how many are left after it.",
+      params: [
+        { name: "context_id", schema: { type: ["string", "null"], description: "A context's id; Global, null or left out for everywhere." }, optional: true },
+        { name: "limit", schema: { type: ["integer", "null"], minimum: 1, description: "The most proposals given, links and entities together; every one when left out." }, optional: true },
+        { name: "after", schema: { type: ["string", "null"], description: "The id of the last proposal already seen; the page starts after it. From the start when left out." }, optional: true },
+      ],
     },
     list_link_counts: {
       description: "Lists how many open links, accepted or proposed, a context and each item it holds has, by node key.",
