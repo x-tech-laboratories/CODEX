@@ -125,7 +125,9 @@ alone, at CODEX's own page.
 Enter sends, Shift+Enter starts a new line, and **Stop** ends a reply early. Each tool call it made shows where in the reply it
 was made, and folds open to show its arguments and what came back. Wide tables and code in a reply scroll sideways on
 their own. While a reasoning model thinks, a folded **Thinking…** row opens to about ten lines of its
-thinking, following it as it streams unless you scroll up; the answer replaces it, and the thinking is never kept. When a reply fails, the pane says what happened
+thinking, following it as it streams unless you scroll up. The thinking stays with the reply, folded under **Thinking**
+where it happened, between the text and tool calls, and syncs with the conversation; it is never sent back to the model.
+Turn **Keep thinking** off under **Settings → Assistant → Engine** and it shows only while the reply is written. When a reply fails, the pane says what happened
 and what to do in plain words, with the raw message folded under **Details**.
 
 **Setting up an engine,** under **Settings → Assistant → Engine**: pick the engine under **Answering**, then open its row

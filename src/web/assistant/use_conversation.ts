@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Resource } from "@x-tech-laboratories/x-libs/web/react/states";
 
-import type { Conversation, ConversationEvent, RunState } from "../../shared/conversations/model.ts";
+import { add_thinking, type Conversation, type ConversationEvent, type RunState } from "../../shared/conversations/model.ts";
 import { page, use_data } from "../api.ts";
 
 // ── Runs ─────────────────────────────────────────────────────────────────────
@@ -17,16 +17,16 @@ export interface LiveRun extends RunState {
 }
 
 function empty_run(run_id: string, engine = "", model = "", started_at = ""): LiveRun {
-  return { run_id, engine, model, started_at, text: "", reasoning: "", tool_calls: [], notices: [], finished: false };
+  return { run_id, engine, model, started_at, text: "", thinking: [], tool_calls: [], notices: [], finished: false };
 }
 
-// The reply after one event; events for another run start it afresh. The thinking shown is the latest, since text
-// written after it ends it.
+// The reply after one event; events for another run start it afresh. Each stretch of thinking is placed where the reply
+// stood, as the store places it.
 export function next_run(run: LiveRun | null, event: ConversationEvent): LiveRun | null {
   if (event.type === "started") return empty_run(event.run_id, event.engine, event.model, new Date().toISOString());
   const current = run && run.run_id === event.run_id ? run : empty_run(event.run_id);
-  if (event.type === "text") return { ...current, text: current.text + event.text, reasoning: "" };
-  if (event.type === "reasoning") return { ...current, reasoning: current.reasoning + event.text };
+  if (event.type === "text") return { ...current, text: current.text + event.text };
+  if (event.type === "reasoning") return { ...current, thinking: add_thinking(current.thinking, event.text, current.text.length, current.tool_calls.length) };
   if (event.type === "notice") return { ...current, notices: [...current.notices, event.text] };
   if (event.type === "tool_call") return { ...current, tool_calls: [...current.tool_calls, event.call] };
   if (event.type === "tool_result") return { ...current, tool_calls: current.tool_calls.map((call) => (call.id === event.call.id ? event.call : call)) };

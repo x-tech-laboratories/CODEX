@@ -14,7 +14,7 @@ import { define_feature } from "../feature.ts";
 import { list_proposals_of } from "../policy/proposals.ts";
 import { list_messages } from "./messages.ts";
 import { migrations } from "./migrations/index.ts";
-import { conversation_of_item, type AssistantStatus, type Conversation, type ConversationSummary } from "./model.ts";
+import { conversation_of_item, keep_thinking_setting, type AssistantStatus, type Conversation, type ConversationSummary } from "./model.ts";
 import { adopt_stray_conversations, conversation_ids_in, conversation_row, delete_conversation_records, rename_conversation_record, summaries_of } from "./records.ts";
 import { find_engine, is_running, run_state, start_run, stop_run_of } from "./run.ts";
 import { conversation_tables } from "./schema.ts";
@@ -84,7 +84,7 @@ export const conversations_feature = define_feature({
     },
     get_conversation: {
       description:
-        "Gets one conversation with the assistant: every message oldest first, each answer with the engine and model that wrote it and the tool calls it made, the changes proposed in it, and the reply being written now, if any.",
+        "Gets one conversation with the assistant: every message oldest first, each answer with the engine and model that wrote it, the tool calls it made and what a reasoning model thought, where it happened, the changes proposed in it, and the reply being written now, if any.",
       params: [conversation_param],
     },
     get_assistant_status: {
@@ -114,7 +114,7 @@ export const conversations_feature = define_feature({
       destructive: true,
     },
   },
-  setting_defaults: { [engine_setting]: "" },
+  setting_defaults: { [engine_setting]: "", [keep_thinking_setting]: true },
   // Every conversation kept before conversations were items, and any a device still on that shape syncs in, becomes one.
   on_open: (database) => void adopt_stray_conversations(database),
   after_write: (database) => void adopt_stray_conversations(database),

@@ -8,6 +8,7 @@ import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 
 import type { ContextPlugin, ContextPluginApi } from "../src/shared/collectors/host.ts";
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
+import { keep_thinking_setting } from "../src/shared/conversations/model.ts";
 import { add_conversation_record, has_conversation } from "../src/shared/conversations/records.ts";
 import { engine_tools, open_collector_sources, run_guidance_part, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
 import {
@@ -273,6 +274,32 @@ describe("a specialist's run", () => {
     await wait_for_runs();
     expect(seen[0]).toContain("Not run");
     expect(calls).toEqual([]);
+  });
+
+  it("keeps its thinking under the ask, each stretch among its calls, unless Keep thinking is off", async () => {
+    const { fixture } = two_plugins();
+    asks(fixture, async function* (request) {
+      yield { type: "reasoning", text: "Look it up." };
+      yield* call_tool(request, "s1", "fake__lookup", { q: "tiles" });
+      yield { type: "reasoning", text: "Found them." };
+      yield { type: "done", text: "Found the tiles." };
+    });
+    const { conversation_id } = await fixture.calls.send_message(null, "Where are my tiles?");
+    await wait_for_runs();
+
+    const ask = fixture.calls.get_conversation(conversation_id).messages[1]!.tool_calls[0]!;
+    expect(ask.thinking).toEqual([
+      { text: "Look it up.", text_at: 0, calls_before: 0 },
+      { text: "Found them.", text_at: 0, calls_before: 1 },
+    ]);
+    expect(ask.calls!.map((call) => call.name)).toEqual(["fake__lookup"]);
+
+    fixture.calls.set_setting(keep_thinking_setting, false);
+    await fixture.calls.send_message(null, "Again", conversation_id);
+    await wait_for_runs();
+    const again = fixture.calls.get_conversation(conversation_id).messages[3]!.tool_calls[0]!;
+    expect(again.thinking).toBeUndefined();
+    expect(again.calls!.map((call) => call.name)).toEqual(["fake__lookup"]);
   });
 });
 

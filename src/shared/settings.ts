@@ -35,7 +35,7 @@ export const settings_feature = define_feature({
   api: {
     get_settings: {
       description:
-        "The settings stored, by key; a key missing here has its default. refresh_minutes is how often the daemon asks each collector what became of its items, plugins holds each collector and engine plugin's on or off and settings, with its keys hidden, engine names the engine that answers the conversations, action_policy the level of each change the assistant could make, source_marks each collector plugin's marks for hosted engines and trust, hosted_log.keep_days how long the log of what hosted engines were sent is kept, and item_sources the apps read through the standard item calls, with their tokens hidden.",
+        "The settings stored, by key; a key missing here has its default. refresh_minutes is how often the daemon asks each collector what became of its items, plugins holds each collector and engine plugin's on or off and settings, with its keys hidden, engine names the engine that answers the conversations, keep_thinking whether each reply keeps its model's thinking (on unless false), action_policy the level of each change the assistant could make, source_marks each collector plugin's marks for hosted engines and trust, hosted_log.keep_days how long the log of what hosted engines were sent is kept, and item_sources the apps read through the standard item calls, with their tokens hidden.",
       params: [],
     },
     set_setting: {

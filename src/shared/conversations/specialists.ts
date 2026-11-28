@@ -240,6 +240,8 @@ export function specialist_brief(user_message: string, request: string): string 
 // Where a specialist's calls are kept: the ask call's own nested calls, and a way to tell open pages they changed.
 export interface Nest {
   calls: ToolCallRecord[];
+  // Adds a piece of the specialist's thinking after the calls made so far; open pages hear it with the next change.
+  thought(text: string): void;
   changed(): void;
 }
 
@@ -280,6 +282,7 @@ export async function run_specialist(host: SpecialistHost, request: EngineReques
     for await (const event of host.engine.run(request, signal)) {
       if (signal.aborted) break;
       if (event.type === "text") text += event.text;
+      else if (event.type === "reasoning") nest.thought(event.text);
       else if (event.type === "tool_call") {
         const call: ToolCallRecord = { id: `specialist_${nest.calls.length + 1}`, name: event.name, arguments: event.arguments, result: "", is_error: false, outcome: "pending" };
         nest.calls.push(call);

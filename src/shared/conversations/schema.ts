@@ -40,6 +40,8 @@ export const conversation_messages = sqliteTable(
     // The sources whose content the run that wrote it had read, as a JSON list of collector ids; ["*"] when not
     // recorded, as on every message kept before 2026-11-26. The user's own messages are theirs whatever it says.
     sources: text().notNull().default('["*"]'),
+    // What a reasoning model thought while writing it, as a JSON list of stretches, each with where it happened.
+    thinking: text().notNull().default("[]"),
     input_tokens: integer().notNull().default(0),
     output_tokens: integer().notNull().default(0),
     created_at: text().notNull(),
