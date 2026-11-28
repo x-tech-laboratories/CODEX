@@ -20,12 +20,12 @@ import { digest_lines } from "../../../src/shared/maintenance/jobs.ts";
 import { run_maintenance_job, use_maintenance_host, type MaintenanceHost } from "../../../src/shared/maintenance/loop.ts";
 import { research_message, save_finding_name, web_fetch_tool, web_search_tool } from "../../../src/shared/maintenance/research.ts";
 import { mood_state } from "../../../src/shared/mood/mood.ts";
-import { page_only_methods, user_only_settings } from "../../../src/shared/page_api.ts";
+import { page_only_methods } from "../../../src/shared/page_api.ts";
 import { screen_result } from "../../../src/shared/privacy/results.ts";
 import { open_screen } from "../../../src/shared/privacy/screen.ts";
 import { read_documents } from "../../../src/shared/search/documents.ts";
 import { open_index } from "../../../src/shared/search/indexer.ts";
-import { page_only } from "../../../src/shared/store.ts";
+import { page_only, settings_store } from "../../../src/shared/store.ts";
 import { start_fixture, type Fixture } from "../../fixtures/assistant_fixture.ts";
 
 // ── The fake web ─────────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ describe("interests", () => {
       expect(page_only.is_page_only_call(name, [])).toBe(true);
     }
     expect(page_only.is_page_only_call("propose_interest", [])).toBe(false);
-    for (const key of Object.values(interest_settings)) expect(user_only_settings.has(key)).toBe(true);
+    for (const key of Object.values(interest_settings)) expect(settings_store.user_only.has(key)).toBe(true);
   });
 });
 

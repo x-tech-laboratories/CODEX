@@ -14,8 +14,7 @@ import type { SyncConfig } from "@x-tech-laboratories/x-libs/sync_protocol";
 import { build_app } from "../../src/server/app.ts";
 import { use_plugins, type ContextPluginApi } from "../../src/shared/collectors/host.ts";
 import { wait_for_runs } from "../../src/shared/conversations/run.ts";
-import { method_names, open_store, page_only, sync_engine } from "../../src/shared/store.ts";
-import { user_only_settings } from "../../src/shared/page_api.ts";
+import { method_names, open_store, page_only, settings_store, sync_engine } from "../../src/shared/store.ts";
 import { register_context_calls } from "../../src/server/calls.ts";
 import fastify from "fastify";
 import { EventStream } from "@x-tech-laboratories/x-libs/server/events";
@@ -342,7 +341,7 @@ describe("server", () => {
       "interests.max_accepted": 20,
       "interests.context": "elsewhere",
     };
-    expect(Object.keys(protected_values).sort()).toEqual([...user_only_settings].sort());
+    expect(Object.keys(protected_values).sort()).toEqual([...settings_store.user_only].sort());
     const before = (await signed({ method: "POST", url: "/api/call/get_settings", payload: [] })).json() as Record<string, unknown>;
     for (const [key, value] of Object.entries(protected_values)) {
       const in_order = await signed({ method: "POST", url: "/api/call/set_setting", payload: [key, value] });
@@ -404,7 +403,7 @@ describe("sync and the user's own settings", () => {
       ["_exists", "key", "value"].map((column) => ({ table: "settings", key, column, value: column === "_exists" ? 1 : column === "key" ? key : JSON.stringify(value), ts: Date.now(), site: "program" }));
     const exchange = (changes: unknown[]) => app.inject({ method: "POST", url: "/api/sync/exchange", headers, payload: { site: "program", generation, cursor: 0, changes } });
 
-    for (const key of user_only_settings) {
+    for (const key of settings_store.user_only) {
       const refused = await exchange([...row("refresh_minutes", 3), ...row(key, key === "action_policy" ? { rename_context: "background" } : "changed")]);
       expect([key, refused.statusCode]).toEqual([key, 403]);
     }

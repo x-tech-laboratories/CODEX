@@ -20,7 +20,7 @@ import { embedder_setting, type Embedder } from "../embedders/embedder.ts";
 import { PlainFailure } from "../engines/direct.ts";
 import { is_hosted } from "../engines/engine.ts";
 import { may_send, open_screen } from "../privacy/screen.ts";
-import { settings_feature } from "../settings.ts";
+import { read_setting } from "../settings.ts";
 import { read_documents, type SourceDocument } from "./documents.ts";
 import type { IndexedEmbedder, IndexState } from "./model.ts";
 import { chunk_text, text_hash, to_blob, unit } from "./text.ts";
@@ -244,7 +244,7 @@ export interface FoundEmbedder {
 // The embedder this computer's configuration declares, else the one the settings name, or why there is none; null with
 // no problem when none is chosen.
 export async function find_embedder(database: SqlDatabase): Promise<{ found: FoundEmbedder | null; problem: string }> {
-  const chosen = declarations().embedder ?? String(settings_feature.methods.get_settings(database)[embedder_setting] ?? "");
+  const chosen = declarations().embedder ?? String(read_setting(database, embedder_setting) ?? "");
   if (!chosen) return { found: null, problem: "" };
   const provided = (await open_plugin_host(database)).providers("embedder").find((each) => each.id === chosen);
   return provided ? { found: { id: provided.id, embedder: provided.value }, problem: "" } : { found: null, problem: `The ${chosen} embedder is not running; turn its plugin on under Settings → Index.` };
@@ -372,9 +372,8 @@ let pass_settings = "";
 
 // What the embedder in use is and how it is set up, to tell when that changed.
 function embedder_settings(database: SqlDatabase): string {
-  const settings = settings_feature.methods.get_settings(database);
   const declared = declarations();
-  return JSON.stringify([declared.embedder ?? settings[embedder_setting] ?? "", settings[plugins_setting] ?? {}, declared.plugins]);
+  return JSON.stringify([declared.embedder ?? read_setting(database, embedder_setting) ?? "", read_setting(database, plugins_setting) ?? {}, declared.plugins]);
 }
 
 // What one pass does beyond bringing the documents in step: embed what waits (unless told not to, as after a write,

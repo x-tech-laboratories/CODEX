@@ -5,12 +5,13 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
+import { settings_of } from "@x-tech-laboratories/x-libs/settings";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
 import { current_caller } from "../caller.ts";
 import { define_feature } from "../feature.ts";
-import { settings_feature } from "../settings.ts";
+import { write_setting } from "../settings.ts";
 import { migrations } from "./migrations/index.ts";
 import { interest_defaults, interest_settings, max_accepted_bounds, type Interest, type InterestState } from "./model.ts";
 import { checked_reason, checked_topic, insert_interest, interest_row, list_interest_rows, max_accepted, update_interest } from "./records.ts";
@@ -100,7 +101,7 @@ function set_interest_state(database: SqlDatabase, id: string, state: Exclude<In
 function set_max_interests(database: SqlDatabase, most: number): void {
   const [least, highest] = max_accepted_bounds;
   if (!Number.isInteger(most) || most < least || most > highest) throw new Error(`The most interests accepted at once is a whole number from ${least} to ${highest}.`);
-  settings_feature.methods.set_setting(database, interest_settings.max_accepted, most);
+  write_setting(database, interest_settings.max_accepted, most);
 }
 
 // ── Feature ──────────────────────────────────────────────────────────────────
@@ -153,5 +154,5 @@ export const interests_feature = define_feature({
       params: [{ name: "most", schema: { type: "integer", description: "The most accepted at once." } }],
     },
   },
-  setting_defaults: interest_defaults,
+  settings: settings_of(interest_defaults, { user_only: true }),
 });

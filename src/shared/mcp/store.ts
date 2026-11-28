@@ -13,7 +13,7 @@ import { define_feature } from "../feature.ts";
 import { device_id_of, list_devices } from "../jobs/records.ts";
 import { mcp_connector } from "./connector.ts";
 import { mcp_key_of, mcp_servers_setting, runs_on, sends_outside, type McpCommandConfirmation, type McpServerFields, type McpServerRecord, type McpServerSummary } from "./model.ts";
-import { read_servers, write_servers } from "./records.ts";
+import { hide_server_tokens, keep_server_tokens, read_servers, write_servers } from "./records.ts";
 
 // ── Reading ──────────────────────────────────────────────────────────────────
 
@@ -243,5 +243,5 @@ export const mcp_feature = define_feature({
       destructive: true,
     },
   },
-  setting_defaults: { [mcp_servers_setting]: [] },
+  settings: { [mcp_servers_setting]: { default: [], user_only: true, hide: hide_server_tokens, keep: keep_server_tokens } },
 });
