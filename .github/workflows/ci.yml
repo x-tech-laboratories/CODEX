@@ -25,7 +25,6 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run build:desktop
-      - run: npm run build:thunderbird
       - run: npm run coverage
       - run: git diff --exit-code vitest.config.ts
       - run: npm run lint

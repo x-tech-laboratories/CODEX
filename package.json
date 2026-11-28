@@ -22,10 +22,9 @@
     "db:generate": "for config in src/shared/*/drizzle.config.ts; do drizzle-kit generate --config \"$config\" && x-libs-bundle-migrations \"$(dirname \"$config\")/migrations\" || exit 1; done",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
-    "lint": "oxlint",
+    "lint": "oxlint --ignore-pattern 'legacy/**'",
     "seed": "node scripts/seed.ts",
-    "icons": "node scripts/icons.ts",
-    "build:thunderbird": "vite build -c vite.thunderbird.config.ts"
+    "icons": "node scripts/icons.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.14.0",
@@ -38,7 +37,7 @@
     "@modelcontextprotocol/server": "^2.4.0",
     "@x-tech-laboratories/halon": "^0.34.0",
     "@x-tech-laboratories/smartharness": "github:x-tech-laboratories/SmartHarness#a4f380b605d1f631409dde29548a009846b47a7b",
-    "@x-tech-laboratories/x-libs": "^0.91.0",
+    "@x-tech-laboratories/x-libs": "^0.92.0",
     "fastify": "^5.12.8",
     "lucide-react": "^1.82.0",
     "node-llama-cpp": "file:./stubs/node-llama-cpp",

@@ -9,8 +9,7 @@
     "../scripts",
     "../vite.config.ts",
     "../electron.vite.config.ts",
-    "../vitest.config.ts",
-    "../vite.thunderbird.config.ts"
+    "../vitest.config.ts"
   ],
   "compilerOptions": {
     "composite": true,

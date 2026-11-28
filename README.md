@@ -395,7 +395,7 @@ MCP servers, their addresses, tokens and commands.
 | Trilium   | notes through Trilium's ETAPI, linked into its page | the Trilium server's address and an ETAPI token |
 | Firefox bookmarks | bookmarks found by title or address, and each bookmark folder to follow | the Firefox profile folder, or nothing for Firefox's default profile |
 | Web links | web pages typed in by address and title | nothing |
-| Email     | emails sent from Thunderbird with the add-on below, as `mid:` links keyed by their Message-ID | nothing here; the add-on has its own options |
+| Email     | emails sent from Thunderbird with the X-Mail add-on, as `mid:` links keyed by their Message-ID | nothing here; the add-on has its own options |
 | Apps answering the item calls | the items of any app that answers the X-Tech item calls, such as another X-app, opening by the app's own links | each app under **Apps**: a name, its address and a read-only token |
 
 Files reads the disk of the machine its server or daemon runs on, so on a server it finds the server's files. Firefox
@@ -447,10 +447,9 @@ leave a followed context unless **Include done tasks** is on in the X-Tasks plug
 
 ## The Thunderbird add-on
 
-`npm run build:thunderbird` builds the add-on into `out/thunderbird`. In Thunderbird 128 or later, open **Add-ons and
-Themes → Debug Add-ons → Load Temporary Add-on** and pick `out/thunderbird/manifest.json`. In its options, give the
-CODEX server's address and a token made on **Your account** with changes allowed; Thunderbird asks leave to reach
-that server. Then **Add to context** on any email ticks the contexts it belongs in, with a note.
+The add-on lives in [X-Mail](https://github.com/x-tech-laboratories/X-Mail), which says how to build and load it. In
+its options, give the CODEX server's address and a token made on **Your account** with changes allowed. Then **Add to
+context** on any email ticks the contexts it belongs in, with a note.
 
 An email added this way opens through its `mid:` link, on a desktop where Thunderbird is set to open `mid:` links;
 its Message-ID finds it wherever it was filed.
@@ -654,9 +653,8 @@ src/
   web/         the React page: contexts/, assistant/, settings/, history/ and hosts/ for web and desktop
   shared/      the store every host runs: contexts/, collectors/, engines/, embedders/, conversations/, policy/, privacy/,
                search/, graph/, history/ and settings
-thunderbird/   the Thunderbird add-on: its popup, options and manifest
 scripts/       seed.ts for sample data, icons.ts for the icons
-tests/         one *.test.ts per behaviour
+tests/         one *.test.ts per behaviour, mirroring src/ (shared/, server/, web/, daemon/), and fixtures/
 legacy/        the pre-merge assistant, kept for porting and for a future mail application; not built or tested
 docs/          the goal, the architecture, open questions, the roadmap and the merge plan
 nix/           flake.nix and flake.lock, package.nix, desktop-package.nix, module.nix and shell.nix
