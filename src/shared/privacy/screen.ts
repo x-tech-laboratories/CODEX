@@ -12,7 +12,7 @@ import { blueprint_collector } from "../blueprints/model.ts";
 import { finding_collector } from "../interests/model.ts";
 import { conversation_collector } from "../conversations/model.ts";
 import { fill, prompts } from "../prompts/prompts.ts";
-import { settings_feature } from "../settings.ts";
+import { read_setting } from "../settings.ts";
 import { is_tool_source, tool_source_of } from "../tools/model.ts";
 import { open_tool_plugins } from "../tools/offered.ts";
 import { mark_names, unmarked, type SourceCount, type SourceMark } from "./model.ts";
@@ -24,7 +24,7 @@ import { unrecorded_label, unrecorded_source } from "./sources.ts";
 export const marks_setting = "source_marks";
 
 export function stored_marks(database: SqlDatabase): Record<string, SourceMark> {
-  const saved = settings_feature.methods.get_settings(database)[marks_setting];
+  const saved = read_setting(database, marks_setting);
   if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
   const marks: Record<string, SourceMark> = {};
   for (const [plugin_id, value] of Object.entries(saved as Record<string, unknown>)) {

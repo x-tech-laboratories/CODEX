@@ -10,7 +10,7 @@ import { file_sync_storage } from "@x-tech-laboratories/x-libs/sync_file_storage
 import type { SyncDeviceMethods } from "@x-tech-laboratories/x-libs/sync_protocol";
 import { register_sync_routes } from "@x-tech-laboratories/x-libs/server/sync_routes";
 
-import { user_only_settings } from "../shared/page_api.ts";
+import { settings_store } from "../shared/store.ts";
 import type { SyncContext, SyncRole } from "./runtime.ts";
 
 // ── Server ───────────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ export function sync_hub(context: SyncContext): SyncRole {
         database: context.database,
         back_up: context.back_up,
         on_change: (request) => context.announce(context.changes.client_id_of(request)),
-        device_only: (change) => change.table === "settings" && user_only_settings.has(change.key),
+        device_only: settings_store.is_device_only,
       }),
     start: () => undefined,
     stop: () => undefined,

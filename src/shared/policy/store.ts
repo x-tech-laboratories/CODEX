@@ -6,6 +6,7 @@
 
 import { synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
 import { positional_args } from "@x-tech-laboratories/x-libs/api_spec";
+import { settings_of } from "@x-tech-laboratories/x-libs/settings";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
@@ -18,7 +19,7 @@ import { record_tool_send } from "../privacy/store.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
 import { is_plugin_tool_name, tool_source_of } from "../tools/model.ts";
 import { find_plugin_tool, run_tool } from "../tools/offered.ts";
-import { settings_feature } from "../settings.ts";
+import { write_setting } from "../settings.ts";
 import { migrations } from "./migrations/index.ts";
 import { default_level, is_policy_level, policy_levels, type PolicyEntry, type PolicyLevel, type Proposal, type ProposalStatus } from "./model.ts";
 import { leveled_calls, level_of, maintenance_api, policy_setting, proposable_spec, stored_levels } from "./policy.ts";
@@ -40,7 +41,7 @@ function get_action_policy(database: SqlDatabase): PolicyEntry[] {
 function set_action_level(database: SqlDatabase, method: string, level: PolicyLevel): void {
   if (!leveled_calls().includes(method)) throw new Error(`${method} is not a change an engine is offered; get_action_policy lists those.`);
   if (!is_policy_level(level)) throw new Error(`A level is one of ${policy_levels.join(", ")}.`);
-  settings_feature.methods.set_setting(database, policy_setting, { ...stored_levels(database), [method]: level });
+  write_setting(database, policy_setting, { ...stored_levels(database), [method]: level });
 }
 
 // ── Proposals ────────────────────────────────────────────────────────────────
@@ -202,5 +203,5 @@ export const policy_feature = define_feature({
       ],
     },
   },
-  setting_defaults: { [policy_setting]: {} },
+  settings: settings_of({ [policy_setting]: {} }, { user_only: true }),
 });

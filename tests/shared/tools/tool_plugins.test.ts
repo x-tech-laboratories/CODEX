@@ -10,11 +10,10 @@ import { use_assistant_host } from "../../../src/shared/conversations/host.ts";
 import { add_conversation_record, has_conversation } from "../../../src/shared/conversations/records.ts";
 import { wait_for_runs } from "../../../src/shared/conversations/run.ts";
 import { engine_tools, plugin_tool_summary, plugin_tools_part, type ToolContext } from "../../../src/shared/conversations/tools.ts";
-import { user_only_settings } from "../../../src/shared/page_api.ts";
 import { page_only_methods } from "../../../src/shared/store.ts";
 import { offered_api } from "../../../src/shared/policy/policy.ts";
 import { has_read_private, local_screen, note_source, open_screen } from "../../../src/shared/privacy/screen.ts";
-import { page_only } from "../../../src/shared/store.ts";
+import { page_only, settings_store } from "../../../src/shared/store.ts";
 import { is_plugin_tool_name, tool_source_of } from "../../../src/shared/tools/model.ts";
 import { open_plugin_tools, run_tool, tool_name_of, type OpenedTool } from "../../../src/shared/tools/offered.ts";
 import type { PluginTool, ToolPlugin } from "../../../src/shared/tools/tool.ts";
@@ -403,7 +402,7 @@ describe("the tool plugins' settings", () => {
       expect(page_only_methods.has(name)).toBe(true);
       expect(page_only.is_page_only_call(name, [])).toBe(true);
     }
-    expect(user_only_settings.has("tool_plugins")).toBe(true);
+    expect(settings_store.user_only.has("tool_plugins")).toBe(true);
     expect(page_only.is_page_only_call("set_setting", ["tool_plugins", {}])).toBe(true);
     expect(page_only.is_page_only_call("list_plugin_tools", [])).toBe(false);
   });

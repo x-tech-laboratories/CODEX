@@ -14,7 +14,7 @@ import { conversations_plugin } from "../conversations/collector.ts";
 import { findings_plugin } from "../interests/collector.ts";
 import type { Embedder } from "../embedders/embedder.ts";
 import type { Engine } from "../engines/engine.ts";
-import { settings_feature } from "../settings.ts";
+import { read_setting, write_setting } from "../settings.ts";
 import { mcp_plugin } from "../mcp/plugin.ts";
 import { item_sources_plugin } from "../sources/collector.ts";
 import type { ToolPlugin } from "../tools/tool.ts";
@@ -33,7 +33,7 @@ export type ContextPlugin = Plugin<ContextPluginApi>;
 // ── Storage ──────────────────────────────────────────────────────────────────
 
 export function plugin_records(database: SqlDatabase): PluginRecords {
-  const saved = settings_feature.methods.get_settings(database)[plugins_setting];
+  const saved = read_setting(database, plugins_setting);
   return saved && typeof saved === "object" && !Array.isArray(saved) ? (saved as PluginRecords) : {};
 }
 
@@ -42,7 +42,7 @@ export function plugin_records(database: SqlDatabase): PluginRecords {
 function settings_storage(database: SqlDatabase): PluginStorage {
   return {
     read: () => with_declared(plugin_records(database), declarations(), chosen_models(database)),
-    write: (records) => settings_feature.methods.set_setting(database, plugins_setting, without_declared(records, plugin_records(database))),
+    write: (records) => write_setting(database, plugins_setting, without_declared(records, plugin_records(database))),
   };
 }
 

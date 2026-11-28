@@ -69,20 +69,6 @@ export function is_read_only(method: string): boolean {
   return /^(list|get|search|lookup|export)_/.test(method);
 }
 
-// Settings that keep the user in charge, written only by the user at the page: the action policy, the source marks,
-// which engine answers and which embedder the index uses, how long the hosted log is kept, and every plugin's on or
-// off and settings, which hold each engine's and embedder's endpoint and key command, the apps read through the
-// item calls with their tokens, whether background work runs at all, is paused, on which device, how often it looks
-// for work, whether it may use a hosted engine and how much a day, each maintenance job's switch and budget, and the tool plugins' marks
-// and which of their tools are offered, the guidance each plugin's specialist is given, and the MCP servers with their addresses, tokens and commands, and the assistant's mood: its switches, its dates and
-// the mood itself, which only CODEX's own code writes, and the interests' cap and the context their findings are kept in. They are read like any other,
-// and only the user's own devices may sync a change to them.
-export const user_only_settings: ReadonlySet<string> = new Set(["action_policy", "source_marks", "engine", "embedder", "hosted_log.keep_days", "plugins", "item_sources", "background.enabled", "background.daily_runs", "background.daily_tokens", "background.paused", "background.device", "background.tick_minutes", "background.hosted", "maintenance.jobs", "tool_plugins", "mcp_servers", "plugin_guidance", "mood.enabled", "mood.tone", "mood.dates", "mood.current", "interests.max_accepted", "interests.context"]);
-
-// Whether this call with these arguments, in order, writes a setting only the user may change; X-Libs adds the marked calls.
-export function is_user_only_setting_write(method: string, args: readonly unknown[]): boolean {
-  return method === "set_setting" && user_only_settings.has(String(args[0]));
-}
 
 // Backup calls that replace or delete data, answered only for the user at the page: restoring a backup would rewrite
 // every setting only the user may change, and deleting backups, or a schedule keeping fewer, takes away the way back.

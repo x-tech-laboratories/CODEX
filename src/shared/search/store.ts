@@ -3,6 +3,7 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
+import { settings_of } from "@x-tech-laboratories/x-libs/settings";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { text } from "../api_schemas.ts";
@@ -57,7 +58,7 @@ export const search_feature = define_feature({
       destructive: true,
     },
   },
-  setting_defaults: { [embedder_setting]: "" },
+  settings: settings_of({ [embedder_setting]: "" }, { user_only: true }),
   // Every write may have changed what is indexed.
   after_write: () => poke_index(),
 });

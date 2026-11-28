@@ -5,6 +5,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { asc, desc, eq, inArray, like, not, synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
+import { settings_of } from "@x-tech-laboratories/x-libs/settings";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
@@ -14,7 +15,7 @@ import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { migrations } from "./migrations/index.ts";
 import { background_defaults, background_settings, maintenance_prefix, type BackgroundState, type Job, type JobFields, type JobRun } from "./model.ts";
 import { as_job, as_run, background_setting, checked_fields, counted_today, device_id_of, fields_of, job_row, list_devices, rows_with_ids, runs_here, runs_of } from "./records.ts";
-import { settings_feature } from "../settings.ts";
+import { write_setting } from "../settings.ts";
 import { job_host, job_running, run_now } from "./runner.ts";
 import { job_runs, job_tables, jobs } from "./schema.ts";
 
@@ -138,7 +139,7 @@ async function run_job_now(database: SqlDatabase, id: string): Promise<{ started
 // Names the one device that runs background work; every other device does none.
 function set_background_device(database: SqlDatabase, device_id: string): void {
   if (typeof device_id !== "string" || !list_devices(database).some((device) => device.id === device_id)) throw new Error("Choose one of the devices get_background_state lists.");
-  settings_feature.methods.set_setting(database, background_settings.device, device_id);
+  write_setting(database, background_settings.device, device_id);
 }
 
 // Sets runs that ended badly aside, so the Inbox no longer lists them.
@@ -242,5 +243,5 @@ export const jobs_feature = define_feature({
       params: [{ name: "ids", schema: { type: "array", items: { type: "string" }, description: "The runs' ids, from list_job_runs or list_inbox." } }],
     },
   },
-  setting_defaults: background_defaults,
+  settings: settings_of(background_defaults, { user_only: true }),
 });

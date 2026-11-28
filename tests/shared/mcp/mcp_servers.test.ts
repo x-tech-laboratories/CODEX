@@ -18,10 +18,9 @@ import { is_loopback_address, sends_outside, type McpServerFields } from "../../
 import { device_id_of } from "../../../src/shared/jobs/records.ts";
 import { background_devices } from "../../../src/shared/jobs/schema.ts";
 import { drizzle_of } from "../../../src/shared/feature.ts";
-import { user_only_settings } from "../../../src/shared/page_api.ts";
 import { page_only_methods } from "../../../src/shared/store.ts";
 import { local_screen, note_source } from "../../../src/shared/privacy/screen.ts";
-import { page_only } from "../../../src/shared/store.ts";
+import { page_only, settings_store } from "../../../src/shared/store.ts";
 import { open_plugin_tools } from "../../../src/shared/tools/offered.ts";
 import { start_fixture, type Fixture } from "../../fixtures/assistant_fixture.ts";
 import { injected, start_fake_mcp_http } from "../../fixtures/fake_mcp_server.ts";
@@ -365,7 +364,7 @@ describe("the MCP servers' settings", () => {
       expect(page_only.is_page_only_call(name, [])).toBe(true);
     }
     expect(page_only.is_page_only_call("list_mcp_servers", [])).toBe(false);
-    expect(user_only_settings.has("mcp_servers")).toBe(true);
+    expect(settings_store.user_only.has("mcp_servers")).toBe(true);
     expect(page_only.is_page_only_call("set_setting", ["mcp_servers", []])).toBe(true);
     const fixture = with_mcp();
     const { tools } = await tools_of(fixture);

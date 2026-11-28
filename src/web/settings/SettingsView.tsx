@@ -68,7 +68,6 @@ const collectors_section: SettingsSection = {
 // ── Import and export ────────────────────────────────────────────────────────
 
 // The settings an imported file may set; anything else in it is ignored.
-const importable_settings = new Set(["refresh_minutes", "history.keep_days", "plugins", "engine", "action_policy", "source_marks", "hosted_log.keep_days", "embedder", "item_sources", "tool_plugins"]);
 
 function TransferRows() {
   const contexts_picker = useRef<HTMLInputElement>(null);
@@ -84,17 +83,12 @@ function TransferRows() {
   const import_settings = async (event: ChangeEvent<HTMLInputElement>) => {
     const text = await read_picked(event);
     if (text === null) return;
-    const file = JSON.parse(text) as { app?: string; kind?: string; settings?: Record<string, unknown> };
-    if (file.app !== "codex" || file.kind !== "settings" || !file.settings) return show_error(new Error("This file is not CODEX's settings."));
-    for (const [key, value] of Object.entries(file.settings)) if (importable_settings.has(key)) await attempt(() => calls().set_setting(key, value));
-    toast("Settings imported.", { tone: "good" });
+    const done = await attempt(() => calls().import_settings(text));
+    if (done) toast(`Imported settings: ${done.changed} changed.`, { tone: "good" });
   };
   const save_contexts = () => attempt(async () => save_text(`codex-contexts-${stamp()}.json`, JSON.stringify(await calls().export_contexts(), null, 2)));
   const save_settings = () =>
-    attempt(async () => {
-      const settings = await calls().get_settings();
-      save_text(`codex-settings-${stamp()}.json`, JSON.stringify({ app: "codex", kind: "settings", version: 1, exported_at: new Date().toISOString(), settings }, null, 2));
-    });
+    attempt(async () => save_text(`codex-settings-${stamp()}.json`, JSON.stringify(await calls().export_settings(), null, 2)));
 
   return (
     <>

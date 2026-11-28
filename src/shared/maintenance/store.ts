@@ -5,12 +5,13 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
+import { settings_of } from "@x-tech-laboratories/x-libs/settings";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { define_feature } from "../feature.ts";
 import { job_host } from "../jobs/runner.ts";
 import { background_setting, device_id_of, list_devices } from "../jobs/records.ts";
-import { settings_feature } from "../settings.ts";
+import { write_setting } from "../settings.ts";
 import { maintenance_host } from "./loop.ts";
 import { migrations } from "./migrations/index.ts";
 import { is_maintenance_key, maintenance_jobs, maintenance_keys, maintenance_setting, type MaintenanceJobEntry, type MaintenanceJobSetting, type MaintenanceKey } from "./model.ts";
@@ -73,7 +74,7 @@ function set_maintenance_job(database: SqlDatabase, key: MaintenanceKey, changes
   const stored = stored_job_settings(database);
   const was = stored[key] ?? {};
   const next: MaintenanceJobSetting = { ...was, ...(changes.on !== undefined ? { on: changes.on } : {}), budget: { ...was.budget, ...budget } };
-  settings_feature.methods.set_setting(database, maintenance_setting, { ...stored, [key]: next });
+  write_setting(database, maintenance_setting, { ...stored, [key]: next });
 }
 
 // ── Feature ──────────────────────────────────────────────────────────────────
@@ -115,5 +116,5 @@ export const maintenance_feature = define_feature({
       ],
     },
   },
-  setting_defaults: { [maintenance_setting]: {} },
+  settings: settings_of({ [maintenance_setting]: {} }, { user_only: true }),
 });

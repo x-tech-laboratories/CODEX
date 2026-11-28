@@ -5,12 +5,9 @@
 
 import { page_only_calls, type ApiSpec } from "@x-tech-laboratories/x-libs/api_spec";
 import { migrate, type SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
-import { hide_secrets, keep_secrets, type PluginRecords } from "@x-tech-laboratories/x-libs/plugins";
 import { create_sync_engine } from "@x-tech-laboratories/x-libs/sync_engine";
 
 import { as_caller, type Caller } from "./caller.ts";
-import { plugins_setting } from "./collectors/collector.ts";
-import { bundled_manifests } from "./collectors/manifests.ts";
 
 import { blueprints_feature } from "./blueprints/store.ts";
 import { contexts_feature } from "./contexts/store.ts";
@@ -27,26 +24,26 @@ import { items_feature } from "./items/store.ts";
 import { jobs_feature } from "./jobs/store.ts";
 import { maintenance_feature } from "./maintenance/store.ts";
 import { mood_feature } from "./mood/store.ts";
-import { is_read_only, is_user_only_setting_write, page_only_refusal } from "./page_api.ts";
+import { is_read_only, page_only_refusal } from "./page_api.ts";
 import { policy_feature } from "./policy/store.ts";
 import { privacy_feature } from "./privacy/store.ts";
 import { search_feature } from "./search/store.ts";
-import { settings_feature } from "./settings.ts";
-import { item_sources_setting } from "./sources/model.ts";
-import { hide_tokens, keep_tokens } from "./sources/records.ts";
+import { create_settings_feature } from "./settings.ts";
 import { sources_feature } from "./sources/store.ts";
 import { tools_feature } from "./tools/store.ts";
-import { mcp_servers_setting } from "./mcp/model.ts";
-import { hide_server_tokens, keep_server_tokens } from "./mcp/records.ts";
 import { mcp_feature } from "./mcp/store.ts";
 
 // ── Features ─────────────────────────────────────────────────────────────────
 
-export const features = [settings_feature, contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature, jobs_feature, maintenance_feature, inbox_feature, tools_feature, mcp_feature, mood_feature, interests_feature, declared_feature, guidance_feature, engines_feature];
+const owning_features = [contexts_feature, history_feature, conversations_feature, policy_feature, privacy_feature, search_feature, graph_feature, items_feature, sources_feature, blueprints_feature, jobs_feature, maintenance_feature, inbox_feature, tools_feature, mcp_feature, mood_feature, interests_feature, declared_feature, guidance_feature, engines_feature];
+
+export const { store: settings_store, feature: settings_feature } = create_settings_feature(owning_features);
+
+export const features = [settings_feature, ...owning_features];
 
 export const sync_engine = create_sync_engine({ tables: features.flatMap((feature) => feature.tables), after_apply: forget_synced_changes });
 
-export const setting_defaults = Object.assign({}, ...features.map((feature) => feature.setting_defaults ?? {})) as Record<string, unknown>;
+export const setting_defaults = settings_store.defaults;
 
 // ── Opening ──────────────────────────────────────────────────────────────────
 
@@ -79,27 +76,6 @@ type FeatureMethods = Intersection<(typeof features)[number]["methods"]>;
 
 const all_methods = {
   ...(Object.assign({}, ...features.map((feature) => feature.methods)) as FeatureMethods),
-  // Every setting, the ones never set at their defaults, with plugin keys and apps' and MCP servers' tokens hidden from the page and other programs.
-  get_settings: (database: SqlDatabase): Record<string, unknown> => {
-    const settings: Record<string, unknown> = { ...setting_defaults, ...settings_feature.methods.get_settings(database) };
-    const records = settings[plugins_setting] as PluginRecords | undefined;
-    const hidden = { ...settings, [item_sources_setting]: hide_tokens(settings[item_sources_setting]), [mcp_servers_setting]: hide_server_tokens(settings[mcp_servers_setting]) };
-    return records ? { ...hidden, [plugins_setting]: hide_secrets(bundled_manifests, records) } : hidden;
-  },
-  // A plugin key or an app's or MCP server's token sent back hidden keeps the value stored.
-  set_setting: (database: SqlDatabase, key: string, value: unknown): void => {
-    const stored_settings = settings_feature.methods.get_settings(database);
-    const stored = (stored_settings[plugins_setting] ?? {}) as PluginRecords;
-    const kept =
-      key === plugins_setting
-        ? keep_secrets(bundled_manifests, stored, value as PluginRecords)
-        : key === item_sources_setting
-          ? keep_tokens(stored_settings[item_sources_setting], value)
-          : key === mcp_servers_setting
-            ? keep_server_tokens(stored_settings[mcp_servers_setting], value)
-            : value;
-    settings_feature.methods.set_setting(database, key, kept);
-  },
 };
 
 type Bound<Methods> = {
@@ -120,7 +96,7 @@ export const context_api = Object.assign({}, ...features.map((feature) => featur
 export const page_only_methods: ReadonlySet<string> = new Set(Object.entries(context_api).filter(([, spec]) => spec.page_only).map(([method]) => method));
 
 // The calls and setting writes only the user at the page may make, as the server's sign-in and both MCP endpoints refuse them.
-export const page_only = page_only_calls(context_api, { rule: is_user_only_setting_write, refusal: page_only_refusal });
+export const page_only = page_only_calls(context_api, { rule: settings_store.is_user_only_call, refusal: page_only_refusal });
 
 // The calls run on the database given, as the caller given; after each write the features catch up, the history records
 // what it touched and on_change tells the other pages and devices.

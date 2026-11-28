@@ -9,7 +9,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { open_plugin_host, type ContextPluginApi } from "../collectors/host.ts";
 import { stored_guidance } from "../guidance/store.ts";
-import { settings_feature } from "../settings.ts";
+import { read_setting } from "../settings.ts";
 import { web_manifest, web_tools_id } from "./manifests.ts";
 import { namespace_mark, tool_plugins_setting, tool_source_of, type ToolMarks, type ToolPluginRecord } from "./model.ts";
 import type { PluginTool, ToolPlugin } from "./tool.ts";
@@ -17,7 +17,7 @@ import type { PluginTool, ToolPlugin } from "./tool.ts";
 // ── Records ──────────────────────────────────────────────────────────────────
 
 export function stored_tool_plugins(database: SqlDatabase): Record<string, ToolPluginRecord> {
-  const saved = settings_feature.methods.get_settings(database)[tool_plugins_setting];
+  const saved = read_setting(database, tool_plugins_setting);
   if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
   return saved as Record<string, ToolPluginRecord>;
 }

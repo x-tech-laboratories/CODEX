@@ -5,6 +5,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { create_history, type History, type HistoryWatch, type Version, type VersionKind } from "@x-tech-laboratories/x-libs/history";
+import { settings_of } from "@x-tech-laboratories/x-libs/settings";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
@@ -243,7 +244,7 @@ export const history_feature = define_feature({
   id: "history",
   migrations: [],
   tables: history_tables,
-  setting_defaults: history_setting_defaults,
+  settings: settings_of(history_setting_defaults),
   methods: {
     list_item_history: (database: SqlDatabase, kind: string, item_id: string): ItemChange[] => {
       const { item, history } = kind_of(kind);

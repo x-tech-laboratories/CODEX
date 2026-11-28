@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 
+import { settings_store } from "../../../src/shared/store.ts";
 import type { ContextPlugin, ContextPluginApi } from "../../../src/shared/collectors/host.ts";
 import { use_assistant_host } from "../../../src/shared/conversations/host.ts";
 import { give_up_line } from "../../../src/shared/conversations/instructions.ts";
@@ -34,7 +35,6 @@ import { small_context, with_specialists } from "../../../src/shared/engines/dir
 import type { EngineEvent, EngineRequest, EngineTools } from "../../../src/shared/engines/engine.ts";
 import { tools_chars } from "../../../src/shared/engines/fitting.ts";
 import { guidance_setting, longest_guidance } from "../../../src/shared/guidance/model.ts";
-import { user_only_settings } from "../../../src/shared/page_api.ts";
 import { page_only_methods } from "../../../src/shared/store.ts";
 import { is_offered, offered_api } from "../../../src/shared/policy/policy.ts";
 import { tool_source_of } from "../../../src/shared/tools/model.ts";
@@ -622,7 +622,7 @@ describe("guidance per plugin and source app", () => {
     fixture.calls.set_plugin_guidance("notes", "");
     expect(fixture.calls.get_settings().plugin_guidance).toEqual({});
     expect(page_only_methods.has("set_plugin_guidance")).toBe(true);
-    expect(user_only_settings.has(guidance_setting)).toBe(true);
+    expect(settings_store.user_only.has(guidance_setting)).toBe(true);
   });
 
   it("goes whole to the specialist, the user's after the plugin's, and shortened into the run's instructions", async () => {

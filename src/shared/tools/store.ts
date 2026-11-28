@@ -3,13 +3,14 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
+import { settings_of } from "@x-tech-laboratories/x-libs/settings";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { text } from "../api_schemas.ts";
 import { define_feature } from "../feature.ts";
 import { is_policy_level, policy_levels, type PolicyLevel } from "../policy/model.ts";
 import { level_of, policy_setting, stored_levels } from "../policy/policy.ts";
-import { settings_feature } from "../settings.ts";
+import { write_setting } from "../settings.ts";
 import { tool_mark_names, tool_plugins_setting, type ToolMarkName, type ToolOfferName, type ToolPluginEntry, type ToolPluginRecord } from "./model.ts";
 import { open_plugin_tools, open_tool_plugins, stored_tool_plugins } from "./offered.ts";
 
@@ -45,7 +46,7 @@ function checked_key(key: string): string {
 
 function write_record(database: SqlDatabase, key: string, change: (record: ToolPluginRecord) => ToolPluginRecord): void {
   const stored = stored_tool_plugins(database);
-  settings_feature.methods.set_setting(database, tool_plugins_setting, { ...stored, [key]: change(stored[key] ?? {}) });
+  write_setting(database, tool_plugins_setting, { ...stored, [key]: change(stored[key] ?? {}) });
 }
 
 function set_tool_plugin_mark(database: SqlDatabase, key: string, mark: ToolMarkName, on: boolean): void {
@@ -73,7 +74,7 @@ async function set_plugin_tool_level(database: SqlDatabase, name: string, level:
   const tool = (await open_plugin_tools(database)).find((each) => each.name === name);
   if (!tool) throw new Error(`There is no plugin tool named ${name}; list_plugin_tools lists them.`);
   if (!tool.tool.changes) throw new Error(`${name} only reads, so it runs at once and has no level.`);
-  settings_feature.methods.set_setting(database, policy_setting, { ...stored_levels(database), [name]: level });
+  write_setting(database, policy_setting, { ...stored_levels(database), [name]: level });
 }
 
 // ── Feature ──────────────────────────────────────────────────────────────────
@@ -127,5 +128,5 @@ export const tools_feature = define_feature({
       ],
     },
   },
-  setting_defaults: { [tool_plugins_setting]: {} },
+  settings: settings_of({ [tool_plugins_setting]: {} }, { user_only: true }),
 });

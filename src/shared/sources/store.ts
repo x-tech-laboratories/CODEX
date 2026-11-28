@@ -9,11 +9,11 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { id_of, text } from "../api_schemas.ts";
 import { define_feature } from "../feature.ts";
 import { marks_setting, stored_marks } from "../privacy/screen.ts";
-import { settings_feature } from "../settings.ts";
+import { write_setting } from "../settings.ts";
 import { forget_source_reading, list_kinds } from "./collector.ts";
 import { migrations } from "./migrations/index.ts";
 import { collector_of_source, item_sources_plugin_id, item_sources_setting, type ItemSourceRecord, type ItemSourceStatus, type ItemSourceSummary } from "./model.ts";
-import { read_sources, write_sources } from "./records.ts";
+import { hide_tokens, keep_tokens, read_sources, write_sources } from "./records.ts";
 
 // ── Reading ──────────────────────────────────────────────────────────────────
 
@@ -90,7 +90,7 @@ function remove_item_source(database: SqlDatabase, id: string): void {
   const key = source_mark_key(id);
   if (key in marks) {
     delete marks[key];
-    settings_feature.methods.set_setting(database, marks_setting, marks);
+    write_setting(database, marks_setting, marks);
   }
   forget_source_reading(database, id);
 }
@@ -142,5 +142,5 @@ export const sources_feature = define_feature({
       destructive: true,
     },
   },
-  setting_defaults: { [item_sources_setting]: [] },
+  settings: { [item_sources_setting]: { default: [], user_only: true, hide: hide_tokens, keep: keep_tokens } },
 });

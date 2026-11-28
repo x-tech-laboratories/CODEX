@@ -6,7 +6,7 @@
 import { hidden_secret } from "@x-tech-laboratories/x-libs/plugins";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
-import { settings_feature } from "../settings.ts";
+import { read_setting, write_setting } from "../settings.ts";
 import { item_sources_setting, type ItemSourceRecord, type SourceKind } from "./model.ts";
 
 // ── Reading ──────────────────────────────────────────────────────────────────
@@ -29,11 +29,11 @@ export function source_records(value: unknown): ItemSourceRecord[] {
 }
 
 export function read_sources(database: SqlDatabase): ItemSourceRecord[] {
-  return source_records(settings_feature.methods.get_settings(database)[item_sources_setting]);
+  return source_records(read_setting(database, item_sources_setting));
 }
 
 export function write_sources(database: SqlDatabase, sources: ItemSourceRecord[]): void {
-  settings_feature.methods.set_setting(database, item_sources_setting, sources);
+  write_setting(database, item_sources_setting, sources);
 }
 
 // ── Secrets ──────────────────────────────────────────────────────────────────

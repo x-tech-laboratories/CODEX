@@ -17,7 +17,7 @@ import { type Presence } from "../policy/policy.ts";
 import { mood_part, set_mood_tool, settle_reply_mood } from "../mood/mood.ts";
 import { counts_of, local_screen, may_send, note_source, open_screen, taints, type Screen, type Screened } from "../privacy/screen.ts";
 import { record_hosted_send } from "../privacy/store.ts";
-import { settings_feature } from "../settings.ts";
+import { read_setting } from "../settings.ts";
 import { tool_source_of } from "../tools/model.ts";
 import { open_plugin_tools } from "../tools/offered.ts";
 import { reply_ended, reply_started } from "./activity.ts";
@@ -36,7 +36,7 @@ import { engine_tools, open_collector_sources, plugin_tools_part, read_sources, 
 
 // The engine the settings name, else the one this computer's configuration starts with, or why there is none.
 export async function find_engine(database: SqlDatabase): Promise<AssistantStatus & { running: Engine | null }> {
-  const chosen = String(settings_feature.methods.get_settings(database)[engine_setting] ?? "") || (declarations().engine ?? "");
+  const chosen = String(read_setting(database, engine_setting) ?? "") || (declarations().engine ?? "");
   const provided = (await open_plugin_host(database)).providers("engine");
   const engines: EngineSummary[] = provided.map(({ id, plugin_id, value }) => ({ id, plugin_id, label: value.label, model: value.model(), is_local: !is_hosted(value) }));
   const found = provided.find((each) => each.id === chosen);
@@ -357,7 +357,7 @@ function without_thinking(calls: ToolCallRecord[]): ToolCallRecord[] {
 
 // Whether a reply's thinking is kept with it; on unless the user turned it off.
 export function keeps_thinking(database: SqlDatabase): boolean {
-  return settings_feature.methods.get_settings(database)[keep_thinking_setting] !== false;
+  return read_setting(database, keep_thinking_setting) !== false;
 }
 
 async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: AssistantHost): Promise<void> {

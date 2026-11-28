@@ -11,7 +11,7 @@ import { context_items, contexts, items } from "../contexts/schema.ts";
 import { conversations } from "../conversations/schema.ts";
 import { drizzle_of, new_id } from "../feature.ts";
 import { parse_sources } from "../privacy/sources.ts";
-import { settings_feature } from "../settings.ts";
+import { read_setting, write_setting } from "../settings.ts";
 import { tool_source_of } from "../tools/model.ts";
 import { web_manifest, web_tools_id } from "../tools/manifests.ts";
 import {
@@ -54,7 +54,7 @@ export function checked_reason(given: unknown): string {
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 export function max_accepted(database: SqlDatabase): number {
-  const saved = Number(settings_feature.methods.get_settings(database)[interest_settings.max_accepted]);
+  const saved = Number(read_setting(database, interest_settings.max_accepted));
   const [least, most] = max_accepted_bounds;
   return Number.isInteger(saved) && saved >= least && saved <= most ? saved : interest_defaults[interest_settings.max_accepted];
 }
@@ -176,10 +176,10 @@ function new_context(database: SqlDatabase, name: string, parent_id: string | nu
 // when the user removed it.
 export function findings_context(database: SqlDatabase, interest: InterestRow): string {
   if (context_exists(database, interest.context_id)) return interest.context_id;
-  let root = String(settings_feature.methods.get_settings(database)[interest_settings.context] ?? "");
+  let root = String(read_setting(database, interest_settings.context) ?? "");
   if (!context_exists(database, root)) {
     root = new_context(database, interests_context_name, null);
-    settings_feature.methods.set_setting(database, interest_settings.context, root);
+    write_setting(database, interest_settings.context, root);
   }
   const id = new_context(database, interest.topic.slice(0, 80), root);
   update_interest(database, interest.id, { context_id: id });
