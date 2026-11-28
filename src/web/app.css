@@ -413,18 +413,20 @@
   padding-inline-start: var(--space-6);
 }
 
-/* An applied change with its Undo, or why it cannot be undone, underneath. */
-.tool-call-applied {
+/* A reply's calls as a tree, with the picked call's detail underneath. */
+.call-tree,
+.tool-call-detail {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  min-width: 0;
 }
 
-.tool-call-undo {
+.tool-call-detail p {
   margin: 0;
 }
 
-/* A specialist's calls, stacked and set in under the ask that made them. */
+/* A specialist's thinking and writing among its calls, set in under the ask's detail. */
 .tool-call-nested {
   display: flex;
   flex-direction: column;

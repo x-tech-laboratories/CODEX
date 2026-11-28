@@ -6,13 +6,12 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { MenuItem } from "@x-tech-laboratories/x-libs/web/menus";
-import { age, duration } from "@x-tech-laboratories/x-libs/web/format";
-import { AddIcon, ChevronDownIcon, EditIcon, Icon, UndoIcon } from "@x-tech-laboratories/x-libs/web/react/icons";
+import { age } from "@x-tech-laboratories/x-libs/web/format";
+import { AddIcon, ChevronDownIcon, EditIcon, Icon } from "@x-tech-laboratories/x-libs/web/react/icons";
 import { FormGroup } from "@x-tech-laboratories/x-libs/web/react/layout";
 import { Markdown } from "@x-tech-laboratories/x-libs/web/react/markdown";
 import { MenuButton } from "@x-tech-laboratories/x-libs/web/react/menu_button";
 import { Popover, open_context_menu } from "@x-tech-laboratories/x-libs/web/react/menus";
-import { ProgressBar } from "@x-tech-laboratories/x-libs/web/react/progress";
 import { Empty, Skeleton } from "@x-tech-laboratories/x-libs/web/react/states";
 import { use_now } from "@x-tech-laboratories/x-libs/web/react/time";
 import { toast } from "@x-tech-laboratories/x-libs/web/react/toasts";
@@ -20,7 +19,7 @@ import { use_watch } from "@x-tech-laboratories/x-libs/web/react/watch";
 import { ArrowDown, Send, Square } from "lucide-react";
 
 import { global_context_id } from "../../shared/contexts/model.ts";
-import { call_path_mark, conversation_item_id, reply_parts, type AssistantStatus, type ConversationMessage, type ConversationSummary, type ReplyPart, type ThinkingPiece, type ToolCallRecord } from "../../shared/conversations/model.ts";
+import { conversation_item_id, reply_parts, type AssistantStatus, type ConversationMessage, type ConversationSummary } from "../../shared/conversations/model.ts";
 import type { Proposal } from "../../shared/policy/model.ts";
 import type { ChangeUndoState } from "../../shared/policy/undo.ts";
 import { attempt, calls, page, succeeds, use_data } from "../api.ts";
@@ -29,158 +28,12 @@ import { add_to_contexts, delete_conversation, move_to_context, rename_conversat
 import { open_conversation, take_wanted, wanted_watch } from "./selection.ts";
 import { Mascot } from "./Mascot.tsx";
 import { lasting_mood, moment_after, mood_summary, type MascotMood } from "./mascot.ts";
-import { use_conversation, type LiveRun, type LiveSpecialist } from "./use_conversation.ts";
+import { use_conversation, type LiveRun } from "./use_conversation.ts";
 import { use_pinned_scroll } from "./pinned_scroll.ts";
 import { TaskList } from "./TaskList.tsx";
+import { CallTree, grouped_parts } from "./CallTree.tsx";
+import { Thinking } from "./Thinking.tsx";
 import { PaneModel } from "../engines/ModelPicker.tsx";
-
-// ── Tool calls ───────────────────────────────────────────────────────────────
-
-const outcome_words: Record<ToolCallRecord["outcome"], string> = {
-  pending: "running",
-  ran: "done",
-  proposed: "waits for you",
-  refused: "not permitted",
-  rejected: "rejected by you",
-  failed: "failed",
-};
-
-const outcome_tones: Record<ToolCallRecord["outcome"], string> = { pending: "none", ran: "good", proposed: "warn", refused: "bad", rejected: "none", failed: "bad" };
-
-// How a proposed call's row reads once the user decided it.
-const decided_words: Partial<Record<Proposal["status"], [words: string, tone: string]>> = { approved: ["approved by you", "good"], rejected: ["rejected by you", "none"], failed: ["failed", "bad"] };
-
-function pretty(text: string): string {
-  try {
-    return JSON.stringify(JSON.parse(text), null, 2);
-  } catch {
-    return text;
-  }
-}
-
-// Under an applied change: Undo while it can still be undone, why not when it cannot, or that it was.
-function UndoLine({ undo }: { undo: ChangeUndoState }) {
-  const [busy, set_busy] = useState(false);
-  if (undo.state === "undone") return <p className="muted small tool-call-undo">Undone by you.</p>;
-  if (undo.state === "impossible") return <p className="muted small tool-call-undo">{undo.reason}</p>;
-  const run = async () => {
-    set_busy(true);
-    await succeeds(() => calls().undo_change(undo.message_id, undo.call_id), "Undone.");
-    set_busy(false);
-  };
-  return (
-    <p className="tool-call-undo">
-      <button type="button" disabled={busy} onClick={() => void run()}>
-        <Icon icon={UndoIcon} /> Undo
-      </button>
-    </p>
-  );
-}
-
-// A specialist's calls and thinking in order, with its text so far after the thinking before each call.
-export function nested_parts(calls: ToolCallRecord[], thinking: ThinkingPiece[] = [], writing: ThinkingPiece[] = []): ReplyPart[] {
-  const written = writing.filter((piece) => piece.text.trim());
-  const text_at = (calls_before: number) => written.filter((piece) => piece.calls_before === calls_before).map((piece) => ({ text: piece.text }));
-  const parts: ReplyPart[] = [];
-  let calls_seen = 0;
-  for (const part of reply_parts("", calls, thinking)) {
-    if ("call" in part) parts.push(...text_at(calls_seen++));
-    parts.push(part);
-  }
-  parts.push(...written.filter((piece) => piece.calls_before >= calls_seen).map((piece) => ({ text: piece.text })));
-  return parts;
-}
-
-// The specialist being asked and for how long, ticking each second.
-function SpecialistBusy({ label, since }: { label: string; since: number }) {
-  const now = use_now(1000).getTime();
-  return (
-    <span className="muted small">
-      Asking the {label} specialist… {duration(Math.max(0, (now - since) / 1000))}
-    </span>
-  );
-}
-
-// The specialist's label as the ask's name says it, for a page that opened after the ask began.
-const label_of_ask = (name: string) => name.replace(/^ask_/, "").replace(/_/g, " ");
-
-// One call the engine made, folded to its name and outcome; open, its arguments and what came back. A proposed call
-// reads as the user decided it, when they have; an applied change offers its undo underneath. An ask_ tool's call lists
-// its specialist's calls inside it, each read the same way, their undos found by id path; while the specialist works
-// the row opens on its thinking and text as they stream, and says whom it asks and for how long.
-export function ToolCallRow({
-  call,
-  decided,
-  undo,
-  decisions,
-  undo_of,
-  specialist,
-}: {
-  call: ToolCallRecord;
-  decided?: Proposal["status"] | undefined;
-  undo?: ChangeUndoState | undefined;
-  decisions?: Map<string, Proposal["status"]>;
-  undo_of?: (call_id: string) => ChangeUndoState | undefined;
-  specialist?: LiveSpecialist | undefined;
-}) {
-  const asking = call.outcome === "pending" && (specialist !== undefined || call.calls !== undefined);
-  const [since] = useState(() => Date.now());
-  // Once asked, the row opens and stays so, rather than closing under the reader when the specialist finishes.
-  const was_asking = useRef(false);
-  was_asking.current ||= asking;
-  const label = specialist?.label || label_of_ask(call.name);
-  const parts = nested_parts(call.calls ?? [], call.thinking, specialist?.text);
-  const made_by = call.applied_by === "user_approval" ? "approved by you" : call.applied_by === "engine_auto" ? "made by the assistant" : "";
-  const [words, tone] = (call.outcome === "proposed" && decided && decided_words[decided]) || [outcome_words[call.outcome], outcome_tones[call.outcome]];
-  const row = (
-    <FormGroup
-      key={was_asking.current ? "asked" : "plain"}
-      open={was_asking.current}
-      class_name="tool-call"
-      summary={
-        <span className="tool-call-summary">
-          <code>{call.name}</code>
-          <span className={`badge tone-${tone}`}>{words}</span>
-          {made_by && <span className="muted small">{made_by}</span>}
-          {asking && <SpecialistBusy label={label} since={specialist?.started_at ?? since} />}
-        </span>
-      }
-    >
-      {asking && <ProgressBar value={null} label={`Asking the ${label} specialist`} />}
-      <p className="muted small">Arguments</p>
-      <pre className="output">{JSON.stringify(call.arguments, null, 2)}</pre>
-      {parts.length > 0 && (
-        <>
-          <p className="muted small">The specialist's calls</p>
-          <div className="tool-call-nested">
-            {parts.map((part, at) =>
-              "call" in part ? (
-                <ToolCallRow key={part.call.id} call={part.call} decided={part.call.proposal_id ? decisions?.get(part.call.proposal_id) : undefined} undo={undo_of?.(`${call.id}${call_path_mark}${part.call.id}`)} />
-              ) : "thinking" in part ? (
-                <Thinking key={`thinking-${at}`} text={part.thinking} active={call.outcome === "pending"} />
-              ) : (
-                <Markdown key={`text-${at}`} class_name="tool-call-writing" text={part.text} />
-              ),
-            )}
-          </div>
-        </>
-      )}
-      {call.outcome !== "pending" && (
-        <>
-          <p className="muted small">Result</p>
-          <pre className="output">{pretty(call.result) || "Nothing."}</pre>
-        </>
-      )}
-    </FormGroup>
-  );
-  if (!undo) return row;
-  return (
-    <div className="tool-call-applied">
-      {row}
-      <UndoLine undo={undo} />
-    </div>
-  );
-}
 
 // ── Messages ─────────────────────────────────────────────────────────────────
 
@@ -207,19 +60,6 @@ export function ReplyError({ error, detail }: { error: string; detail: string })
   );
 }
 
-// What a reasoning model is thinking, or thought, folded under a Thinking row that opens to about ten lines, following
-// the newest text as it streams unless the reader has scrolled up.
-export function Thinking({ text, active = true }: { text: string; active?: boolean }) {
-  const tail = use_pinned_scroll<HTMLParagraphElement>(text, active);
-  return (
-    <FormGroup class_name="reply-thinking" summary={<span className="muted small">{active ? "Thinking…" : "Thinking"}</span>}>
-      <p ref={tail.ref} className="muted small reply-thinking-text" onScroll={tail.on_scroll}>
-        {text}
-      </p>
-    </FormGroup>
-  );
-}
-
 // Each applied change's undo state, by "<message id>:<call id>".
 type Undos = Map<string, ChangeUndoState>;
 
@@ -235,26 +75,19 @@ function Message({ message, decided, undos }: { message: ConversationMessage; de
     return (
       <div className="chat-message chat-event">
         <p className="muted small">{message.text}</p>
-        {message.tool_calls.map((call) => (
+        {message.tool_calls.length > 0 && (
           // A refusal in an event is the user rejecting the proposal, as events kept before "rejected" said.
-          <ToolCallRow key={call.id} call={call.outcome === "refused" ? { ...call, outcome: "rejected" } : call} undo={undos.get(`${message.id}:${call.id}`)} />
-        ))}
+          <CallTree calls={message.tool_calls.map((call) => (call.outcome === "refused" ? { ...call, outcome: "rejected" } : call))} undo_of={(path) => undos.get(`${message.id}:${path}`)} />
+        )}
       </div>
     );
   }
   return (
     <div className="chat-message from-assistant">
       <Notices notices={message.notices} />
-      {reply_parts(message.text, message.tool_calls, message.thinking).map((part, at) =>
-        "call" in part ? (
-          <ToolCallRow
-            key={part.call.id}
-            call={part.call}
-            decided={part.call.proposal_id ? decided.get(part.call.proposal_id) : undefined}
-            undo={undos.get(`${message.id}:${part.call.id}`)}
-            decisions={decided}
-            undo_of={(call_id) => undos.get(`${message.id}:${call_id}`)}
-          />
+      {grouped_parts(reply_parts(message.text, message.tool_calls, message.thinking)).map((part, at) =>
+        "calls" in part ? (
+          <CallTree key={part.calls[0]!.id} calls={part.calls} decisions={decided} undo_of={(path) => undos.get(`${message.id}:${path}`)} />
         ) : "thinking" in part ? (
           <Thinking key={`thinking-${at}`} text={part.thinking} active={false} />
         ) : (
@@ -268,13 +101,13 @@ function Message({ message, decided, undos }: { message: ConversationMessage; de
 }
 
 function Reply({ run }: { run: LiveRun }) {
-  const parts = reply_parts(run.text, run.tool_calls, run.thinking);
+  const parts = grouped_parts(reply_parts(run.text, run.tool_calls, run.thinking));
   return (
     <div className="chat-message from-assistant" aria-live="polite" aria-busy={!run.finished}>
       <Notices notices={run.notices} />
       {parts.map((part, at) =>
-        "call" in part ? (
-          <ToolCallRow key={part.call.id} call={part.call} specialist={run.specialists[part.call.id]} />
+        "calls" in part ? (
+          <CallTree key={part.calls[0]!.id} calls={part.calls} specialists={run.specialists} />
         ) : "thinking" in part ? (
           <Thinking key={`thinking-${at}`} text={part.thinking} active={!run.finished && at === parts.length - 1} />
         ) : (

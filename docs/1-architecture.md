@@ -953,7 +953,7 @@ specialists (its doc 1, "Agents").
 - **The record.** The ask's `ToolCallRecord` holds its specialist's calls in `calls`, each with its outcome, proposal
   and result as for the run's own; open pages hear each change as a `tool_result` event for the ask, and its thinking
   and text as they stream (see "Conversations and runs"). The pane lists
-  them under "The specialist's calls" inside the ask's row (`ToolCallRow`), a proposal shown as the user decided it.
+  them as rows under the ask's row in the reply's call tree (`CallTree.tsx`), a proposal shown as the user decided it.
   A change a specialist of CODEX's own made is undone like the run's own: `list_change_undos` names it by its id path,
   the ask's call id and its own joined by `/` (`o1/specialist_6`), which `undo_change` takes, and its row offers Undo; a
   plugin tool's change cannot be undone anyway.
@@ -977,14 +977,18 @@ job's unless one was picked or asked for (`selection.ts`: an item's title, a sea
 which a `codex://conversation/<id>` link opens, go to a context holding it and open the pane on it); New
 conversation leaves the box sending to a new one. `use_conversation` loads the one shown and lays the streamed events
 over it until the kept answer arrives; a reply keeps being written while the user looks at another. Tool calls are
-folded rows, each where it was made in the reply (a call keeps `text_at`, how far into the reply's text it came; one
-kept before that was recorded shows ahead of the text), a proposed one reading as the user decided it; waiting proposals are cards with Approve and Reject; the message box sends on Enter. While a reasoning model
+rows of an X-Libs `Tree` (`CallTree.tsx`), each run of calls made one after another one tree where it was made in the
+reply (`grouped_parts`; a call keeps `text_at`, how far into the reply's text it came; one kept before that was
+recorded shows ahead of the text): CODEX's own calls at the top, an ask's row naming the specialist it asked and
+folding open onto that specialist's calls, each row named by its id path (`call_nodes`) with its outcome, a proposed
+one reading as the user decided it and an applied change with its Undo. Picking a row shows under the tree who made
+the call, its arguments, its result and, for an ask, what the specialist thought and wrote among its calls; waiting proposals are cards with Approve and Reject; the message box sends on Enter. While a reasoning model
 thinks, a folded Thinking… row opens to about ten lines of its thinking, scrolling and following the newest text
 unless the user has scrolled up, and never handing its scroll on to the messages; each stretch stays where it happened
 (`reply_parts` places it among the text and calls), folded under Thinking once the reply ends and after a reload, and a
-specialist's stretches show among its calls inside the ask's row. While a specialist works its ask's row opens and stays
-open, its summary says "Asking the <label> specialist…" with the time so far beside an indeterminate X-Libs
-`ProgressBar`, and its thinking and text so far stream in among its calls (`nested_parts`, the text after the
+specialist's stretches show among its calls in the ask's detail. While a specialist works its ask's row is picked
+until the reader picks another or closes it, the row says "Asking the <label> specialist…" with the time so far, the
+detail shows an indeterminate X-Libs `ProgressBar`, and its thinking and text so far stream in among its calls (`nested_parts`, the text after the
 thinking before each call); the page keeps the text in the live run's `specialists`, by the ask's id, and drops it once
 the kept answer arrives. The messages, and each Thinking box, follow new content only while the reader is at their
 bottom (`use_pinned_scroll` in `pinned_scroll.ts`): only scrolling up lets go, so content growing or the box's own
