@@ -66,6 +66,22 @@ const options = { context_size: 8192, max_tokens: 1024, max_rounds: 4 };
 // ── Running ──────────────────────────────────────────────────────────────────
 
 describe("the direct loop", () => {
+  it("names every call apart, even when the server numbers each round's calls afresh, and hands the id to the tool", async () => {
+    const model = new ScriptedModel([calling("", ["list_contexts", {}]), calling("", ["list_contexts", {}]), answer("Done.")]);
+    const ids: (string | undefined)[] = [];
+    const given: EngineTools = { ...tools(), call: async (_name, _args, call_id) => {
+        ids.push(call_id);
+        return { result: "nothing", is_error: false };
+      },
+    };
+
+    const events = await collect(run_direct(model, request(given), new AbortController().signal, options));
+
+    expect(ids).toEqual(["call_0", "call_0_2"]);
+    expect(events.filter((event) => event.type === "tool_call").map((event) => event.id)).toEqual(["call_0", "call_0_2"]);
+    expect(model.requests[2]!.messages.filter((message) => message.role === "tool").map((message) => message.tool_call_id)).toEqual(["call_0", "call_0_2"]);
+  });
+
   it("streams an answer, reports usage, and ends with the whole text", async () => {
     const model = new ScriptedModel([answer("Kitchen is open.")]);
 

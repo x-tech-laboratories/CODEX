@@ -12,7 +12,8 @@ import { record_history } from "../src/shared/history/store.ts";
 import { brings_outside_content, changing_calls, decide } from "../src/shared/policy/policy.ts";
 import { summarize_call } from "../src/shared/policy/summaries.ts";
 import { open_plugin_tools } from "../src/shared/tools/offered.ts";
-import { default_chars_per_token, tools_chars } from "../src/shared/engines/fitting.ts";
+import type { ChatMessage } from "../src/shared/engines/direct.ts";
+import { default_chars_per_token, fit_request, tools_chars } from "../src/shared/engines/fitting.ts";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
 
 afterEach(async () => {
@@ -119,6 +120,7 @@ const allowed_tools = [
   "propose_interest",
   "propose_link",
   "propose_link_drop",
+  "read_tool_result",
   "refresh_items",
   "remove_context",
   "remove_item",
@@ -154,6 +156,7 @@ const allowed_core_tools = [
   "propose_interest",
   "propose_link",
   "propose_link_drop",
+  "read_tool_result",
   "remove_item",
   "rename_context",
   "search_collector",
@@ -237,13 +240,87 @@ describe("a run's tools", () => {
     expect(tools.definitions.find((tool) => tool.name === "rename_context")!.parameters).toMatchObject({ type: "object", required: ["id", "name"] });
   });
 
-  it("cut a long result short", async () => {
+  it("cut a long result short with its size, its call id and where the rest starts", async () => {
     const fixture = start_fixture();
     fixture.calls.add_context("x".repeat(max_result_chars));
     const { tools } = tools_of(fixture);
-    const listed = await tools.call("list_contexts", {});
-    expect(listed.result.length).toBe(max_result_chars);
-    expect(listed.result.endsWith("[Cut short to fit.]")).toBe(true);
+    const whole = JSON.stringify(fixture.calls.list_contexts());
+
+    const listed = await tools.call("list_contexts", {}, "c1");
+
+    expect(listed.result.startsWith(whole.slice(0, max_result_chars))).toBe(true);
+    expect(listed.result.endsWith(`[Cut at 12,000 of ${whole.length.toLocaleString("en")} characters. For the rest call read_tool_result with call_id "c1" and offset 12000, or call list_contexts again with narrower arguments.]`)).toBe(true);
+  });
+
+  it("page a kept result to its end with read_tool_result, and say plainly when there is no such call", async () => {
+    const fixture = start_fixture();
+    fixture.calls.add_context("x".repeat(2 * max_result_chars));
+    const { tools, decided } = tools_of(fixture);
+    const whole = JSON.stringify(fixture.calls.list_contexts());
+    await tools.call("list_contexts", {}, "c1");
+
+    let offset = max_result_chars;
+    let read = whole.slice(0, max_result_chars);
+    for (;;) {
+      const page = await tools.call("read_tool_result", { call_id: "c1", offset });
+      expect(page.is_error).toBe(false);
+      const [slice, marker] = [page.result.slice(0, page.result.lastIndexOf("\n[")), page.result.slice(page.result.lastIndexOf("\n[") + 1)];
+      expect(slice.length).toBeLessThanOrEqual(max_result_chars);
+      read += slice;
+      offset += slice.length;
+      if (marker.endsWith("That is the end.]")) break;
+      expect(marker).toContain(`with call_id "c1" and offset ${offset}.]`);
+    }
+    expect(read).toBe(whole);
+    expect((await tools.call("read_tool_result", { call_id: "c1", offset: whole.length })).result).toContain("There is no more");
+    expect(await tools.call("read_tool_result", { call_id: "c1", offset: 5, length: 3 })).toMatchObject({ result: `${whole.slice(5, 8)}\n[Characters 5 to 8 of ${whole.length.toLocaleString("en")} of list_contexts call "c1". For the rest call read_tool_result with call_id "c1" and offset 8.]` });
+
+    const unknown = await tools.call("read_tool_result", { call_id: "nowhere" });
+    expect(unknown).toEqual({ result: 'Tool error: there is no result with call_id "nowhere" in this run. The calls kept in this run are: c1.', is_error: true });
+    expect(decided.at(-1)).toBe("read_tool_result:failed");
+  });
+
+  it("read back a dropped result by the call its marker names", async () => {
+    const fixture = start_fixture();
+    fixture.calls.add_context("Kitchen");
+    const { tools } = tools_of(fixture);
+    const listed = await tools.call("list_contexts", {}, "call_7");
+    const messages: ChatMessage[] = [
+      { role: "system", content: "s" },
+      { role: "user", content: "question" },
+      { role: "assistant", content: "", tool_calls: [{ id: "call_7", name: "list_contexts", arguments: "{}" }] },
+      { role: "tool", tool_call_id: "call_7", content: listed.result + "x".repeat(6000) },
+      { role: "assistant", content: "", tool_calls: [{ id: "call_8", name: "get_context", arguments: "{}" }] },
+      { role: "tool", tool_call_id: "call_8", content: "y".repeat(6000) },
+    ];
+
+    const fit = fit_request(messages, tools.definitions.filter((tool) => tool.name === "read_tool_result"), { context_size: 4096, max_tokens: 512, chars_per_token: default_chars_per_token });
+
+    expect(fit.fits).toBe(true);
+    if (!fit.fits) return;
+    const marker = fit.messages[3]!.content;
+    expect(marker).toBe('[The result of list_contexts call "call_7" was dropped to fit the context. To read it again call read_tool_result with call_id "call_7".]');
+    const call_id = /call_id "([^"]+)"/.exec(marker)![1]!;
+    const again = await tools.call("read_tool_result", { call_id });
+    expect(again.result).toBe(`${listed.result}\n[Characters 0 to ${listed.result.length} of ${listed.result.length} of list_contexts call "call_7". That is the end.]`);
+  });
+
+  it("lower the run again when read_tool_result reads back outside content, and not for CODEX's own", async () => {
+    const fixture = start_fixture();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    fixture.calls.add_item([kitchen], "links", { source_id: "https://example.org/tiles", kind: "link", title: "Tiles" });
+    const { context, tools } = tools_of(fixture);
+    await tools.call("list_contexts", {}, "own");
+    await tools.call("get_context", { id: kitchen }, "outside");
+    expect(context.has_outside_content).toBe(true);
+
+    context.has_outside_content = false;
+    await tools.call("read_tool_result", { call_id: "own" });
+    expect(context.has_outside_content).toBe(false);
+    const again = await tools.call("read_tool_result", { call_id: "outside" });
+    expect(again.result.startsWith("<untrusted-data>")).toBe(true);
+    expect(context.has_outside_content).toBe(true);
+    expect(context.reads!.at(-1)).toMatchObject({ name: "read_tool_result", arguments: { call_id: "outside" }, sources: ["links"] });
   });
 
   it("refuse a restricted change, run an auto one recording that the engine made it, and propose the rest", async () => {

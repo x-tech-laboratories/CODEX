@@ -27,9 +27,28 @@ describe("fitting a request", () => {
 
     expect(fit.fits).toBe(true);
     if (!fit.fits) return;
-    expect(fit.messages.map((message) => message.content.slice(0, 5))).toEqual(["s", "quest", "", dropped_result.slice(0, 5), "yyyyy"]);
+    expect(fit.messages.map((message) => message.content.slice(0, 5))).toEqual(["s", "quest", "", "[The ", "yyyyy"]);
+    expect(fit.messages[3]!.content).toBe(dropped_result("t", "a", false));
     expect(messages[3]!.content).toBe("x".repeat(5000));
     expect(fit.left_out).toBe(0);
+  });
+
+  it("names the dropped call and how to read it again when read_tool_result is offered", () => {
+    const messages: ChatMessage[] = [
+      { role: "system", content: "s" },
+      { role: "user", content: "question" },
+      { role: "assistant", content: "", tool_calls: [{ id: "a", name: "search_index", arguments: "{}" }] },
+      { role: "tool", tool_call_id: "a", content: "x".repeat(5000) },
+      { role: "assistant", content: "", tool_calls: [{ id: "b", name: "get_item", arguments: "{}" }] },
+      { role: "tool", tool_call_id: "b", content: "y".repeat(5000) },
+    ];
+    const tools = [{ name: "read_tool_result", description: "Reads more.", parameters: { type: "object" } }];
+
+    const fit = fit_request(messages, tools, at(4096, 512));
+
+    expect(fit.fits).toBe(true);
+    if (!fit.fits) return;
+    expect(fit.messages[3]!.content).toBe('[The result of search_index call "a" was dropped to fit the context. To read it again call read_tool_result with call_id "a".]');
   });
 
   it("leaves out whole turns, oldest first, with a note, so a tool result never loses its call", () => {

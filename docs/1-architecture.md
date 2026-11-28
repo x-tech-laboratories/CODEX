@@ -453,7 +453,8 @@ a smaller ratio is taken at once, a larger one moves it halfway, and it is used 
 request refused as too large counts at 90% of what it measured (or a quarter fewer characters a token when the engine
 does not say), so it is fitted tighter at once and loosens again as reports show room. It is kept in memory while the
 store runs (engine settings are the user's alone, so it is not written there). When the conversation does not fit: tool
-results of earlier rounds are blanked, oldest first; then over-long earlier messages are shortened in their middle,
+results of earlier rounds are blanked, oldest first, each to a line naming its tool and call id and, when
+`read_tool_result` is offered, how to read it again with that tool; then over-long earlier messages are shortened in their middle,
 longest first and alike, each keeping at least 1,500 characters, with the same marker; only when that is not enough do
 whole turns go, oldest first, with one line added to the instructions saying so; then the latest round's tool results;
 then the newest user message is shortened in its middle, with a marker saying how much, for that request alone. The reply asked for is the most wanted capped by what is left. Below 512 tokens left, or
@@ -672,6 +673,20 @@ conversation saying the user approved it and what came back; rejecting adds one 
 `set_action_level` (and the privacy feature's `set_source_mark`) answer only the page: `page_only_methods` in `page_api.ts` marks their specs `page_only` (X-Libs `api_spec`), so the server's sign-in refuses them to every bearer token, the
 daemon takes them over its socket from the window, neither MCP endpoint lists them, and the OpenAPI document marks them `x-page-only`. The engine reads those
 events at the start of the user's next message. The policy's own calls and the conversations' are never offered.
+
+**Tool results** (`src/shared/conversations/results.ts`). Each `ToolContext` keeps every call's whole result in memory
+for the life of the run, by call id (the engine's own, which `EngineTools.call` is handed, made unique; the direct loop
+also numbers repeated server ids apart), with whether it was fenced, the sources it carried and whether it lowered the
+run. Nothing more is written to the store: the message keeps each call's result as the engine was shown it, as before.
+What is kept is the result after screening, so a hosted engine never gets back what it was not sent. A result longer
+than `max_result_chars` (12,000) is shown cut, with
+`[Cut at 12,000 of 48,213 characters. For the rest call read_tool_result with call_id "…" and offset 12000, or call … again with narrower arguments.]`
+after the fence. `read_tool_result(call_id, offset?, length?)` is offered to every run and every specialist, in the
+full and the core set, with a one-line description; it is not a store call and asks no level. It gives a slice of at
+most 12,000 characters, fenced as the original was, and a line with the next offset or saying it is the end; it
+lowers the run when the original did and is noted as a read for proposal evidence. An unknown id is an error listing
+the ids kept. A specialist's context keeps its own results, so it reads only its own calls', and the run asking it
+reads only its own (the ask's answer among them).
 
 A proposal keeps its `evidence` (a JSON column): the user's message that asked for it (`asked_by`), the run, and each
 read the run made before proposing, by its tool call's id with its name and arguments, the sources it carried, and an
@@ -892,7 +907,8 @@ specialists (its doc 1, "Agents").
   history, context, blueprint or mood; and tools from `engine_tools` on a child of the run's `ToolContext` whose `only`
   names that plugin's tools (or that part's calls of CODEX's, fully described), whose `plugin_tools` are that plugin's,
   with no own tools and no specialist host. So any other call, `set_mood`, other plugins' tools and every `ask_` tool
-  answer "There is no tool named …", and a specialist never asks another (depth 1). A specialist of CODEX's own is told
+  answer "There is no tool named …", and a specialist never asks another (depth 1); it still has `read_tool_result`
+  for its own calls' results. A specialist of CODEX's own is told
   it serves another assistant with CODEX's calls for its part, then how that part works. Its final text comes back fenced as outside data; a failure or a stop
   comes back as an error saying the specialist could not finish, with what it wrote before, fenced.
 - **Safeguards inside.** The child shares the run's screen, its list of reads, the user's message id and run id
@@ -908,7 +924,14 @@ specialists (its doc 1, "Agents").
 - **Limits.** A specialist takes at most 8 model rounds (fewer when a background job allows fewer) and 12 tool calls,
   plugin tools or an app's reads (`specialist_limits`, `max_calls_here`); its calls count toward the run's `max_plugin_calls` (`used`), and its
   usage events add to the run's rounds and tokens, so a background job's limits stop the whole run. The run's abort
-  signal stops it.
+  signal stops it. Its instructions name its limits and say, for a request larger than they allow, to do what fits
+  and answer with what it did and what is left as a ready-to-send follow-up request. One that is refused a call for
+  its call limit, or ends in an error after using all its rounds, comes back not as a failure but as a partial result:
+  a line saying which limit it hit and to ask again for the remainder or split it, then, fenced, its calls that ran
+  with their arguments and what it wrote. The run's instructions with specialists say each ask is one bounded piece
+  of a big job, and both the run's instructions and every specialist's say to try one other way at most when a tool
+  or specialist cannot help, then say plainly what was found, what failed and why, never repeating a call unchanged
+  (`give_up_line`).
 - **The record.** The ask's `ToolCallRecord` holds its specialist's calls in `calls`, each with its outcome, proposal
   and result as for the run's own; open pages hear each change as a `tool_result` event for the ask. The pane lists
   them under "The specialist's calls" inside the ask's row (`ToolCallRow`), a proposal shown as the user decided it.

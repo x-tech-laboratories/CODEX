@@ -56,6 +56,7 @@ import {
   type SpecialistGroup,
   type SpecialistHost,
 } from "./specialists.ts";
+import { read_kept, read_result_name, read_result_tool, result_id, shown_result, type KeptResult, type KeptResults } from "./results.ts";
 import { add_conversation_record, conversation_ids_in, conversation_row, has_conversation, summaries_of } from "./records.ts";
 
 // ── Engines ──────────────────────────────────────────────────────────────────
@@ -73,14 +74,10 @@ export async function find_engine(database: SqlDatabase): Promise<AssistantStatu
 
 // ── Tools ────────────────────────────────────────────────────────────────────
 
-// The longest tool result an engine is given, so one large search cannot crowd out the conversation.
-export const max_result_chars = 12_000;
-
-const cut_marker = "\n[Cut short to fit.]";
+export { max_result_chars } from "./results.ts";
 
 function as_text(value: unknown): string {
-  const text = value === undefined ? "Done." : typeof value === "string" ? value : JSON.stringify(value);
-  return text.length > max_result_chars ? text.slice(0, max_result_chars - cut_marker.length) + cut_marker : text;
+  return value === undefined ? "Done." : typeof value === "string" ? value : JSON.stringify(value);
 }
 
 // What a run's tools need: where the store is, who is present, and what the run has read so far.
@@ -130,6 +127,10 @@ export interface ToolContext {
   bound_collector?: string;
   // Hears what the policy made of each call, in order, so it can be kept with the call; gives back the call's id.
   on_decided?: (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id" | "undo">) => string | void;
+  // Each call's whole result by call id, for read_tool_result; a specialist's context has its own.
+  results?: KeptResults;
+  // Set once a specialist's call was refused for its limit of tool calls.
+  hit_call_limit?: boolean;
 }
 
 // A tool of a run's own: what the engine is shown, and what it does, answering in words.
@@ -226,6 +227,7 @@ export function engine_tools(context: ToolContext): EngineTools {
     ...(!only || only.has(set_mood_tool.name) ? [{ name: set_mood_tool.name, description: set_mood_tool.description, parameters: set_mood_tool.parameters as JsonSchema }] : []),
     ...(context.own_tools ?? []).map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
     ...[...plugin_tools.values()].map((tool) => ({ name: tool.name, description: plugin_description(tool, longest_tool_description), parameters: tool.tool.parameters })),
+    read_result_tool,
   ];
   // Each part of CODEX's own calls behind one ask_ tool, each plugin's tools behind another and each source app's read
   // calls, with the tools of the MCP server linked to it, behind a third kind, which the engine offers in their place
@@ -251,6 +253,7 @@ export function engine_tools(context: ToolContext): EngineTools {
           .filter(([name]) => is_offered(name))
           .map(([name, description]) => ({ name, description, parameters: brief_schema(input_schema(offered_api[name]!)) })),
         { name: set_mood_tool.name, description: set_mood_brief, parameters: brief_schema(set_mood_tool.parameters as JsonSchema) },
+        read_result_tool,
         ...[...plugin_tools.values()]
           .filter((tool) => tool.small)
           .map((tool) => ({ name: tool.name, description: plugin_description(tool, longest_brief_description), parameters: brief_schema(tool.tool.parameters) })),
@@ -267,6 +270,12 @@ export function engine_tools(context: ToolContext): EngineTools {
         }
       : undefined;
   const reads = (context.reads ??= []);
+  const results = (context.results ??= new Map());
+  // Keeps a result whole under its call id and gives what the engine is shown of it.
+  const keep = (id: string, kept: KeptResult): string => {
+    results.set(id, kept);
+    return shown_result(id, kept);
+  };
   const decided = (name: string, record: Pick<ToolCallRecord, "outcome" | "applied_by" | "proposal_id" | "undo">, outcome: ToolOutcome): ToolOutcome => {
     const call_id = context.on_decided?.(name, record);
     const read = reads.at(-1);
@@ -282,15 +291,16 @@ export function engine_tools(context: ToolContext): EngineTools {
   };
   // Other apps' text is screened by source: a hosted engine is not sent what it may not see, and only a source not
   // marked trusted makes the run's later changes wait; what is left is fenced either way.
-  const run = async (name: string, args: unknown[]): Promise<{ text: string; sources: Set<string>; plain: string }> => {
+  const run = async (id: string, name: string, args: unknown[]): Promise<{ text: string; sources: Set<string>; plain: string }> => {
     // A search leaves out this conversation's own messages, the user's question among them.
     const sent = name === "search_index" ? [args[0], args[1] ?? null, args[2] ?? default_hits, context.conversation_id] : args;
     const value = await context.call(name, sent, "engine");
-    if (!brings_outside_content(name)) return { text: as_text(value), sources: new Set(), plain: as_text(value) };
+    if (!brings_outside_content(name)) return { text: keep(id, { name, text: as_text(value), fenced: false, sources: new Set(), taints: false }), sources: new Set(), plain: as_text(value) };
     const screened = screen_result(context.database(), screen, name, args, value);
-    if (taints(screen, screened.sources)) context.has_outside_content = true;
+    const tainted = taints(screen, screened.sources);
+    if (tainted) context.has_outside_content = true;
     const text = as_text(screened.value);
-    const shown = screened.sources.size > 0 ? untrusted_block(text) : text;
+    const shown = keep(id, { name, text, fenced: screened.sources.size > 0, sources: screened.sources, taints: tainted });
     const withheld = withheld_line(screen, screened.withheld, screened.withheld_kinds);
     return { text: withheld ? `${shown}\n${withheld}` : shown, sources: screened.sources, plain: text };
   };
@@ -298,7 +308,7 @@ export function engine_tools(context: ToolContext): EngineTools {
   let uses_here = 0;
   // A plugin tool's answer is always outside data: fenced, counted as its plugin's source, and lowering the run unless
   // the plugin is marked trusted. A use of one that sends outside is kept in the hosted log, never its arguments.
-  const use_plugin_tool = async (tool: OpenedTool, given: Record<string, unknown>): Promise<{ text: string; plain: string; sources: Set<string> }> => {
+  const use_plugin_tool = async (id: string, tool: OpenedTool, given: Record<string, unknown>): Promise<{ text: string; plain: string; sources: Set<string> }> => {
     if (tool.tool.sends_outside) {
       record_tool_send(context.database(), {
         run_id: context.run_id ?? "",
@@ -316,9 +326,9 @@ export function engine_tools(context: ToolContext): EngineTools {
     note_source(screen.included, source, `${tool.name}#${used.plugin_calls}`);
     if (!tool.marks.trusted) context.has_outside_content = true;
     const plain = as_text(answer);
-    return { text: untrusted_block(plain), plain, sources: new Set([source]) };
+    return { text: keep(id, { name: tool.name, text: plain, fenced: true, sources: new Set([source]), taints: !tool.marks.trusted }), plain, sources: new Set([source]) };
   };
-  const call_plugin_tool = async (tool: OpenedTool, given: Record<string, unknown>): Promise<ToolOutcome> => {
+  const call_plugin_tool = async (id: string, tool: OpenedTool, given: Record<string, unknown>): Promise<ToolOutcome> => {
     const name = tool.name;
     if (!given || typeof given !== "object" || Array.isArray(given)) return decided(name, { outcome: "failed" }, { result: "Tool error: arguments must be a JSON object.", is_error: true });
     const required = Array.isArray(tool.tool.parameters.required) ? (tool.tool.parameters.required as unknown[]).map(String) : [];
@@ -328,6 +338,7 @@ export function engine_tools(context: ToolContext): EngineTools {
       return decided(name, { outcome: "refused" }, { result: `Not run: this run may use plugin tools at most ${context.max_plugin_calls} times, and has. Finish with what you have.`, is_error: true });
     }
     if (context.max_calls_here !== undefined && uses_here >= context.max_calls_here) {
+      context.hit_call_limit = true;
       return decided(name, { outcome: "refused" }, { result: `Not run: a specialist may use its tools at most ${context.max_calls_here} times, and has. Answer with what you have.`, is_error: true });
     }
     // What the run has read of a source the user keeps from hosted engines never leaves through a tool either.
@@ -343,7 +354,7 @@ export function engine_tools(context: ToolContext): EngineTools {
     }
     try {
       if (!tool.tool.changes) {
-        const read = await use_plugin_tool(tool, given);
+        const read = await use_plugin_tool(id, tool, given);
         await note_read(name, given, read.sources, read.plain);
         return decided(name, { outcome: "ran" }, { result: read.text, is_error: false });
       }
@@ -364,7 +375,7 @@ export function engine_tools(context: ToolContext): EngineTools {
         );
       }
       const mark = mark_before_change(database);
-      const result = (await use_plugin_tool(tool, given)).text;
+      const result = (await use_plugin_tool(id, tool, given)).text;
       return decided(name, { outcome: "ran", applied_by: "engine_auto", undo: undo_of_change(context.database(), mark, summary) }, { result, is_error: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -375,7 +386,7 @@ export function engine_tools(context: ToolContext): EngineTools {
   // A specialist runs the same engine with only its part of CODEX's calls, its plugin's tools or its source app's read
   // calls, through this same wrapper with the run's screen, reads and limits; its answer is fenced as outside data, and
   // a plugin's or app's lowers the run unless it is trusted.
-  const ask_specialist = async (group: SpecialistGroup, given: Record<string, unknown>): Promise<ToolOutcome> => {
+  const ask_specialist = async (id: string, group: SpecialistGroup, given: Record<string, unknown>): Promise<ToolOutcome> => {
     const host = context.specialists!;
     const name = group.name;
     const request = given && typeof given === "object" && typeof given.request === "string" ? given.request.trim() : "";
@@ -389,6 +400,8 @@ export function engine_tools(context: ToolContext): EngineTools {
       collectors: [],
       max_calls_here: host.max_tool_calls ?? specialist_limits.max_tool_calls,
       on_decided: (called, record) => note_nested(nest, called, record),
+      results: new Map(),
+      hit_call_limit: false,
     };
     delete child.specialists;
     if (group.collector) child.bound_collector = group.collector.id;
@@ -399,91 +412,119 @@ export function engine_tools(context: ToolContext): EngineTools {
     // that plugin's or app's; CODEX's own specialists' reads are already noted by their sources.
     if (child.has_outside_content) context.has_outside_content = true;
     asked += 1;
-    if (!group.own) {
-      note_source(screen.included, group.collector ? group.collector.id : tool_source_of(group.key), `${name}#${asked}`);
-      const trusted = (!group.collector || is_trusted(screen, group.collector.id)) && group.tools.every((tool) => tool.marks.trusted);
-      if (!trusted) context.has_outside_content = true;
+    const source = group.own ? "" : group.collector ? group.collector.id : tool_source_of(group.key);
+    const untrusted_answer = source !== "" && !((!group.collector || is_trusted(screen, group.collector.id)) && group.tools.every((tool) => tool.marks.trusted));
+    if (source) note_source(screen.included, source, `${name}#${asked}`);
+    if (untrusted_answer) context.has_outside_content = true;
+    const kept_answer = (text: string) => keep(id, { name, text, fenced: true, sources: new Set(source ? [source] : []), taints: untrusted_answer || child.has_outside_content === true });
+    // A specialist that ran out of calls or rounds hands back what it did, for the run to ask again for the rest.
+    const max_rounds = host.max_rounds ?? specialist_limits.max_rounds;
+    const limit = child.hit_call_limit ? `its limit of ${child.max_calls_here} tool calls` : answer.error && answer.rounds >= max_rounds ? `its limit of ${max_rounds} model rounds` : "";
+    if (limit) {
+      const done = nest.calls.filter((call) => call.outcome === "ran" || call.outcome === "proposed").map((call) => `- ${call.name} ${clipped(JSON.stringify(call.arguments) ?? "", 200)}: ${call.outcome}`);
+      const body = [done.length > 0 ? `Its calls that ran:\n${done.join("\n")}` : "No call of its ran.", answer.text ? `What it wrote:\n${answer.text}` : "It wrote nothing before stopping."].join("\n");
+      const told = `The ${group.label} specialist stopped at ${limit} before finishing. What it did is below; whatever of your request it does not cover is left. Ask it again for the remainder, naming what is already done, or split the rest into smaller requests.`;
+      return decided(name, { outcome: "ran" }, { result: `${told}\n${kept_answer(body)}`, is_error: false });
     }
     if (answer.error) {
-      const partial = answer.text ? `\nWhat it wrote before stopping:\n${untrusted_block(as_text(answer.text))}` : "";
+      const partial = answer.text ? `\nWhat it wrote before stopping:\n${kept_answer(answer.text)}` : "";
       return decided(name, { outcome: "failed" }, { result: `The ${group.label} specialist could not finish: ${answer.error}${partial}`, is_error: true });
     }
-    return decided(name, { outcome: "ran" }, { result: untrusted_block(as_text(answer.text || "It gave no answer.")), is_error: false });
+    return decided(name, { outcome: "ran" }, { result: kept_answer(answer.text || "It gave no answer."), is_error: false });
+  };
+  // A slice of a result this context kept, which lowers the run and counts as a read just as the call that gave it did.
+  const read_result = async (given: Record<string, unknown>): Promise<ToolOutcome> => {
+    const read = read_kept(results, given);
+    if (read.kept) {
+      if (read.kept.taints) context.has_outside_content = true;
+      await note_read(read_result_name, given, new Set(read.kept.sources), read.slice ?? "");
+    }
+    return decided(read_result_name, { outcome: read.is_error ? "failed" : "ran" }, { result: read.text, is_error: read.is_error });
+  };
+  // One call by its name, its result kept under its id.
+  const call_tool = async (id: string, name: string, given: Record<string, unknown>): Promise<ToolOutcome> => {
+    const plugin_tool = plugin_tools.get(name);
+    if (plugin_tool) return call_plugin_tool(id, plugin_tool, given);
+    const group = asks.get(name);
+    if (group) return ask_specialist(id, group, given);
+    const own_tool = context.own_tools?.find((tool) => tool.name === name);
+    if (own_tool) {
+      try {
+        const answer = own_tool.call(given && typeof given === "object" && !Array.isArray(given) ? given : {}, { run_id: context.run_id ?? "", conversation_id: context.conversation_id });
+        return decided(name, { outcome: answer.is_error ? "failed" : "ran" }, { result: answer.text, is_error: answer.is_error });
+      } catch (error) {
+        return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}.`, is_error: true });
+      }
+    }
+    // The mood changes nothing of the user's, so it is kept at once, with the call recorded in the reply.
+    if (name === set_mood_tool.name && (!only || only.has(name))) {
+      const set = engine_set_mood(context.database(), given && typeof given === "object" ? given : {}, { conversation_id: context.conversation_id, run_id: context.run_id ?? "", sources: read_sources(screen) }, Date.now());
+      return decided(name, { outcome: set.is_error ? "failed" : "ran" }, { result: set.text, is_error: set.is_error });
+    }
+    if (!offered(name)) return decided(name, { outcome: "refused" }, { result: `There is no tool named ${name}.`, is_error: true });
+    let args: unknown[];
+    try {
+      // A source app's specialist reads its own collector, whichever it named.
+      const named = bound !== undefined && collector_read_calls.has(name) && given && typeof given === "object" ? { ...given, collector: bound } : given;
+      args = positional_args(offered_api[name]!, named);
+    } catch (error) {
+      return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}.`, is_error: true });
+    }
+    // A specialist's calls of CODEX's own count toward its limit as its plugin tool calls do.
+    if (context.max_calls_here !== undefined) {
+      if (uses_here >= context.max_calls_here) {
+        context.hit_call_limit = true;
+        return decided(name, { outcome: "refused" }, { result: `Not run: a specialist may use its tools at most ${context.max_calls_here} times, and has. Answer with what you have.`, is_error: true });
+      }
+      uses_here += 1;
+    }
+    try {
+      if (is_read_only(name)) {
+        const read = await run(id, name, args);
+        await note_read(name, given, read.sources, read.plain);
+        return decided(name, { outcome: "ran" }, { result: read.text, is_error: false });
+      }
+      // A proposal to the graph or a blueprint waits for the user anyway, so it runs at once, carrying what the run has read.
+      if (proposing_calls.has(name)) {
+        const padded = [...args, ...Array.from({ length: Math.max(0, offered_api[name]!.params.length - args.length) }, () => undefined)];
+        const maker = { engine: context.maker?.engine ?? "", model: context.maker?.model ?? "", sources: read_sources(screen), conversation_id: context.conversation_id, run_id: context.run_id ?? "" };
+        return decided(name, { outcome: "ran" }, { result: (await run(id, name, [...padded, maker])).text, is_error: false });
+      }
+      const database = context.database();
+      const decision = decide(level_of(database, name), context.presence, context.has_outside_content);
+      if (decision.action === "refuse") return decided(name, { outcome: "refused" }, { result: `The user does not permit ${name}, so it was not run.`, is_error: true });
+      if (decision.action === "propose") {
+        const sources = [...new Set([...read_sources(screen), ...sources_named(database, given)])].sort();
+        const seen = [...new Set([...(context.instruction_sources ?? []), ...reads.flatMap((read) => read.sources)])].sort();
+        const evidence = { asked_by: context.asked_by ?? "", run_id: context.run_id ?? "", reads: structuredClone(reads), seen };
+        const proposal = add_proposal(database, { conversation_id: context.conversation_id, method: name, arguments: given, summary: summarize_call(database, name, given), reason: decision.reason, sources, evidence });
+        const why = decision.reason === "outside content" ? " because this conversation has read text from other apps" : "";
+        return decided(
+          name,
+          { outcome: "proposed", proposal_id: proposal.id },
+          { result: `Not done yet: this change waits for the user's approval${why}. Tell the user what you proposed; it is proposal ${proposal.id}.`, is_error: false },
+        );
+      }
+      // Noted as it is made, so the user can undo it from the conversation.
+      const summary = summarize_call(database, name, given);
+      const mark = mark_before_change(database);
+      const result = (await run(id, name, args)).text;
+      return decided(name, { outcome: "ran", applied_by: "engine_auto", undo: undo_of_change(context.database(), mark, summary) }, { result, is_error: false });
+    } catch (error) {
+      return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}`, is_error: true });
+    }
   };
   return {
     definitions,
     ...(core ? { core } : {}),
     ...(specialists ? { specialists } : {}),
-    call: async (name, given) => {
-      const plugin_tool = plugin_tools.get(name);
-      if (plugin_tool) return call_plugin_tool(plugin_tool, given);
-      const group = asks.get(name);
-      if (group) return ask_specialist(group, given);
-      const own_tool = context.own_tools?.find((tool) => tool.name === name);
-      if (own_tool) {
-        try {
-          const answer = own_tool.call(given && typeof given === "object" && !Array.isArray(given) ? given : {}, { run_id: context.run_id ?? "", conversation_id: context.conversation_id });
-          return decided(name, { outcome: answer.is_error ? "failed" : "ran" }, { result: answer.text, is_error: answer.is_error });
-        } catch (error) {
-          return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}.`, is_error: true });
-        }
-      }
-      // The mood changes nothing of the user's, so it is kept at once, with the call recorded in the reply.
-      if (name === set_mood_tool.name && (!only || only.has(name))) {
-        const set = engine_set_mood(context.database(), given && typeof given === "object" ? given : {}, { conversation_id: context.conversation_id, run_id: context.run_id ?? "", sources: read_sources(screen) }, Date.now());
-        return decided(name, { outcome: set.is_error ? "failed" : "ran" }, { result: set.text, is_error: set.is_error });
-      }
-      if (!offered(name)) return decided(name, { outcome: "refused" }, { result: `There is no tool named ${name}.`, is_error: true });
-      let args: unknown[];
-      try {
-        // A source app's specialist reads its own collector, whichever it named.
-        const named = bound !== undefined && collector_read_calls.has(name) && given && typeof given === "object" ? { ...given, collector: bound } : given;
-        args = positional_args(offered_api[name]!, named);
-      } catch (error) {
-        return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}.`, is_error: true });
-      }
-      // A specialist's calls of CODEX's own count toward its limit as its plugin tool calls do.
-      if (context.max_calls_here !== undefined) {
-        if (uses_here >= context.max_calls_here) {
-          return decided(name, { outcome: "refused" }, { result: `Not run: a specialist may use its tools at most ${context.max_calls_here} times, and has. Answer with what you have.`, is_error: true });
-        }
-        uses_here += 1;
-      }
-      try {
-        if (is_read_only(name)) {
-          const read = await run(name, args);
-          await note_read(name, given, read.sources, read.plain);
-          return decided(name, { outcome: "ran" }, { result: read.text, is_error: false });
-        }
-        // A proposal to the graph or a blueprint waits for the user anyway, so it runs at once, carrying what the run has read.
-        if (proposing_calls.has(name)) {
-          const padded = [...args, ...Array.from({ length: Math.max(0, offered_api[name]!.params.length - args.length) }, () => undefined)];
-          const maker = { engine: context.maker?.engine ?? "", model: context.maker?.model ?? "", sources: read_sources(screen), conversation_id: context.conversation_id, run_id: context.run_id ?? "" };
-          return decided(name, { outcome: "ran" }, { result: (await run(name, [...padded, maker])).text, is_error: false });
-        }
-        const database = context.database();
-        const decision = decide(level_of(database, name), context.presence, context.has_outside_content);
-        if (decision.action === "refuse") return decided(name, { outcome: "refused" }, { result: `The user does not permit ${name}, so it was not run.`, is_error: true });
-        if (decision.action === "propose") {
-          const sources = [...new Set([...read_sources(screen), ...sources_named(database, given)])].sort();
-          const seen = [...new Set([...(context.instruction_sources ?? []), ...reads.flatMap((read) => read.sources)])].sort();
-          const evidence = { asked_by: context.asked_by ?? "", run_id: context.run_id ?? "", reads: structuredClone(reads), seen };
-          const proposal = add_proposal(database, { conversation_id: context.conversation_id, method: name, arguments: given, summary: summarize_call(database, name, given), reason: decision.reason, sources, evidence });
-          const why = decision.reason === "outside content" ? " because this conversation has read text from other apps" : "";
-          return decided(
-            name,
-            { outcome: "proposed", proposal_id: proposal.id },
-            { result: `Not done yet: this change waits for the user's approval${why}. Tell the user what you proposed; it is proposal ${proposal.id}.`, is_error: false },
-          );
-        }
-        // Noted as it is made, so the user can undo it from the conversation.
-        const summary = summarize_call(database, name, given);
-        const mark = mark_before_change(database);
-        const result = (await run(name, args)).text;
-        return decided(name, { outcome: "ran", applied_by: "engine_auto", undo: undo_of_change(context.database(), mark, summary) }, { result, is_error: false });
-      } catch (error) {
-        return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}`, is_error: true });
-      }
+    call: async (name, given, engine_call_id) => {
+      if (name === read_result_name) return read_result(given && typeof given === "object" && !Array.isArray(given) ? given : {});
+      const id = result_id(results, engine_call_id);
+      const outcome = await call_tool(id, name, given);
+      // Every other result is kept too, as given, so a dropped one can be read again.
+      if (!results.has(id)) results.set(id, { name, text: outcome.result, fenced: false, sources: new Set(), taints: false });
+      return outcome;
     },
   };
 }
