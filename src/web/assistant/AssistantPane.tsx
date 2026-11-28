@@ -30,6 +30,7 @@ import { open_conversation, take_wanted, wanted_watch } from "./selection.ts";
 import { Mascot } from "./Mascot.tsx";
 import { lasting_mood, moment_after, mood_summary, type MascotMood } from "./mascot.ts";
 import { use_conversation, type LiveRun } from "./use_conversation.ts";
+import { PaneModel } from "../engines/ModelPicker.tsx";
 
 // ── Tool calls ───────────────────────────────────────────────────────────────
 
@@ -522,7 +523,7 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
       <header className="assistant-head">
         <Face mood={mood} moment={mood_on ? moment : null} summary={mood_summary(mood_state.data)} />
         <p className="muted small">
-          {engine ? [run?.engine || engine.label, run?.model || engine.model].filter(Boolean).join(" · ") : status.status === "failed" ? "CODEX cannot be reached." : "Asleep"}
+          {engine ? <PaneModel engine={engine} writing={is_running ? (run?.model ?? "") : ""} is_running={is_running} /> : status.status === "failed" ? "CODEX cannot be reached." : "Asleep"}
           {engine && " "}
           {engine && <span className={`badge tone-${engine.is_local ? "none" : "warn"}`} title={engine.is_local ? "Answers on this computer or your own network." : "Answers from a company's servers; it is sent only the items of sources you marked for it."}>{engine.is_local ? "local" : "hosted"}</span>}
         </p>

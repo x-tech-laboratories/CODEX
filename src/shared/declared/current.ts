@@ -51,8 +51,9 @@ export function read_declared_secret(path: string): { secret: string } | { probl
 // ── Plugin records ───────────────────────────────────────────────────────────
 
 // The stored records with each declared plugin on and its declared settings laid over, its secrets read from their
-// files; a file that cannot be read leaves its field empty, so the plugin says it is not set up.
-export function with_declared(stored: PluginRecords, config: DeclaredConfig = declarations()): PluginRecords {
+// files; a file that cannot be read leaves its field empty, so the plugin says it is not set up. A model the owner
+// chose on this device for a declared engine holds over the declared one, which is only its default.
+export function with_declared(stored: PluginRecords, config: DeclaredConfig = declarations(), chosen_models: Record<string, string> = {}): PluginRecords {
   const records: PluginRecords = { ...stored };
   for (const plugin of config.plugins) {
     const secrets = Object.fromEntries(
@@ -68,6 +69,7 @@ export function with_declared(stored: PluginRecords, config: DeclaredConfig = de
       settings: {
         ...stored[plugin.plugin_id]?.settings,
         ...plugin.settings,
+        ...(chosen_models[plugin.plugin_id] ? { model: chosen_models[plugin.plugin_id]! } : {}),
         ...key_command,
         ...secrets,
       },

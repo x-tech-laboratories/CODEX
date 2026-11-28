@@ -18,7 +18,7 @@ import type { Engine, EngineEvent, EngineRequest, EngineTurn, ToolDefinition, To
 import { is_local_endpoint } from "../../shared/engines/hosting.ts";
 import { smartharness_engine_id, smartharness_manifest } from "../../shared/engines/manifests.ts";
 import { explain_failure, key_command_failure } from "./errors.ts";
-import { default_endpoints, make_openai, specialists_of, without_key, type ModelMaker } from "./index.ts";
+import { default_endpoints, list_openai_models, listed_models, make_openai, specialists_of, without_key, type ModelLister, type ModelMaker } from "./index.ts";
 import { plugin_key, read_secret, type SecretReader } from "./secret_command.ts";
 import { open_tool_bridge, type ToolBridge } from "./tool_bridge.ts";
 
@@ -238,6 +238,8 @@ export interface HarnessEngineOptions {
   make?: ModelMaker;
   read?: SecretReader;
   load?: () => Promise<HarnessModule>;
+  // How its endpoint's models are listed, for tests.
+  list?: ModelLister;
   // Hears the stand-in toolbox of each run, for tests.
   on_toolbox?: (toolbox: ReturnType<typeof no_builtin_toolbox>) => void;
 }
@@ -267,11 +269,13 @@ export function harness_engine(settings: () => SettingValues, options: HarnessEn
   const make = options.make ?? make_openai;
   const read = options.read ?? read_secret;
   const load = options.load ?? load_harness;
+  const list = options.list ?? list_openai_models;
   const model = () => String(settings().model ?? "").trim();
   return {
     label: engine_label,
     model,
     is_local: () => is_local_endpoint(String(settings().endpoint ?? "")),
+    list_models: (signal) => listed_models(smartharness_manifest.id, settings(), list, read, signal),
     async *run(request: EngineRequest, signal: AbortSignal): AsyncGenerator<EngineEvent> {
       const values = settings();
       if (!model()) {

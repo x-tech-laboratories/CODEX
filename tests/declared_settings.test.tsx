@@ -12,7 +12,7 @@ import { Dialogs } from "@x-tech-laboratories/x-libs/web/react/dialog";
 
 import { read_secret_from } from "../src/server/declared.ts";
 import { embedder_plugins } from "../src/server/embedders/openai.ts";
-import { engine_plugins } from "../src/server/engines/index.ts";
+import { anthropic_plugin, make_openai, openai_plugin } from "../src/server/engines/index.ts";
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
 import { use_declared } from "../src/shared/declared/current.ts";
 import { read_declarations } from "../src/shared/declared/model.ts";
@@ -93,7 +93,8 @@ function start(): { listed: McpServerRecord[] } {
   use_mcp_connector(connector);
   const fixture = start_fixture({
     choose_engine: false,
-    plugins: [...engine_plugins, ...embedder_plugins],
+    // The OpenAI-compatible engine lists its models from a stand-in, so no server on this machine is asked.
+    plugins: [anthropic_plugin(), openai_plugin(make_openai, undefined, async () => ({ models: [{ id: "qwen3", state: "" }], problem: "" })), ...embedder_plugins],
   });
   const calls = Object.fromEntries(
     Object.entries(fixture.calls).map(([name, call]) => [name, async (...args: unknown[]) => (call as (...args: unknown[]) => unknown)(...args)]),
@@ -146,7 +147,8 @@ describe("what the configuration declares, in Settings", () => {
     expect(await screen.findByText("OpenAI-compatible embeddings")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "Open OpenAI-compatible" }));
     const dialog = (await screen.findAllByRole("dialog")).at(-1)!;
-    expect(within(dialog).getByText("qwen3")).toBeTruthy();
+    // The declared model is the default, offered as a choice the owner may change on this device.
+    await waitFor(() => expect((within(dialog).getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("qwen3"));
     expect(within(dialog).getByText("API key")).toBeTruthy();
   });
 

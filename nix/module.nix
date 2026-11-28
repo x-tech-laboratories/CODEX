@@ -92,7 +92,7 @@ in
         type = types.attrsOf (plugin_settings { key_file = secret_file; });
         default = { };
         example = literalExpression ''{ "codex.openai" = { endpoint = "http://127.0.0.1:8080/v1"; model = "qwen3-8b"; context_size = 16384; }; }'';
-        description = "Engine plugins by id (codex.anthropic, codex.openai, codex.smartharness), each with its settings and the file holding its API key as key_file.";
+        description = "Engine plugins by id (codex.anthropic, codex.openai, codex.smartharness), each with its settings and the file holding its API key as key_file. Its model is the default: the owner can choose another from the endpoint's list in CODEX, kept on that device; every other setting stays as declared.";
       };
 
       engine = mkOption {

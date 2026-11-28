@@ -63,6 +63,22 @@ export type EngineEvent =
   // A plain message saying what happened and what to do, and the raw detail behind it when there is one.
   | { type: "error"; message: string; detail?: string };
 
+// ── Models ───────────────────────────────────────────────────────────────────
+
+// Whether a model is in memory on its server, as a llama.cpp router says of each it holds; empty when the server does not say.
+export type ModelState = "loaded" | "loading" | "unloaded" | "failed" | "";
+
+export interface EndpointModel {
+  id: string;
+  state: ModelState;
+}
+
+// The models an engine's endpoint offers; an empty list with the reason when it lists none or could not be asked.
+export interface ModelListing {
+  models: EndpointModel[];
+  problem: string;
+}
+
 // ── Engine ───────────────────────────────────────────────────────────────────
 
 export interface Engine {
@@ -72,6 +88,8 @@ export interface Engine {
   // True when its model answers on this machine or the user's own network, from its settings now; an engine that
   // leaves this out is hosted, and is never sent items from a source not marked for hosted engines.
   is_local?(): boolean;
+  // The models its endpoint offers, asked with its own key; an engine that leaves this out lists none.
+  list_models?(signal: AbortSignal): Promise<ModelListing>;
   // Ends with one done or error event; stops soon after the signal aborts.
   run(request: EngineRequest, signal: AbortSignal): AsyncIterable<EngineEvent>;
 }

@@ -204,6 +204,22 @@
   gap: var(--space-2);
 }
 
+/* The model picker beside the engine, and its note on a line of its own. */
+.pane-model {
+  display: inline-block;
+  max-width: 14rem;
+}
+
+.pane-model-note {
+  display: block;
+}
+
+.model-field {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .mascot {
   position: relative;
   width: 96px;
