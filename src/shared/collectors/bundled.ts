@@ -5,7 +5,7 @@
 
 import { define_plugin, type SettingValues } from "@x-tech-laboratories/x-libs/plugins";
 
-import type { Feed, FoundItem } from "./collector.ts";
+import type { Feed, FoundItem, ItemAttribute, ReadItem } from "./collector.ts";
 import type { ContextPlugin, ContextPluginApi } from "./host.ts";
 import { email_manifest, links_manifest, trilium_manifest, x_tasks_manifest } from "./manifests.ts";
 
@@ -170,9 +170,22 @@ export function x_tasks_in_feed(tasks: XTask[], tags: XTag[], feed_id: string, i
   return include_done ? held : held.filter((task) => !task.is_done);
 }
 
+// One task read whole: its notes as content, each tag by its path, and its parent's title beside its id.
+export function x_task_read(tasks: XTask[], tags: XTag[], source_id: string): ReadItem | null {
+  const task = tasks.find((each) => each.id === source_id);
+  if (!task) return null;
+  const item = task_item(task);
+  const parent = task.parent_id ? tasks.find((each) => each.id === task.parent_id) : undefined;
+  const attributes: ItemAttribute[] = (task.tag_ids ?? []).flatMap((tag_id) => {
+    const tag = tags.find((each) => each.id === tag_id);
+    return tag ? [{ type: "tag", name: tag_path(tags, tag), value: "" }] : [];
+  });
+  return { ...item, detail: { ...item.detail, ...(parent ? { parent_title: parent.title || "Untitled task" } : {}) }, content: task.notes ?? "", attributes };
+}
+
 // How X-Tasks works, as its collector reads it, for the assistant's specialist for it.
 export const x_tasks_guidance =
-  "X-Tasks holds the user's tasks, each with a title, notes, a due date, tags, and maybe a parent task. A search matches tasks whose title or notes hold every word given, open tasks before done ones, at most 30; a done task has status done. A task's source_id is its id in X-Tasks, its due date is detail.due and its parent's id detail.parent. A context can follow a tag, given by its path such as Home/Garden with its filter group, which brings the tasks with that tag or any tag inside it, or an open task with subtasks, which brings it and every task under it; done tasks come only when the plugin's Include done tasks setting is on.";
+  "X-Tasks holds the user's tasks, each with a title, notes, a due date, tags, and maybe a parent task. A search matches tasks whose title or notes hold every word given, open tasks before done ones, at most 30, with the notes shortened; a done task has status done. A task's source_id is its id in X-Tasks, its due date is detail.due and its parent's id detail.parent. get_source_content reads one task whole, live from X-Tasks: its full notes as content, its tags by path as attributes, its due date and its parent with the parent's title. A context can follow a tag, given by its path such as Home/Garden with its filter group, which brings the tasks with that tag or any tag inside it, or an open task with subtasks, which brings it and every task under it; done tasks come only when the plugin's Include done tasks setting is on. When the owner links X-Tasks' own MCP server to this collector, its tools are yours too: with them you can create, change, complete and tag tasks, and each change may wait for the user's approval.";
 
 export const x_tasks_plugin = define_plugin<ContextPluginApi>({
   ...x_tasks_manifest,
@@ -201,6 +214,11 @@ export const x_tasks_plugin = define_plugin<ContextPluginApi>({
         const tasks = await list_x_tasks(context.settings());
         return Object.fromEntries(tasks.filter((task) => wanted.has(task.id) && (task.notes ?? "").trim()).map((task) => [task.id, task.notes]));
       },
+      read: async (source_id) => {
+        const settings = context.settings();
+        const [tasks, tags] = await Promise.all([list_x_tasks(settings), call_x_tasks<XTag[]>(settings, "list_tags")]);
+        return x_task_read(tasks, tags, source_id);
+      },
       feeds: {
         list: async () => {
           const settings = context.settings();
@@ -218,22 +236,41 @@ export const x_tasks_plugin = define_plugin<ContextPluginApi>({
 
 // ── Trilium ──────────────────────────────────────────────────────────────────
 
+interface TriliumAttribute {
+  type: string;
+  name: string;
+  value?: string;
+}
+
 interface TriliumNote {
   noteId: string;
   title: string;
   type: string;
   dateModified?: string;
+  // Its own and inherited labels and relations, as ETAPI's note object gives them.
+  attributes?: TriliumAttribute[];
 }
 
 const most_notes_found = 30;
 
+// A note's labels and relations as attributes: a label with its value, a relation with the note id it points to.
+export function trilium_attributes(note: TriliumNote): ItemAttribute[] {
+  return (note.attributes ?? []).filter((each) => each.type === "label" || each.type === "relation").map((each) => ({ type: each.type, name: each.name, value: each.value ?? "" }));
+}
+
+// Attributes as Trilium writes them, such as "#todo #priority=high ~template=abc".
+export function attributes_text(attributes: ItemAttribute[]): string {
+  return attributes.map((each) => `${each.type === "relation" ? "~" : "#"}${each.name}${each.value ? `=${each.value}` : ""}`).join(" ");
+}
+
 function note_item(address: string, note: TriliumNote): FoundItem {
+  const attributes = attributes_text(trilium_attributes(note));
   return {
     source_id: note.noteId,
     kind: "note",
     title: note.title || "Untitled note",
     uri: `${address}/#root/${note.noteId}`,
-    detail: note.dateModified ? { modified: note.dateModified } : {},
+    detail: { ...(note.dateModified ? { modified: note.dateModified } : {}), ...(attributes ? { attributes } : {}) },
   };
 }
 
@@ -259,9 +296,25 @@ export function html_text(html: string): string {
     .trim();
 }
 
+// One note from ETAPI, or null when Trilium has none by that id.
+async function fetch_note(settings: SettingValues, address: string, id: string): Promise<TriliumNote | null> {
+  const response = await fetch(`${address}/etapi/notes/${encodeURIComponent(id)}`, { headers: trilium_headers(settings) });
+  if (response.status === 404) return null;
+  return (await read_json(response, "Trilium")) as TriliumNote;
+}
+
+// A text note's words and a code note's text; other kinds of note, such as images, have none.
+async function fetch_note_text(settings: SettingValues, address: string, note: TriliumNote): Promise<string | null> {
+  if (note.type !== "text" && note.type !== "code") return null;
+  const body = await fetch(`${address}/etapi/notes/${encodeURIComponent(note.noteId)}/content`, { headers: trilium_headers(settings) });
+  if (!body.ok) return null;
+  const text = await body.text();
+  return note.type === "text" ? html_text(text) : text;
+}
+
 // How Trilium works, as its collector reads it, for the assistant's specialist for it.
 export const trilium_guidance =
-  "Trilium holds the user's notes in a tree. A search goes to Trilium's own search and gives at most 30 notes, so its syntax works: plain words match a note's title and text, and #label or #label=value finds notes by a label. A note's source_id is its note id, the last part of a Trilium link; reading one gives its title and when it last changed, never its text. It has nothing a context can follow.";
+  "Trilium holds the user's notes in a tree. A search goes to Trilium's own search and gives at most 30 notes, so its syntax works: plain words match a note's title and text, and #label or #label=value finds notes by a label. A note's source_id is its note id, the last part of a Trilium link; get_source_item gives its title, when it last changed and its labels and relations as detail.attributes, such as #todo or ~template=<note id>. get_source_content reads one note whole, live from Trilium: a text note's words or a code note's text as content, and each label with its value and each relation with the note id it points to as attributes. It has nothing a context can follow. When the owner links Trilium's own MCP server to this collector, its tools are yours too: with them you can create, edit and move notes and set their attributes, and each change may wait for the user's approval.";
 
 export const trilium_plugin = define_plugin<ContextPluginApi>({
   ...trilium_manifest,
@@ -283,30 +336,31 @@ export const trilium_plugin = define_plugin<ContextPluginApi>({
         const address = server_of(settings, "Trilium");
         const answers = await Promise.all(
           source_ids.map(async (id) => {
-            const response = await fetch(`${address}/etapi/notes/${encodeURIComponent(id)}`, { headers: trilium_headers(settings) });
-            if (response.status === 404) return null;
-            return note_item(address, (await read_json(response, "Trilium")) as TriliumNote);
+            const note = await fetch_note(settings, address, id);
+            return note ? note_item(address, note) : null;
           }),
         );
         return Object.fromEntries(answers.filter((item) => item !== null).map((item) => [item.source_id, item]));
       },
-      // A text note's words and a code note's text, read through ETAPI; other kinds of note, such as images, have none.
+      // A text note's words and a code note's text, read through ETAPI, for the local search index.
       content: async (source_ids) => {
         const settings = context.settings();
         const address = server_of(settings, "Trilium");
         const answers = await Promise.all(
           source_ids.map(async (id): Promise<[string, string] | null> => {
-            const response = await fetch(`${address}/etapi/notes/${encodeURIComponent(id)}`, { headers: trilium_headers(settings) });
-            if (response.status === 404) return null;
-            const note = (await read_json(response, "Trilium")) as TriliumNote;
-            if (note.type !== "text" && note.type !== "code") return null;
-            const body = await fetch(`${address}/etapi/notes/${encodeURIComponent(id)}/content`, { headers: trilium_headers(settings) });
-            if (!body.ok) return null;
-            const text = await body.text();
-            return [id, note.type === "text" ? html_text(text) : text];
+            const note = await fetch_note(settings, address, id);
+            const text = note ? await fetch_note_text(settings, address, note) : null;
+            return text === null ? null : [id, text];
           }),
         );
         return Object.fromEntries(answers.filter((answer) => answer !== null));
+      },
+      read: async (source_id) => {
+        const settings = context.settings();
+        const address = server_of(settings, "Trilium");
+        const note = await fetch_note(settings, address, source_id);
+        if (!note) return null;
+        return { ...note_item(address, note), content: (await fetch_note_text(settings, address, note)) ?? "", attributes: trilium_attributes(note) };
       },
     }),
 });

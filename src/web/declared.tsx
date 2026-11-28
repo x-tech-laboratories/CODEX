@@ -119,6 +119,11 @@ function DeclaredServerBody({ server }: { server: DeclaredServerSummary }) {
       >
         <span>{server.transport === "http" ? server.address : [server.command, ...server.args].join(" ")}</span>
       </SettingRow>
+      {server.collector ? (
+        <SettingRow label="Collector" hint="Its tools are given to this collector's specialist, which the assistant asks for this app, rather than to a specialist of their own.">
+          <span>{server.collector}</span>
+        </SettingRow>
+      ) : null}
       <SettingRow
         label="Tools"
         hint={`${server.tools.length} listed${server.listed_at ? ` on ${new Date(server.listed_at).toLocaleString()}` : ""}. ${server.sends_outside ? "They send what they are given outside this computer." : "They stay on this computer."}`}

@@ -197,6 +197,7 @@ export function declared_summary(config: DeclaredConfig = declarations()): Decla
         has_token_file: server.token_file !== "",
         command: server.command,
         args: server.args,
+        collector: server.collector,
         tools: (known?.tools ?? []).map((tool) => ({
           name: tool.name,
           description: tool.description,

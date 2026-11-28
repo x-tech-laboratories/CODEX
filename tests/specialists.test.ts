@@ -33,6 +33,9 @@ import { guidance_setting, longest_guidance } from "../src/shared/guidance/model
 import { page_only_methods, user_only_settings } from "../src/shared/page_api.ts";
 import { is_offered, offered_api } from "../src/shared/policy/policy.ts";
 import { tool_source_of } from "../src/shared/tools/model.ts";
+import { list_declared_server, use_declared } from "../src/shared/declared/current.ts";
+import { no_declarations, type DeclaredServer } from "../src/shared/declared/model.ts";
+import { mcp_connector, use_mcp_connector } from "../src/shared/mcp/connector.ts";
 import { open_plugin_tools } from "../src/shared/tools/offered.ts";
 import type { PluginTool } from "../src/shared/tools/tool.ts";
 import { start_fixture, type Fixture } from "./assistant_fixture.ts";
@@ -364,8 +367,9 @@ describe("a specialist's limits", () => {
 
 // ── Source apps ──────────────────────────────────────────────────────────────
 
-// A source app whose every item carries an order, as a hostile note might, read through a collector of its own.
-function notes_plugin(asked: string[]): ContextPlugin {
+// A source app whose every item carries an order, as a hostile note might, read through a collector of its own; with
+// `reads_whole`, it reads an item whole too.
+function notes_plugin(asked: string[], reads_whole = false): ContextPlugin {
   const item = (source_id: string) => ({ source_id, kind: "note", title: `Tiles ${source_id}`, snippet: injected, uri: `notes://${source_id}` });
   return define_plugin<ContextPluginApi>({
     id: "tests.notes",
@@ -381,6 +385,9 @@ function notes_plugin(asked: string[]): ContextPlugin {
         search: async (query) => (asked.push(`search ${query}`), [item("n1")]),
         resolve: async (ids) => (asked.push(`resolve ${ids.join(",")}`), Object.fromEntries(ids.map((id) => [id, item(id)]))),
         feeds: { list: async () => (asked.push("feeds"), [{ id: "room:kitchen", label: "Kitchen", kind: "Room" }]), items: async () => [] },
+        ...(reads_whole
+          ? { read: async (id: string) => (asked.push(`read ${id}`), { ...item(id), content: `The whole note ${id}. ${injected}`, attributes: [{ type: "label", name: "room", value: "kitchen" }] }) }
+          : {}),
       }),
   });
 }
@@ -432,7 +439,7 @@ describe("a source app's ask_ tool", () => {
     expect(ask.description).toContain("Finds the user's notes.");
     expect(ask.description).toContain("It changes nothing: ask ask_contexts to add what it reports to contexts or follow a feed.");
     const trilium = tools.specialists!.definitions.find((each) => each.name === "ask_trilium")!;
-    expect(trilium.description).toContain("calls to search it and read one item by its id there, and answers");
+    expect(trilium.description).toContain("calls to search it, read one item by its id there and read an item's whole current content and attributes, and answers");
     expect(trilium.description).not.toContain("follow_feed");
     // A plugin of the same label keeps its name, and the source app's is told apart.
     const taken = new Set(["ask_notes"]);
@@ -727,5 +734,128 @@ describe("CODEX's own specialists", () => {
     await start_run(fixture.database, null, "Suggest links", null, { tools: ["get_node_links"] });
     await wait_for_runs();
     expect(fixture.requests.at(-1)!.instructions_with_specialists).toBeUndefined();
+  });
+});
+
+// ── Linked MCP servers ───────────────────────────────────────────────────────
+
+describe("a source app with its MCP server linked", () => {
+  afterEach(() => {
+    use_declared(null);
+    use_mcp_connector(null);
+  });
+
+  const server: DeclaredServer = { id: "cfg-notes-mcp", name: "Notes server", transport: "http", address: "http://127.0.0.1:9/mcp", token_file: "", command: "", args: [], collector: "notes" };
+
+  // The Notes app with a collector that reads whole, and a declared MCP server for it, linked to it only when `collector` names it.
+  async function linked(collector = "notes"): Promise<{ fixture: Fixture; asked: string[]; served: string[] }> {
+    const served: string[] = [];
+    use_mcp_connector({
+      list_tools: async () => ({
+        tools: [
+          { name: "get_note", description: "Reads a note.", read_only: true, input_schema: { type: "object", properties: { id: { type: "string" } } } },
+          { name: "edit_note", description: "Edits a note.", read_only: false, input_schema: { type: "object", properties: { id: { type: "string" }, text: { type: "string" } }, required: ["id"] } },
+        ],
+        instructions: "The Notes server keeps notes by room.",
+      }),
+      call_tool: async (_server, name, args) => (served.push(`${name} ${JSON.stringify(args)}`), `${name} done. ${injected}`),
+      forget: async () => undefined,
+    });
+    const declared = { ...server, collector };
+    const config = { ...no_declarations, mcp_servers: [declared] };
+    use_declared({ declarations: () => config, read_secret: () => "" });
+    await list_declared_server(declared, "device", (record) => mcp_connector().list_tools(record));
+    const asked: string[] = [];
+    const fixture = start_fixture({ plugins: [notes_plugin(asked, true)] });
+    return { fixture, asked, served };
+  }
+
+  it("gives the app one ask_ tool with the collector's read calls and every tool of its server", async () => {
+    const { fixture } = await linked();
+    const sources = await open_collector_sources(fixture.database);
+    expect(sources.find((source) => source.id === "notes")).toMatchObject({ can_read: true, tools_key: "codex.mcp/mcp_cfg-notes-mcp" });
+    const tools = await tools_of(fixture, { collectors: sources });
+    expect(outside_asks(tools.specialists!.definitions)).toEqual(["ask_x_tasks", "ask_trilium", "ask_notes"]);
+    const ask = tools.specialists!.definitions.find((each) => each.name === "ask_notes")!;
+    expect(ask.description).toContain("with calls to search it, read one item by its id there, read an item's whole current content and attributes and list what a context can follow in it");
+    expect(ask.description).toContain("with every tool of its MCP server Notes server: get_note, edit_note.");
+    expect(ask.description).toContain("a change may wait for the user's approval");
+    expect(ask.description).not.toContain("It changes nothing");
+    const delegated = tools.specialists!.delegated.map((each) => each.name);
+    expect(delegated).toEqual(expect.arrayContaining(["get_source_content", "mcp_cfg-notes-mcp__get_note", "mcp_cfg-notes-mcp__edit_note"]));
+  });
+
+  it("asks a specialist with both tool sets, whose server change waits for approval and whose whole read is fenced", async () => {
+    const { fixture, asked, served } = await linked();
+    const seen: string[] = [];
+    asks_notes(fixture, async function* (request) {
+      yield* call_tool(request, "s1", "get_source_content", { source_id: "n1" }, seen);
+      yield* call_tool(request, "s2", "mcp_cfg-notes-mcp__get_note", { id: "n1" }, seen);
+      yield* call_tool(request, "s3", "mcp_cfg-notes-mcp__edit_note", { id: "n1", text: "Grey tiles" }, seen);
+      yield { type: "done", text: "Proposed the edit." };
+    });
+    const { conversation_id } = await fixture.calls.send_message(null, "Change my tiles note");
+    await wait_for_runs();
+
+    const inner = fixture.requests.find(is_specialist)!;
+    expect(inner.tools.definitions.map((each) => each.name)).toEqual([
+      "search_collector",
+      "get_source_item",
+      "get_source_content",
+      "list_collector_feeds",
+      "mcp_cfg-notes-mcp__get_note",
+      "mcp_cfg-notes-mcp__edit_note",
+    ]);
+    expect(inner.instructions).toContain("every tool of Notes's MCP server Notes server");
+    expect(inner.instructions).toContain("when one waits, say you proposed it");
+    expect(inner.instructions).toContain("How Notes works, from its author: Notes are kept by room.");
+    expect(inner.instructions).toContain("The Notes server keeps notes by room.");
+    expect(asked).toEqual(["read n1"]);
+    expect(seen[0]).toContain("The whole note n1.");
+    expect(seen[0]).toContain('"attributes":[{"type":"label","name":"room","value":"kitchen"}]');
+    expect(seen.slice(0, 2).every((result) => result.includes("<untrusted-data>"))).toBe(true);
+    expect(seen[2]).toContain("waits for the user's approval");
+    // The read ran on the server; the change did not.
+    expect(served).toEqual(['get_note {"id":"n1"}']);
+    const [proposal] = fixture.calls.list_proposals(conversation_id);
+    expect(proposal).toMatchObject({ method: "mcp_cfg-notes-mcp__edit_note", arguments: { id: "n1", text: "Grey tiles" }, status: "waiting" });
+    const answer = fixture.calls.get_conversation(conversation_id).messages[1]!;
+    expect(answer.tool_calls[0]!.calls!.map((call) => `${call.name}:${call.outcome}`)).toEqual(["get_source_content:ran", "mcp_cfg-notes-mcp__get_note:ran", "mcp_cfg-notes-mcp__edit_note:proposed"]);
+    expect(answer.sources).toContain("notes");
+  });
+
+  it("links nothing without the server's collector field, whatever its name or address", async () => {
+    const { fixture } = await linked("");
+    const sources = await open_collector_sources(fixture.database);
+    expect(sources.some((source) => source.tools_key !== undefined)).toBe(false);
+    const tools = await tools_of(fixture, { collectors: sources });
+    expect(outside_asks(tools.specialists!.definitions)).toEqual(["ask_notes_server", "ask_x_tasks", "ask_trilium", "ask_notes"]);
+    expect(tools.specialists!.definitions.find((each) => each.name === "ask_notes")!.description).toContain("It changes nothing");
+  });
+});
+
+// ── Whole reads ──────────────────────────────────────────────────────────────
+
+describe("reading an item whole", () => {
+  it("gives its content, fenced, keeps none of it, and makes the run's later changes wait", async () => {
+    const asked: string[] = [];
+    const fixture = start_fixture({ plugins: [notes_plugin(asked, true)] });
+    add_conversation_record(fixture.database, null, "general");
+    fixture.calls.set_action_level("add_context", "auto");
+    const context: ToolContext = {
+      database: () => fixture.database,
+      call: async (method, args) => (fixture.calls as unknown as Record<string, (...args: unknown[]) => unknown>)[method]!(...args),
+      conversation_id: "general",
+      presence: "conversation",
+      has_outside_content: false,
+    };
+    const tools = engine_tools(context);
+    const read = await tools.call("get_source_content", { collector: "notes", source_id: "n1" });
+    expect(read.is_error).toBe(false);
+    expect(read.result).toContain("<untrusted-data>");
+    expect(read.result).toContain("The whole note n1.");
+    expect(context.has_outside_content).toBe(true);
+    expect((await tools.call("add_context", { name: "Tiles" })).result).toContain("because this conversation has read text from other apps");
+    expect(JSON.stringify(fixture.calls.search_kept_items("whole note"))).toBe("[]");
   });
 });

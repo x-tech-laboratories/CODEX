@@ -67,7 +67,7 @@ function from_collector<Entry>(kind: string, key_of: (collector: string, entry: 
   };
 }
 
-// One item a collector read, or a note in its place saying it was withheld.
+// One item a collector read, or read whole, or a note in its place saying it was withheld.
 function screen_source_item(database: SqlDatabase, screen: Screen, args: unknown[], value: unknown): Screened<unknown> {
   const item = value as FoundItem;
   const screened = from_collector<FoundItem>("item", (collector, each) => item_id_of(collector, each.source_id))(database, screen, args, [item]);
@@ -140,6 +140,7 @@ export const result_screeners: Record<string, Screener> = {
   get_item: screen_kept_item,
   search_collector: from_collector<FoundItem>("item", (collector, item) => item_id_of(collector, item.source_id)),
   get_source_item: screen_source_item,
+  get_source_content: screen_source_item,
   list_collector_feeds: from_collector<Feed>("feed", (collector, feed) => feed_entry_key(collector, feed.id)),
   list_feed_group_news: screen_group_news,
   refresh_items: screen_report,

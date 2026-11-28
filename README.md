@@ -516,6 +516,12 @@ names none; a dev run with its own profile reads none) and, for the server, the 
   Settings or in the pane holds over it on this device alone, never synced, and survives restarts (**Use** with the
   declared model's name goes back to it); the endpoint, key and the rest stay as declared. Your own entries beside it keep working. A declared plugin is on, the declared engine answers until you choose another under
   **Settings → Assistant → Answering** (your choice holds over it from then on), the declared embedder is the one in use, and a declared MCP server's tools are listed when the file is read and with **Refresh**.
+- An MCP server may name the collector for the same app with `collector`, such as `"collector": "x-tasks"` beside
+  its `id`, `address` and `token_file` (`collector = "x-tasks";` in the NixOS module). The assistant then asks one
+  X-Tasks specialist that has both the collector's reads and every tool of the server, instead of one for each; only
+  this field links them, never the address. Each change it makes through the server still waits for your approval
+  until you set a level, and if the server's address is not this computer's, mark it **May be used after reading
+  private sources** for its tools to run once the reply has read your tasks.
 - Everything else holds as for your own entries: the marks start off (set them in Settings), an MCP server's tools
   that change something wait at `proposal`, and a hosted engine is screened. Only the page reads the declarations
   (`get_declared_config`, page-only); no token, MCP client or engine can read or change them or a file's content.
