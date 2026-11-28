@@ -32,6 +32,10 @@ export const proposing_calls: ReadonlySet<string> = new Set(["propose_entity", "
 // for the user's approval whatever any level says, and approving it runs it as the user's. They have no level.
 export const approval_only_calls: ReadonlySet<string> = new Set(["reject_graph_proposals"]);
 
+// Lists an engine reads a page at a time: the page it is given when it names no limit, one entry so it decides on each
+// before reading the next.
+export const engine_page_sizes: Readonly<Record<string, { param: string; size: number }>> = { list_graph_proposals: { param: "limit", size: 1 } };
+
 // Only the contexts, items, collectors and feeds calls, the search, what a node is linked to and what waits in the graph,
 // the blueprints' reads, the six proposing calls, rejecting the graph's proposals as a proposal, listing the interests, and listing, adding, changing and removing the assistant's own jobs; never accounts, settings, plugins, sync, backups, History, the conversations, this policy,
 // any other change to the graph or to a blueprint.
@@ -90,7 +94,7 @@ export const core_tools: Record<string, string> = {
   propose_link: "Proposes a typed link between two contexts, items or entities.",
   propose_link_drop: "Proposes ending a wrong link, by id, with why.",
   get_node_links: "Gets a node's links, with their ids.",
-  list_graph_proposals: "Lists waiting links and entities, a page at a time (limit, after).",
+  list_graph_proposals: "Gives the next waiting link or entity, one at a time (after).",
   reject_graph_proposals: "Proposes rejecting waiting links or entities by id; the user decides.",
   get_blueprint: "Gets one blueprint whole.",
   propose_blueprint: "Proposes a blueprint: the rules and steps of a task the user taught you.",

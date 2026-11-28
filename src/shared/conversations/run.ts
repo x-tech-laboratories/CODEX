@@ -18,7 +18,7 @@ import { recall_blueprints, recalled_part } from "../blueprints/recall.ts";
 import { record_uses } from "../blueprints/records.ts";
 import { new_id } from "../feature.ts";
 import { is_read_only } from "../page_api.ts";
-import { approval_only_calls, brings_outside_content, core_tools, decide, is_offered, level_of, offered_api, proposing_calls, type Decision, type Presence } from "../policy/policy.ts";
+import { approval_only_calls, brings_outside_content, core_tools, decide, engine_page_sizes, is_offered, level_of, offered_api, proposing_calls, type Decision, type Presence } from "../policy/policy.ts";
 import { clip_excerpt } from "../graph/writing.ts";
 import { engine_set_mood, mood_part, set_mood_brief, set_mood_tool, settle_reply_mood } from "../mood/mood.ts";
 import type { ProposalRead } from "../policy/model.ts";
@@ -34,7 +34,7 @@ import { namespace_mark, tool_source_of } from "../tools/model.ts";
 import { open_plugin_tools, run_tool, type OpenedTool } from "../tools/offered.ts";
 import { reply_ended, reply_started } from "./activity.ts";
 import { assistant_host, type AssistantHost } from "./host.ts";
-import { own_collectors, screened_instructions, sources_part } from "./instructions.ts";
+import { own_collectors, screened_instructions, sources_part, work_line } from "./instructions.ts";
 import { declarations } from "../declared/current.ts";
 import { mcp_key_of } from "../mcp/model.ts";
 import { add_message, list_messages } from "./messages.ts";
@@ -420,13 +420,14 @@ export function engine_tools(context: ToolContext): EngineTools {
       on_decided: (called, record) => note_nested(nest, called, record),
       results: new Map(),
       hit_call_limit: false,
-      task_list: false,
     };
     delete child.specialists;
     if (group.collector) child.bound_collector = group.collector.id;
     const tools = engine_tools(child);
     const signal = context.signal ?? new AbortController().signal;
-    const answer = await run_specialist(host, specialist_request(group, host, request, tools, group.tools.length > 0 ? plugin_tools_part(group.tools) : ""), signal, nest);
+    // A specialist doing the job keeps the conversation's task list too, told what it holds so far.
+    const list_part = child.task_list ? [work_line, task_list_part(read_task_list(context.database(), context.conversation_id))].filter(Boolean).join("\n\n") : "";
+    const answer = await run_specialist(host, specialist_request(group, host, request, tools, group.tools.length > 0 ? plugin_tools_part(group.tools) : "", list_part), signal, nest);
     // What the specialist read lowers this run as it lowered the specialist's, and a plugin's or app's answer counts as
     // that plugin's or app's; CODEX's own specialists' reads are already noted by their sources.
     if (child.has_outside_content) context.has_outside_content = true;
@@ -495,6 +496,13 @@ export function engine_tools(context: ToolContext): EngineTools {
       // A source app's specialist reads its own collector, whichever it named.
       const named = bound !== undefined && collector_read_calls.has(name) && given && typeof given === "object" ? { ...given, collector: bound } : given;
       args = positional_args(offered_api[name]!, named);
+      // A list read a page at a time gives an engine a small page when it names no limit.
+      const page = engine_page_sizes[name];
+      const limit_at = page ? offered_api[name]!.params.findIndex((param) => param.name === page.param) : -1;
+      if (page && limit_at >= 0 && typeof args[limit_at] !== "number") {
+        while (args.length < limit_at) args.push(undefined);
+        args[limit_at] = page.size;
+      }
     } catch (error) {
       return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}.`, is_error: true });
     }
