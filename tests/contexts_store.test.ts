@@ -25,6 +25,7 @@ const fake_plugin = define_plugin<ContextPluginApi>({
       kinds: ["task"],
       search: async (query) => Object.values(held).filter((item) => item.title.toLowerCase().includes(query.toLowerCase())),
       resolve: async (ids) => Object.fromEntries(ids.filter((id) => held[id]).map((id) => [id, held[id]!])),
+      read: async (id) => (held[id] ? { ...held[id]!, content: `All of ${id}.`, attributes: [{ type: "tag", name: "Seeds", value: "" }] } : null),
       feeds: {
         list: async () => [{ id: "tag:seeds", label: "Seeds", kind: "Tag" }, ...grouped],
         items: async (feed_id) => {
@@ -190,6 +191,16 @@ describe("collectors", () => {
     expect(await store.get_source_item("fake", "t2")).toMatchObject({ source_id: "t2", kept_in: [] });
     await expect(store.get_source_item("fake", "t9")).rejects.toThrow("has no item t9");
     await expect(store.get_source_item("links", "x")).rejects.toThrow("cannot read one item");
+  });
+
+  it("read one item whole from their app, live, keeping none of its content", async () => {
+    const store = open_methods();
+    const garden = store.add_context("Garden", null);
+    store.add_item([garden], "fake", held.t1!, "");
+    expect(await store.get_source_content("fake", " t1 ")).toMatchObject({ source_id: "t1", content: "All of t1.", attributes: [{ type: "tag", name: "Seeds" }], kept_in: [garden] });
+    expect(JSON.stringify(store.get_context(garden))).not.toContain("All of t1.");
+    await expect(store.get_source_content("fake", "t9")).rejects.toThrow("has no item t9");
+    await expect(store.get_source_content("links", "x")).rejects.toThrow("cannot read an item's content");
   });
 
   it("take an item typed in by hand", async () => {

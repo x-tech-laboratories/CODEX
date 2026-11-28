@@ -28,6 +28,22 @@ export interface FoundItem {
   detail?: Record<string, string>;
 }
 
+// A label, relation or tag an item has in its app, such as a Trilium note's #todo or an X-Tasks task's tag.
+export interface ItemAttribute {
+  // Such as label, relation or tag.
+  type: string;
+  name: string;
+  // A label's value, a relation's target id; empty for none.
+  value: string;
+}
+
+// One item read whole from its app now: what a collector says of it, its full text and its attributes. Read on demand
+// and never kept, by the pointer rule.
+export interface ReadItem extends FoundItem {
+  content: string;
+  attributes: ItemAttribute[];
+}
+
 // The fields a collector that takes items typed in by hand asks for, such as a web address and its title.
 export interface ManualField {
   key: string;
@@ -63,6 +79,8 @@ export interface Collector {
   search?: (query: string) => Promise<FoundItem[]>;
   // What each id is now, by source id; an id missing from the answer is gone from its app.
   resolve?: (source_ids: string[]) => Promise<Record<string, FoundItem>>;
+  // One item's whole current content and attributes, read from its app on demand and never kept; null when it is gone.
+  read?: (source_id: string) => Promise<ReadItem | null>;
   // The fields of an item typed in by hand, and the item they make.
   manual?: { fields: ManualField[]; make: (values: Record<string, string>) => FoundItem };
   // What a person does to send items here from elsewhere, such as installing a mail add-on.

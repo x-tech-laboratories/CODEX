@@ -7,7 +7,7 @@ import { and, asc, count, desc, eq, inArray, isNull, like, ne, notInArray, or, s
 import { in_transaction, type SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
-import { feed_key, item_id_of, type CollectorSummary, type Feed, type FoundItem } from "../collectors/collector.ts";
+import { feed_key, item_id_of, type CollectorSummary, type Feed, type FoundItem, type ReadItem } from "../collectors/collector.ts";
 import { open_plugin_host } from "../collectors/host.ts";
 import { blueprint_collector } from "../blueprints/model.ts";
 import { conversation_collector } from "../conversations/model.ts";
@@ -215,6 +215,17 @@ async function get_source_item(database: SqlDatabase, collector: string, source_
   if (!source.resolve) throw new Error(`The ${source.label} collector cannot read one item; search it with search_collector.`);
   const id = source_id.trim();
   const found = (await source.resolve([id]))[id];
+  if (!found) throw new Error(`${source.label} has no item ${id}.`);
+  const holders = holders_of(database, [item_id_of(collector, found.source_id)]);
+  return { ...found, kept_in: (holders.get(item_id_of(collector, found.source_id)) ?? []).map((holder) => holder.id) };
+}
+
+// One item's whole current content and attributes, read live from its app and never kept, with the contexts holding it.
+async function get_source_content(database: SqlDatabase, collector: string, source_id: string): Promise<ReadItem & { kept_in: string[] }> {
+  const source = await collector_of(database, collector);
+  if (!source.read) throw new Error(`The ${source.label} collector cannot read an item's content; read what it says of one with get_source_item.`);
+  const id = source_id.trim();
+  const found = await source.read(id);
   if (!found) throw new Error(`${source.label} has no item ${id}.`);
   const holders = holders_of(database, [item_id_of(collector, found.source_id)]);
   return { ...found, kept_in: (holders.get(item_id_of(collector, found.source_id)) ?? []).map((holder) => holder.id) };
@@ -688,6 +699,7 @@ export const contexts_feature = define_feature({
     list_collectors,
     search_collector,
     get_source_item,
+    get_source_content,
     list_collector_feeds,
     list_feed_group_news,
     export_contexts,
@@ -757,6 +769,14 @@ export const contexts_feature = define_feature({
     },
     get_source_item: {
       description: "Reads one item as its app has it now, such as a Trilium note or an X-Tasks task, by its id in that app, with the contexts already holding it; the item need not be in any context.",
+      params: [
+        { name: "collector", schema: collector_schema },
+        { name: "source_id", schema: text("The item's id in its own app, such as a Trilium note id; from a link, the id it ends with.") },
+      ],
+    },
+    get_source_content: {
+      description:
+        "Reads one item's whole current content from its app, live, such as a Trilium note's text with its labels and relations, or an X-Tasks task's full notes with its tags, due date and parent, by its id in that app, with the contexts already holding it. Nothing read is kept.",
       params: [
         { name: "collector", schema: collector_schema },
         { name: "source_id", schema: text("The item's id in its own app, such as a Trilium note id; from a link, the id it ends with.") },

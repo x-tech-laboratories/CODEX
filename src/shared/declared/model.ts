@@ -1,5 +1,6 @@
 // What this computer's configuration declares, such as a NixOS module writes: engines, the embedder, the X-Tasks and
-// Trilium collectors, the Web plugin and MCP servers, each secret named only by the path of a file holding it. Declared
+// Trilium collectors, the Web plugin and MCP servers, each of which may name the collector for its app, each secret
+// named only by the path of a file holding it. Declared
 // entries are this device's alone: never synced, never stored in the settings, and not changed from the page.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
@@ -37,6 +38,9 @@ export interface DeclaredServer {
   token_file: string;
   command: string;
   args: string[];
+  // The id of the collector for the same app, such as x-tasks, whose specialist is given this server's tools; empty for
+  // none, when the server is a tool plugin with a specialist of its own.
+  collector: string;
 }
 
 export interface DeclaredConfig {
@@ -83,6 +87,8 @@ export interface DeclaredServerSummary {
   has_token_file: boolean;
   command: string;
   args: string[];
+  // The collector whose specialist is given its tools; empty for none.
+  collector: string;
   tools: { name: string; description: string; read_only: boolean }[];
   listed_at: string;
   // The key its marks and tool choices are kept under.
@@ -168,6 +174,9 @@ function plugins_under(heading: string, value: unknown, manifests: PluginManifes
 
 const server_id_pattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+// A collector's id as plugins provide it, such as x-tasks.
+const collector_id_pattern = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
 function declared_server(entry: unknown, index: number, problems: string[]): DeclaredServer | null {
   if (!is_record(entry)) {
     problems.push(`MCP server ${index + 1} is not a set of fields.`);
@@ -179,6 +188,14 @@ function declared_server(entry: unknown, index: number, problems: string[]): Dec
     return null;
   }
   const name = text_of(entry.name) || own_id;
+  let collector = "";
+  if (entry.collector !== undefined) {
+    collector = text_of(entry.collector);
+    if (!collector_id_pattern.test(collector)) {
+      problems.push(`MCP server ${own_id}'s collector must be a collector's id, such as x-tasks or trilium; it is linked to none.`);
+      collector = "";
+    }
+  }
   const command = text_of(entry.command);
   const address = text_of(entry.address);
   if (command && address) {
@@ -195,6 +212,7 @@ function declared_server(entry: unknown, index: number, problems: string[]): Dec
       token_file: "",
       command,
       args,
+      collector,
     };
   }
   let parsed: URL;
@@ -216,6 +234,7 @@ function declared_server(entry: unknown, index: number, problems: string[]): Dec
     token_file: text_of(entry.token_file),
     command: "",
     args: [],
+    collector,
   };
 }
 
@@ -252,7 +271,14 @@ export function read_declarations(value: unknown): DeclaredConfig {
         const server = declared_server(entry, index, problems);
         if (!server) return;
         if (servers.some((each) => each.id === server.id)) problems.push(`MCP server ${server.id.slice(4)} is declared twice; the first holds.`);
-        else servers.push(server);
+        else {
+          // One server per collector, so its specialist has one app's tools.
+          if (server.collector && servers.some((each) => each.collector === server.collector)) {
+            problems.push(`MCP servers ${servers.find((each) => each.collector === server.collector)!.id.slice(4)} and ${server.id.slice(4)} both name the collector ${server.collector}; the first holds.`);
+            server.collector = "";
+          }
+          servers.push(server);
+        }
       });
   }
   return {

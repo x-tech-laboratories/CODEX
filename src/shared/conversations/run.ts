@@ -36,6 +36,7 @@ import { reply_ended, reply_started } from "./activity.ts";
 import { assistant_host, type AssistantHost } from "./host.ts";
 import { own_collectors, screened_instructions, sources_part } from "./instructions.ts";
 import { declarations } from "../declared/current.ts";
+import { mcp_key_of } from "../mcp/model.ts";
 import { add_message, list_messages } from "./messages.ts";
 import { add_thinking, keep_thinking_setting, type ConversationMessage, type AssistantStatus, type EngineSummary, type RunState, type ThinkingPiece, type ToolCallRecord } from "./model.ts";
 import {
@@ -43,6 +44,7 @@ import {
   collector_groups,
   collector_read_calls,
   guidance_part,
+  linked_keys,
   note_nested,
   own_groups,
   run_specialist,
@@ -226,11 +228,14 @@ export function engine_tools(context: ToolContext): EngineTools {
     ...[...plugin_tools.values()].map((tool) => ({ name: tool.name, description: plugin_description(tool, longest_tool_description), parameters: tool.tool.parameters })),
   ];
   // Each part of CODEX's own calls behind one ask_ tool, each plugin's tools behind another and each source app's read
-  // calls behind a third kind, which the engine offers in their place when its Specialists setting says; a hosted
-  // engine gets none for a source it may not be sent. A run offered few calls keeps CODEX's own as they are.
+  // calls, with the tools of the MCP server linked to it, behind a third kind, which the engine offers in their place
+  // when its Specialists setting says; a hosted engine gets none for a source it may not be sent. A run offered few
+  // calls keeps CODEX's own as they are.
   const taken = new Set<string>();
-  const plugin_groups = context.specialists ? specialist_groups([...plugin_tools.values()], taken) : [];
-  const source_groups = context.specialists ? collector_groups((context.collectors ?? []).filter((source) => may_send(screen, source.id)), offered, taken) : [];
+  const sendable = (context.collectors ?? []).filter((source) => may_send(screen, source.id));
+  const linked = linked_keys(sendable);
+  const plugin_groups = context.specialists ? specialist_groups([...plugin_tools.values()].filter((tool) => !linked.has(tool.key)), taken) : [];
+  const source_groups = context.specialists ? collector_groups(sendable, offered, taken, [...plugin_tools.values()]) : [];
   const codex_groups = context.specialists && !only ? own_groups(offered, source_groups.length > 0 ? collector_read_calls : new Set()) : [];
   const groups = [...codex_groups, ...plugin_groups, ...source_groups];
   const asks = new Map(groups.map((group) => [group.name, group]));
@@ -378,7 +383,7 @@ export function engine_tools(context: ToolContext): EngineTools {
     const nest: Nest = host.nest?.(name) ?? { calls: [], thought: () => undefined, changed: () => undefined };
     const child: ToolContext = {
       ...context,
-      only: new Set(group.own ? group.own.calls : group.collector ? group.collector.calls : group.tools.map((tool) => tool.name)),
+      only: new Set(group.own ? group.own.calls : [...(group.collector?.calls ?? []), ...group.tools.map((tool) => tool.name)]),
       plugin_tools: group.tools,
       own_tools: [],
       collectors: [],
@@ -396,7 +401,8 @@ export function engine_tools(context: ToolContext): EngineTools {
     asked += 1;
     if (!group.own) {
       note_source(screen.included, group.collector ? group.collector.id : tool_source_of(group.key), `${name}#${asked}`);
-      if (!(group.collector ? is_trusted(screen, group.collector.id) : group.tools[0]!.marks.trusted)) context.has_outside_content = true;
+      const trusted = (!group.collector || is_trusted(screen, group.collector.id)) && group.tools.every((tool) => tool.marks.trusted);
+      if (!trusted) context.has_outside_content = true;
     }
     if (answer.error) {
       const partial = answer.text ? `\nWhat it wrote before stopping:\n${untrusted_block(as_text(answer.text))}` : "";
@@ -490,9 +496,11 @@ export async function open_collector_sources(database: SqlDatabase): Promise<Col
   const host = await open_plugin_host(database);
   const descriptions = new Map(host.list().map((status) => [status.manifest.id, status.manifest.description ?? ""]));
   const guidance = stored_guidance(database);
+  // The MCP server the configuration links to each collector, by the server's collector field alone.
+  const linked = new Map(declarations().mcp_servers.flatMap((server) => (server.collector ? [[server.collector, mcp_key_of(server.id)] as const] : [])));
   return host
     .providers("collector")
-    .filter(({ id, value }) => !own_collectors.has(id) && (value.search || value.resolve || value.feeds))
+    .filter(({ id, value }) => !own_collectors.has(id) && (value.search || value.resolve || value.read || value.feeds))
     .map(({ id, plugin_id, value }) => ({
       id,
       label: value.label,
@@ -501,8 +509,10 @@ export async function open_collector_sources(database: SqlDatabase): Promise<Col
       own_words: value.own_words === true,
       can_search: value.search !== undefined,
       can_resolve: value.resolve !== undefined,
+      can_read: value.read !== undefined,
       can_follow: value.feeds !== undefined,
       guidance: { own: value.guidance?.trim() ?? "", own_words: value.own_words === true, user: guidance[id] ?? "" },
+      ...(linked.has(id) ? { tools_key: linked.get(id)! } : {}),
     }));
 }
 
