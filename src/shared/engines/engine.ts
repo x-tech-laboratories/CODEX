@@ -33,14 +33,16 @@ export interface EngineTools {
   // The smaller set for a model with a small context: the reads and the most-used changes, briefly described.
   core?: ToolDefinition[];
   call(name: string, args: Record<string, unknown>): Promise<ToolOutcome>;
-  // The same tools with each tool plugin's tools behind one ask_ tool of its specialist, set when the run has plugin
-  // tools; `delegated` is the plugin tools' full definitions they stand for, which the Automatic rule weighs.
+  // The same tools with each part of CODEX's own calls, each tool plugin's tools and each source app's reads behind one
+  // ask_ tool of its specialist; `delegated` is the full definitions they stand for, which the Automatic rule weighs.
   specialists?: { definitions: ToolDefinition[]; core?: ToolDefinition[]; delegated: ToolDefinition[] };
 }
 
 export interface EngineRequest {
   // Who the engine is, today's date, the open context and the rules, written by CODEX.
   instructions: string;
+  // The same for when the engine offers the specialists view, saying less of the tools that are then the specialists'.
+  instructions_with_specialists?: string;
   // Oldest first, ending with the user's new message.
   conversation: EngineTurn[];
   tools: EngineTools;

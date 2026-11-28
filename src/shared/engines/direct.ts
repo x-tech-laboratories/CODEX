@@ -107,13 +107,24 @@ export function offered_tools(tools: EngineTools, tool_set: ToolSet = "auto", co
   return full < context_size * full_share ? tools.definitions : tools.core;
 }
 
-// The run's tools with each tool plugin's behind its specialist's ask_ tool, or as they are: on always, off never, and
-// automatic when the plugin tools' full definitions and the instructions would take `full_share` of the context or more.
+// The largest context automatic always hands work to specialists at, since a small model reads every prompt slowly.
+export const small_context = 32_768;
+
+// The run's tools with CODEX's own calls and each plugin's and app's tools behind their specialists' ask_ tools, or as
+// they are: on always, off never, and automatic for a context of `small_context` or less, or when the full definitions
+// of what the asks stand for and the instructions would take `full_share` of the context or more.
 export function with_specialists(tools: EngineTools, specialists: SpecialistSet = "auto", context_size: number = direct_defaults.context_size, instructions = "", ratio = default_chars_per_token): EngineTools {
   const delegated = tools.specialists;
   if (!delegated || specialists === "off") return tools;
-  if (specialists === "auto" && Math.ceil((tools_chars(delegated.delegated) + instructions.length) / ratio) < context_size * full_share) return tools;
+  if (specialists === "auto" && context_size > small_context && Math.ceil((tools_chars(delegated.delegated) + instructions.length) / ratio) < context_size * full_share) return tools;
   return { definitions: delegated.definitions, ...(delegated.core ? { core: delegated.core } : {}), call: tools.call };
+}
+
+// The tools the engine offers by its Specialists setting, and the instructions that go with them.
+export function chosen_request(request: Pick<EngineRequest, "tools" | "instructions" | "instructions_with_specialists">, specialists: SpecialistSet = "auto", context_size: number = direct_defaults.context_size, ratio = default_chars_per_token): { tools: EngineTools; instructions: string } {
+  const tools = with_specialists(request.tools, specialists, context_size, request.instructions, ratio);
+  const instructions = tools !== request.tools && request.instructions_with_specialists ? request.instructions_with_specialists : request.instructions;
+  return { tools, instructions };
 }
 
 // ── Arguments ────────────────────────────────────────────────────────────────
@@ -208,11 +219,11 @@ function plain_of(error: unknown, options: DirectOptions): PlainError {
 
 // Works the conversation with one model and CODEX's tools, round by round, until the model answers without a tool.
 export async function* run_direct(model: ChatModel, request: EngineRequest, signal: AbortSignal, options: DirectOptions = direct_defaults): AsyncGenerator<EngineEvent> {
-  const messages: ChatMessage[] = [{ role: "system", content: request.instructions }, ...request.conversation.map((turn): ChatMessage => (turn.role === "user" ? { role: "user", content: turn.text } : { role: "assistant", content: turn.text }))];
   const key = options.calibration_key ?? "";
   let ratio = chars_per_token(key);
-  const chosen = with_specialists(request.tools, options.specialists, options.context_size, request.instructions, ratio);
-  const tools = offered_tools(chosen, options.tool_set, options.context_size, request.instructions, ratio);
+  const { tools: chosen, instructions } = chosen_request(request, options.specialists, options.context_size, ratio);
+  const messages: ChatMessage[] = [{ role: "system", content: instructions }, ...request.conversation.map((turn): ChatMessage => (turn.role === "user" ? { role: "user", content: turn.text } : { role: "assistant", content: turn.text }))];
+  const tools = offered_tools(chosen, options.tool_set, options.context_size, instructions, ratio);
   const could_use_core = chosen.core !== undefined && tools !== chosen.core;
   const told = new Set<string>();
   let said = "";

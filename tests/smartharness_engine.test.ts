@@ -92,6 +92,16 @@ const offered_names = (requests: ChatRequest[]) => new Set(requests.flatMap((req
 // ── Tools ────────────────────────────────────────────────────────────────────
 
 describe("the SmartHarness engine's tools", () => {
+  it("are the asks with the instructions written for them when the work goes to specialists", async () => {
+    const plain = tools_of(["list_contexts"], async () => ({ result: "Kitchen", is_error: false }));
+    const ask = { name: "ask_contexts", description: "Asks the contexts specialist.", parameters: { type: "object", properties: { request: { type: "string" } } } };
+    const scripted = scripted_model();
+    const request = { ...asked("Hello", { ...plain, specialists: { definitions: [ask], delegated: plain.definitions } }), instructions_with_specialists: "Rules for asking specialists." };
+    await collect(engine_with(scripted.model, { ...settings, specialists: "on" }).run(request, new AbortController().signal));
+    expect([...offered_names(scripted.requests)]).toEqual([`mcp__${bridge_name}__ask_contexts`]);
+    expect(JSON.stringify(scripted.requests[0]!.messages)).toContain("Rules for asking specialists.");
+  });
+
   it("are exactly the run's own, as mcp__codex__ tools, and the harness is never offered one of its own", async () => {
     const ran: string[] = [];
     const tools = tools_of(["list_contexts", "get_context"], async (name) => (ran.push(name), { result: "Kitchen", is_error: false }));
@@ -310,7 +320,8 @@ describe("the SmartHarness engine in CODEX", () => {
   it("answers a conversation through the action policy, its calls kept with the reply", async () => {
     const scripted = scripted_model({ calls: [{ name: "mcp__codex__add_context", arguments: { name: "Garden", parent_id: null } }], answer: "I asked to add Garden." });
     const fixture = start_fixture({ plugins: [smartharness_plugin({ make: () => scripted.model, read: async () => "" })] });
-    fixture.calls.set_setting("plugins", { "codex.smartharness": { enabled: true, settings } });
+    // With specialists off, CODEX's own calls go to the harness as they are.
+    fixture.calls.set_setting("plugins", { "codex.smartharness": { enabled: true, settings: { ...settings, specialists: "off" } } });
     fixture.calls.set_setting("engine", "smartharness");
     const { conversation_id } = await fixture.calls.send_message(null, "Add a context called Garden");
     await wait_for_runs();

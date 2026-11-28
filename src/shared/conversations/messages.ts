@@ -7,7 +7,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { drizzle_of, new_id } from "../feature.ts";
 import { parse_sources, unrecorded_source } from "../privacy/sources.ts";
-import type { ConversationMessage, ThinkingPiece, ToolCallRecord } from "./model.ts";
+import { call_path_mark, type ConversationMessage, type ThinkingPiece, type ToolCallRecord } from "./model.ts";
 import { has_conversation, refresh_conversation_items } from "./records.ts";
 import { conversation_messages } from "./schema.ts";
 
@@ -86,10 +86,32 @@ export function message_of(database: SqlDatabase, id: string): ConversationMessa
   return row ? (list_messages(database, row.conversation_id).find((message) => message.id === id) ?? null) : null;
 }
 
-// Rewrites one tool call kept on a message, such as to mark it undone.
+// ── Tool calls ───────────────────────────────────────────────────────────────
+
+// The call at an id path among a message's calls, a specialist's under its ask.
+export function call_at(calls: ToolCallRecord[], path: string): ToolCallRecord | undefined {
+  const [first, ...rest] = path.split(call_path_mark);
+  const call = calls.find((each) => each.id === first);
+  return call && rest.length > 0 ? call_at(call.calls ?? [], rest.join(call_path_mark)) : call;
+}
+
+// Every call among a message's calls with its id path, a specialist's after its ask.
+export function calls_with_paths(calls: ToolCallRecord[], above = ""): { path: string; call: ToolCallRecord }[] {
+  return calls.flatMap((call) => {
+    const path = above ? `${above}${call_path_mark}${call.id}` : call.id;
+    return [{ path, call }, ...calls_with_paths(call.calls ?? [], path)];
+  });
+}
+
+function changed_at(calls: ToolCallRecord[], path: string, change: (call: ToolCallRecord) => ToolCallRecord): ToolCallRecord[] {
+  const [first, ...rest] = path.split(call_path_mark);
+  return calls.map((call) => (call.id !== first ? call : rest.length === 0 ? change(call) : { ...call, calls: changed_at(call.calls ?? [], rest.join(call_path_mark), change) }));
+}
+
+// Rewrites one tool call kept on a message, by its id path, such as to mark it undone.
 export function update_tool_call(database: SqlDatabase, message_id: string, call_id: string, change: (call: ToolCallRecord) => ToolCallRecord): void {
   const message = message_of(database, message_id);
   if (!message) throw new Error(`There is no message ${message_id}.`);
-  const calls = message.tool_calls.map((call) => (call.id === call_id ? change(call) : call));
+  const calls = changed_at(message.tool_calls, call_id, change);
   drizzle_of(database).update(conversation_messages).set({ tool_calls: JSON.stringify(calls) }).where(eq(conversation_messages.id, message_id)).run();
 }

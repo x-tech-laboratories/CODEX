@@ -14,6 +14,9 @@ import { engine_tools, open_collector_sources, run_guidance_part, wait_for_runs,
 import {
   ask_name_of,
   collector_groups,
+  collector_read_calls,
+  own_groups,
+  own_specialist_names,
   guidance_part,
   guidance_text,
   no_guidance,
@@ -23,11 +26,12 @@ import {
   specialist_limits,
   user_request_label,
 } from "../src/shared/conversations/specialists.ts";
-import { with_specialists } from "../src/shared/engines/direct.ts";
+import { small_context, with_specialists } from "../src/shared/engines/direct.ts";
 import type { EngineEvent, EngineRequest, EngineTools } from "../src/shared/engines/engine.ts";
 import { tools_chars } from "../src/shared/engines/fitting.ts";
 import { guidance_setting, longest_guidance } from "../src/shared/guidance/model.ts";
 import { page_only_methods, user_only_settings } from "../src/shared/page_api.ts";
+import { is_offered, offered_api } from "../src/shared/policy/policy.ts";
 import { tool_source_of } from "../src/shared/tools/model.ts";
 import { open_plugin_tools } from "../src/shared/tools/offered.ts";
 import type { PluginTool } from "../src/shared/tools/tool.ts";
@@ -71,7 +75,10 @@ function two_plugins(): { fixture: Fixture; calls: string[] } {
   return { fixture, calls };
 }
 
-const is_specialist = (request: EngineRequest) => request.instructions.startsWith("You are the ");
+const is_specialist = (request: EngineRequest) => request.instructions.startsWith("You are the ") || request.instructions.startsWith("You are CODEX's ");
+
+// The ask_ tools of plugins and source apps, without those of CODEX's own calls.
+const outside_asks = (definitions: { name: string }[]) => definitions.map((each) => each.name).filter((name) => name.startsWith("ask_") && !own_specialist_names.has(name));
 
 type Step = (request: EngineRequest) => AsyncGenerator<EngineEvent>;
 
@@ -121,12 +128,12 @@ describe("the ask_ tools", () => {
     const { fixture } = two_plugins();
     fixture.calls.set_plugin_tool_offer("tests.other-tools/other", "post", "enabled", false);
     const tools = await tools_of(fixture);
-    const names = (definitions: { name: string }[]) => definitions.map((each) => each.name).filter((name) => name.includes("__") || name.startsWith("ask_"));
+    const names = (definitions: { name: string }[]) => definitions.map((each) => each.name).filter((name) => name.includes("__") || (name.startsWith("ask_") && !own_specialist_names.has(name)));
     expect(names(tools.definitions)).toEqual(["fake__lookup", "fake__post", "fake__ask_out", "other__lookup", "other__ask_out"]);
     expect(names(tools.specialists!.definitions)).toEqual(["ask_fake_tools", "ask_other_tools"]);
     // In the core set too, whatever the small-model switches say.
     expect(names(tools.specialists!.core!)).toEqual(["ask_fake_tools", "ask_other_tools"]);
-    expect(tools.specialists!.delegated.map((each) => each.name)).toEqual(names(tools.definitions));
+    expect(tools.specialists!.delegated.map((each) => each.name).filter((name) => name.includes("__"))).toEqual(names(tools.definitions));
     const ask = tools.specialists!.definitions.find((each) => each.name === "ask_fake_tools")!;
     expect(ask.description).toContain("Its tools: lookup, post, ask_out.");
     expect(ask.description).toContain("<untrusted-data>");
@@ -135,9 +142,9 @@ describe("the ask_ tools", () => {
     expect(ask.parameters).toMatchObject({ required: ["request"] });
     // A turned-off tool is not the specialist's either.
     expect(tools.specialists!.definitions.find((each) => each.name === "ask_other_tools")!.description).toContain("Its tools: lookup, ask_out.");
-    // Without a specialist host, or without plugin tools, there are none.
+    // Without a specialist host there are none, and without plugin tools only CODEX's own.
     expect((await tools_of(fixture, { specialists: undefined as never })).specialists).toBeUndefined();
-    expect((await tools_of(fixture, { plugin_tools: [] })).specialists).toBeUndefined();
+    expect(outside_asks((await tools_of(fixture, { plugin_tools: [] })).specialists!.definitions)).toEqual([]);
   });
 
   it("have safe names within the limit, never one of CODEX's own or another's", () => {
@@ -146,17 +153,21 @@ describe("the ask_ tools", () => {
     expect(ask_name_of("a".repeat(80), "k", new Set()).length).toBe(64);
   });
 
-  it("replace the plugin tools when the setting says, or when they would take half the context", async () => {
+  it("replace the tools when the setting says, on a small context, or when they would take half the context", async () => {
     const { fixture } = two_plugins();
     const tools = await tools_of(fixture);
-    const plugin_tokens = Math.ceil(tools_chars(tools.specialists!.delegated) / 2.5);
+    const delegated_tokens = Math.ceil(tools_chars(tools.specialists!.delegated) / 2.5);
+    // Instructions that bring the half above a small context, so the weighing decides.
+    const padding = "x".repeat(small_context * 2.5);
+    const half = delegated_tokens + small_context;
     expect(with_specialists(tools, "off", 1000).definitions).toBe(tools.definitions);
     expect(with_specialists(tools, "on", 10_000_000).definitions).toBe(tools.specialists!.definitions);
     expect(with_specialists(tools, "on", 10_000_000).core).toBe(tools.specialists!.core);
-    expect(with_specialists(tools, "auto", plugin_tokens * 2 + 10).definitions).toBe(tools.definitions);
-    expect(with_specialists(tools, "auto", plugin_tokens * 2 - 10).definitions).toBe(tools.specialists!.definitions);
+    expect(with_specialists(tools, "auto", small_context, "").definitions).toBe(tools.specialists!.definitions);
+    expect(with_specialists(tools, "auto", half * 2 + 10, padding).definitions).toBe(tools.definitions);
+    expect(with_specialists(tools, "auto", half * 2 - 10, padding).definitions).toBe(tools.specialists!.definitions);
     // The instructions count toward the half.
-    expect(with_specialists(tools, "auto", plugin_tokens * 2 + 10, "x".repeat(100)).definitions).toBe(tools.specialists!.definitions);
+    expect(with_specialists(tools, "auto", half * 2 + 10, `${padding}${"x".repeat(100)}`).definitions).toBe(tools.specialists!.definitions);
     const plain = { definitions: tools.definitions, call: tools.call };
     expect(with_specialists(plain, "on")).toBe(plain);
   });
@@ -253,7 +264,7 @@ describe("a specialist's run", () => {
     const { conversation_id } = await fixture.calls.send_message(null, "Weather?");
     await wait_for_runs();
     const outer = fixture.requests.find((request) => !is_specialist(request))!;
-    expect(outer.tools.specialists!.definitions.map((each) => each.name).filter((name) => name.startsWith("ask_"))).toEqual(["ask_fake_tools"]);
+    expect(outside_asks(outer.tools.specialists!.definitions)).toEqual(["ask_fake_tools"]);
     expect(results[0]).toContain("Sunny.");
     const log = fixture.calls.list_hosted_sends();
     expect(log.find((entry) => entry.kind === "tool")).toMatchObject({ tool: "Fake tools: ask_out", engine: "Fake", conversation_id });
@@ -401,7 +412,7 @@ describe("a source app's ask_ tool", () => {
   it("stands for the collector read calls, in the full and the core set, beside the plugins' and apart from their names", async () => {
     const { fixture } = with_notes();
     const tools = await tools_of(fixture, { collectors: await open_collector_sources(fixture.database) });
-    const asks = (definitions: { name: string }[]) => definitions.map((each) => each.name).filter((name) => name.startsWith("ask_"));
+    const asks = outside_asks;
     // X-Tasks and Trilium are bundled and running; links and email answer no read call.
     expect(asks(tools.specialists!.definitions)).toEqual(["ask_x_tasks", "ask_trilium", "ask_notes"]);
     expect(asks(tools.specialists!.core!)).toEqual(["ask_x_tasks", "ask_trilium", "ask_notes"]);
@@ -410,13 +421,16 @@ describe("a source app's ask_ tool", () => {
       expect(tools.specialists!.definitions.some((each) => each.name === read)).toBe(false);
       expect(tools.specialists!.core!.some((each) => each.name === read)).toBe(false);
     }
-    expect(tools.specialists!.delegated.map((each) => each.name)).toEqual(["search_collector", "get_source_item", "list_collector_feeds"]);
-    // The changes stay with the run.
-    expect(tools.specialists!.definitions.some((each) => each.name === "add_item")).toBe(true);
+    expect(tools.specialists!.delegated.map((each) => each.name)).toEqual(expect.arrayContaining(["search_collector", "get_source_item", "list_collector_feeds"]));
+    // The changes go to the contexts' specialist, which the app's ask names, and the reads do not.
+    expect(tools.specialists!.definitions.some((each) => each.name === "add_item")).toBe(false);
+    const contexts = tools.specialists!.definitions.find((each) => each.name === "ask_contexts")!;
+    expect(contexts.description).toContain("add_item");
+    expect(contexts.description).not.toContain("search_collector");
     const ask = tools.specialists!.definitions.find((each) => each.name === "ask_notes")!;
     expect(ask.description).toContain("calls to search it, read one item by its id there and list what a context can follow in it");
     expect(ask.description).toContain("Finds the user's notes.");
-    expect(ask.description).toContain("It changes nothing");
+    expect(ask.description).toContain("It changes nothing: ask ask_contexts to add what it reports to contexts or follow a feed.");
     const trilium = tools.specialists!.definitions.find((each) => each.name === "ask_trilium")!;
     expect(trilium.description).toContain("calls to search it and read one item by its id there, and answers");
     expect(trilium.description).not.toContain("follow_feed");
@@ -488,14 +502,14 @@ describe("a source app's ask_ tool", () => {
     await fixture.calls.send_message(null, "Tiles?");
     await wait_for_runs();
     const first = fixture.requests.find((request) => !is_specialist(request))!;
-    expect(first.tools.specialists?.definitions.some((each) => each.name === "ask_notes") ?? false).toBe(false);
+    expect(first.tools.specialists!.definitions.some((each) => each.name === "ask_notes")).toBe(false);
 
     fixture.calls.set_source_mark("tests.notes", "send_to_hosted", true);
     fixture.requests.length = 0;
     const { conversation_id } = await fixture.calls.send_message(null, "Tiles again?");
     await wait_for_runs();
     const outer = fixture.requests.find((request) => !is_specialist(request))!;
-    expect(outer.tools.specialists!.definitions.map((each) => each.name).filter((name) => name.startsWith("ask_"))).toEqual(["ask_notes"]);
+    expect(outside_asks(outer.tools.specialists!.definitions)).toEqual(["ask_notes"]);
     const log = fixture.calls.list_hosted_sends().find((entry) => entry.conversation_id === conversation_id && entry.kind !== "tool");
     expect(log!.included.find((each) => each.collector === "notes")!.count).toBeGreaterThanOrEqual(2);
   });
@@ -575,5 +589,143 @@ describe("guidance per plugin and source app", () => {
     expect(told).toContain("Guided says how to use it, in its own words:\n<untrusted-data>");
     expect(told).toContain("The user's own guidance for Guided, which holds where the two differ: Prefer lookup.");
     expect(run_guidance_part(await open_plugin_tools(fixture.database), [])).toContain("- Guided (tools named guided__…):");
+  });
+});
+
+// ── CODEX's own ──────────────────────────────────────────────────────────────
+
+// The orchestrator asks one of CODEX's own specialists once, then runs `after`; the specialist runs `inside`.
+function asks_own(fixture: Fixture, ask: string, inside: Step, after?: Step, results: string[] = []): string[] {
+  fixture.set_script(async function* (request) {
+    if (is_specialist(request)) {
+      yield* inside(request);
+      return;
+    }
+    yield { type: "tool_call", id: "o1", name: ask, arguments: { request: "Do it." } };
+    const outcome = await request.tools.call(ask, { request: "Do it." });
+    results.push(outcome.result);
+    yield { type: "tool_result", id: "o1", ...outcome };
+    if (after) yield* after(request);
+    yield { type: "done", text: "Asked." };
+  });
+  return results;
+}
+
+describe("CODEX's own specialists", () => {
+  it("share every offered call by feature, the source apps' reads left to those apps, so the orchestrator holds only asks", async () => {
+    const { fixture } = two_plugins();
+    const groups = own_groups(is_offered);
+    expect(groups.map((group) => group.name)).toEqual(["ask_contexts", "ask_graph", "ask_blueprints", "ask_interests", "ask_jobs"]);
+    expect(groups.flatMap((group) => group.own!.calls).sort()).toEqual(Object.keys(offered_api).sort());
+    expect(groups[0]!.own!.calls).toEqual(expect.arrayContaining(["add_item", "search_index", "search_collector"]));
+    expect(own_groups(is_offered, collector_read_calls)[0]!.own!.calls).not.toContain("search_collector");
+    expect(ask_name_of("Contexts", "tests.contexts/contexts", new Set())).toMatch(/^ask_contexts_[0-9a-f]{8}$/);
+
+    const tools = await tools_of(fixture, { collectors: await open_collector_sources(fixture.database) });
+    for (const view of [tools.specialists!.definitions, tools.specialists!.core!]) expect(view.map((each) => each.name).filter((name) => !name.startsWith("ask_"))).toEqual(["set_mood"]);
+    expect(tools.specialists!.delegated.map((each) => each.name)).toEqual(expect.arrayContaining(["add_item", "propose_entity", "fake__lookup"]));
+    const graph = tools.specialists!.definitions.find((each) => each.name === "ask_graph")!;
+    expect(graph.description).toContain("get_node_links, list_graph_proposals, propose_entity, propose_link, propose_link_drop.");
+    expect(graph.parameters).toMatchObject({ required: ["request"] });
+
+    // A run offered few calls keeps them as they are.
+    const few = await tools_of(fixture, { only: new Set(["get_node_links", "propose_link"]) });
+    expect(few.definitions.map((each) => each.name)).toEqual(["get_node_links", "propose_link"]);
+    expect(few.specialists).toBeUndefined();
+  });
+
+  it("runs one with only its part's calls under the policy, its change proposed or made with an undo under the ask", async () => {
+    const { fixture, calls } = two_plugins();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    fixture.calls.set_action_level("rename_context", "auto");
+    const seen: string[] = [];
+    const results = asks_own(fixture, "ask_contexts", async function* (request) {
+      for (const name of ["propose_entity", "set_mood", "fake__lookup", "ask_graph", "ask_contexts"]) yield* call_tool(request, `s-${name}`, name, { name: "x", request: "x", q: "x" }, seen);
+      yield* call_tool(request, "s-rename", "rename_context", { id: kitchen, name: "Cooking" }, seen);
+      yield* call_tool(request, "s-add", "add_context", { name: "Garden", parent_id: null }, seen);
+      yield { type: "done", text: "Renamed Kitchen to Cooking; proposed Garden." };
+    });
+    const { conversation_id } = await fixture.calls.send_message(null, "Rename Kitchen to Cooking and add Garden");
+    await wait_for_runs();
+
+    const inner = fixture.requests.find(is_specialist)!;
+    expect(inner.instructions).toContain("You are CODEX's contexts specialist");
+    expect(inner.instructions).toContain("Global is the root");
+    expect(inner.conversation[0]!.text).toContain("Rename Kitchen to Cooking and add Garden");
+    const names = inner.tools.definitions.map((each) => each.name);
+    expect(names).toEqual(expect.arrayContaining(["rename_context", "add_item", "search_index"]));
+    for (const absent of ["search_collector", "propose_entity", "set_mood", "fake__lookup"]) expect(names).not.toContain(absent);
+    expect(inner.tools.specialists).toBeUndefined();
+    expect(seen.slice(0, 5).every((result) => result.startsWith("There is no tool named"))).toBe(true);
+    expect(calls).toEqual([]);
+    expect(results[0]).toContain("<untrusted-data>");
+    expect(results[0]).toContain("Renamed Kitchen to Cooking");
+
+    const answer = fixture.calls.get_conversation(conversation_id).messages[1]!;
+    expect(answer.tool_calls[0]!.calls!.map((call) => `${call.name}:${call.outcome}`)).toEqual([
+      "propose_entity:refused",
+      "set_mood:refused",
+      "fake__lookup:refused",
+      "ask_graph:refused",
+      "ask_contexts:refused",
+      "rename_context:ran",
+      "add_context:proposed",
+    ]);
+    expect(fixture.calls.list_proposals(conversation_id)).toMatchObject([{ method: "add_context", status: "waiting" }]);
+    expect(fixture.calls.get_context(kitchen).name).toBe("Cooking");
+
+    // The change made under the ask is undone by its id path.
+    expect(fixture.calls.list_change_undos(conversation_id)).toEqual([{ message_id: answer.id, call_id: "o1/specialist_6", state: "possible", reason: "" }]);
+    fixture.calls.undo_change(answer.id, "o1/specialist_6");
+    expect(fixture.calls.get_context(kitchen).name).toBe("Kitchen");
+    expect(fixture.calls.list_change_undos(conversation_id)[0]).toMatchObject({ call_id: "o1/specialist_6", state: "undone" });
+    expect(() => fixture.calls.undo_change(answer.id, "o1/specialist_7")).toThrow("There is no applied change");
+  });
+
+  it("lowers the run that asked it when it read other apps' text, and adds no source of its own", async () => {
+    const { fixture } = two_plugins();
+    const kitchen = fixture.calls.add_context("Kitchen");
+    fixture.calls.add_item([kitchen], "links", { source_id: "https://example.org/tiles", kind: "link", title: injected });
+    fixture.calls.set_action_level("rename_context", "auto");
+    const after: string[] = [];
+    asks_own(
+      fixture,
+      "ask_contexts",
+      async function* (request) {
+        yield* call_tool(request, "s1", "get_context", { id: kitchen });
+        yield { type: "done", text: "It holds a link." };
+      },
+      async function* (request) {
+        after.push((await request.tools.call("rename_context", { id: kitchen, name: "Tiles" })).result);
+        yield { type: "notice", text: "Renamed." };
+      },
+    );
+    const { conversation_id } = await fixture.calls.send_message(null, "What is in Kitchen?");
+    await wait_for_runs();
+    expect(after[0]).toContain("because this conversation has read text from other apps");
+    expect(fixture.calls.get_conversation(conversation_id).messages[1]!.sources).toEqual(["links"]);
+  });
+
+  it("leave the orchestrator's instructions for specialists without what their parts say, keeping the user's notes", async () => {
+    const { fixture } = two_plugins();
+    fixture.calls.set_context_notes("global", "Always answer in French.");
+    const kitchen = fixture.calls.add_context("Kitchen");
+    fixture.calls.set_context_notes(kitchen, "Tiles are blue.");
+    fixture.calls.set_plugin_guidance(tool_source_of("tests.fake-tools/fake"), "Fake records are kept by day.");
+    await fixture.calls.send_message(kitchen, "Hello");
+    await wait_for_runs();
+
+    const request = fixture.requests[0]!;
+    const told = request.instructions_with_specialists!;
+    for (const kept of ["Always answer in French.", "Tiles are blue.", "Your tools are specialists", "Ask an app's specialist to look things up there"]) expect(told).toContain(kept);
+    for (const moved of ["propose_entity", "propose_blueprint", "propose_interest", "search_collector", "Tools whose names hold", "Fake records are kept by day."]) expect(told).not.toContain(moved);
+    expect(told.length).toBeLessThan(request.instructions.length);
+    expect(request.instructions).toContain("propose_entity");
+
+    // A run offered few calls has no such instructions.
+    const { start_run } = await import("../src/shared/conversations/run.ts");
+    await start_run(fixture.database, null, "Suggest links", null, { tools: ["get_node_links"] });
+    await wait_for_runs();
+    expect(fixture.requests.at(-1)!.instructions_with_specialists).toBeUndefined();
   });
 });

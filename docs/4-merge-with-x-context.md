@@ -226,7 +226,7 @@ dialog showing the exact topic, never ticked with others; a mood still never mak
    `node-llama-cpp` (a stub stands in), so it cannot load a GGUF file itself. The eval (recorded jobs, a hosted
    baseline) is not built: no recording of runs exists yet, since it needs an unsynced per-device switch and folder
    that both hosts lack.*
-10. **A specialist agent per plugin (marked important by the owner on 2026-11-27; two slices built 2026-11-27).**
+10. **A specialist agent per plugin (marked important by the owner on 2026-11-27; built 2026-11-27 and 2026-11-28).**
     *Built for tool plugins and MCP servers (doc 1, "Specialists"): each offered as one `ask_<plugin>` tool that runs
     the same engine afresh with only that plugin's tools, the user's message pinned and the request, under every
     safeguard of the run asking it, depth 1, with its calls nested under the ask; a per-engine **Specialists** setting,
@@ -234,10 +234,15 @@ dialog showing the exact topic, never ticked with others; a mood still never mak
     search, resolve or list feeds gets an `ask_<app>` tool whose specialist has only that app's read calls with its id
     bound, while adding and following stay with the orchestrator; and guidance per plugin and app, from the MCP server's
     own instructions (fenced), the bundled plugins' authors and the user's Markdown under Plugins, whole for the
-    specialist and shortened in the run's instructions. Left: a measured comparison on a real model, previewing a feed's
-    items without following it, and SmartHarness's native delegation.* Instead of one run seeing
-    every collector's, plugin's and MCP server's tools, each becomes a specialist with fresh context and only its own
-    tools, and the orchestrating run sees CODEX's core calls plus one "ask the <plugin> agent" tool per specialist.
+    specialist and shortened in the run's instructions. Then CODEX's own calls: grouped by feature into `ask_contexts`
+    (contexts, items, feeds and search), `ask_graph`, `ask_blueprints`, `ask_interests` and `ask_jobs`, through the same
+    machinery, so with specialists in use the orchestrator holds only `ask_` tools and `set_mood`, with shorter
+    instructions that leave each part's tool lines to its specialist; Automatic chooses specialists for any context of
+    32,768 tokens or less, which on an Odin-like setup takes the request from about 7,000 tokens to about 3,900. Left: a
+    measured comparison on a real model, previewing a feed's items without following it, and SmartHarness's native
+    delegation.* Instead of one run seeing every collector's, plugin's and MCP server's tools and CODEX's own calls,
+    each becomes a specialist with fresh context and only its own tools, and the orchestrating run sees one "ask the
+    <part> agent" tool per specialist.
     - **Why:** SmartHarness built this (its doc 1, "Agents") and measured it: on its scaled eval (26 servers, 116 tools,
       22 tasks) a 4B model passed 0/66 with one flat tool list and 54/66 with specialists, with tool choice at 18%
       against 91%. CODEX's flat list grows with every plugin added.

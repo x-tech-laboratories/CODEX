@@ -522,6 +522,15 @@ describe("a specialist's calls", () => {
     expect(inside.querySelectorAll(".tool-call").length).toBe(2);
   });
 
+  it("offer a change the specialist made for undoing, found by its id path under the ask", () => {
+    const nested = [{ id: "specialist_1", name: "rename_context", arguments: { name: "Cooking" }, result: "Done.", is_error: false, outcome: "ran" as const, applied_by: "engine_auto" as const }];
+    const asked: string[] = [];
+    const undo_of = (call_id: string) => (asked.push(call_id), { message_id: "m1", call_id, state: "impossible" as const, reason: "Cooking has changed since." });
+    render(<ToolCallRow call={{ id: "t1", name: "ask_contexts", arguments: {}, result: "Renamed.", is_error: false, outcome: "ran", calls: nested }} undo_of={undo_of} />);
+    expect(asked).toEqual(["t1/specialist_1"]);
+    expect(screen.getByText("Cooking has changed since.")).toBeTruthy();
+  });
+
   it("show the specialist's thinking among its calls, where it happened", () => {
     const nested = [{ id: "specialist_1", name: "mcp_budget__list_budgets", arguments: {}, result: "main", is_error: false, outcome: "ran" as const }];
     const thinking = [

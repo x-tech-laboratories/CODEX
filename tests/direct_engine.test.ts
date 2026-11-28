@@ -150,6 +150,23 @@ describe("the direct loop", () => {
   });
 });
 
+describe("the direct loop with specialists", () => {
+  it("offers the asks with the instructions written for them when it hands work to specialists, and neither when not", async () => {
+    const plain = tools();
+    const ask = { name: "ask_contexts", description: "Asks the contexts specialist.", parameters: { type: "object", properties: { request: { type: "string" } } } };
+    const given: EngineRequest = { ...request({ ...plain, specialists: { definitions: [ask], delegated: plain.definitions } }), instructions_with_specialists: "You are CODEX, with specialists." };
+
+    const model = new ScriptedModel([answer("Asked."), answer("Listed.")]);
+    await collect(run_direct(model, given, new AbortController().signal, { ...options, specialists: "on" }));
+    await collect(run_direct(model, given, new AbortController().signal, { ...options, specialists: "off" }));
+
+    expect(model.requests[0]!.messages[0]).toEqual({ role: "system", content: "You are CODEX, with specialists." });
+    expect(model.requests[0]!.tools!.map((tool) => tool.name)).toEqual(["ask_contexts"]);
+    expect(model.requests[1]!.messages[0]).toEqual({ role: "system", content: "You are CODEX." });
+    expect(model.requests[1]!.tools!.map((tool) => tool.name)).toEqual(["list_contexts"]);
+  });
+});
+
 describe("the direct loop with a small model", () => {
   afterEach(() => forget_calibrations());
 
