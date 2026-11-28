@@ -563,8 +563,12 @@ column (a JSON list, migration `20261127230412_thinking`), moved back by the spa
 (`thinking_placed_in`), whole and with no size cap, so they sync with the message and go wherever it goes. The synced
 setting `keep_thinking` (on unless set to false; Settings → Assistant → Engine → **Keep thinking**) turns that off:
 thinking still streams and stands in the run, but the answer keeps none. A specialist's thinking is kept the same way
-on its `ask_` call's own `thinking`, placed among its nested calls (its text is not kept, so `text_at` is 0), and
-reaches open pages with the nest's next change. Thinking is never sent back: `screened_turns` builds every engine's
+on its `ask_` call's own `thinking`, placed among its nested calls (its text is not kept, so `text_at` is 0). While it
+runs, open pages hear it start (`specialist_started`, with its label) and its thinking and text stream to them as
+`specialist_reasoning` and `specialist_text` events tagged with the ask call's id and how many of its calls came
+before; `stream_throttle` (`specialists.ts`) joins the pieces and sends them at most every 200 ms, the thinking kept on
+the ask's call as each piece is sent and all of it sent before the ask's next `tool_result`, so a page loading the
+run and the events after it agree. The text only ever reaches the page: nothing of it is stored or sent to an engine. Thinking is never sent back: `screened_turns` builds every engine's
 conversation from the messages' text alone, which a test holds for the Anthropic, OpenAI-compatible and SmartHarness
 engines. It is not indexed for search, and, being the model's own text derived from the conversation, it carries the
 answer's `sources` like the text beside it.
@@ -933,7 +937,8 @@ specialists (its doc 1, "Agents").
   or specialist cannot help, then say plainly what was found, what failed and why, never repeating a call unchanged
   (`give_up_line`).
 - **The record.** The ask's `ToolCallRecord` holds its specialist's calls in `calls`, each with its outcome, proposal
-  and result as for the run's own; open pages hear each change as a `tool_result` event for the ask. The pane lists
+  and result as for the run's own; open pages hear each change as a `tool_result` event for the ask, and its thinking
+  and text as they stream (see "Conversations and runs"). The pane lists
   them under "The specialist's calls" inside the ask's row (`ToolCallRow`), a proposal shown as the user decided it.
   A change a specialist of CODEX's own made is undone like the run's own: `list_change_undos` names it by its id path,
   the ask's call id and its own joined by `/` (`o1/specialist_6`), which `undo_change` takes, and its row offers Undo; a
@@ -961,9 +966,16 @@ over it until the kept answer arrives; a reply keeps being written while the use
 folded rows, each where it was made in the reply (a call keeps `text_at`, how far into the reply's text it came; one
 kept before that was recorded shows ahead of the text), a proposed one reading as the user decided it; waiting proposals are cards with Approve and Reject; the message box sends on Enter. While a reasoning model
 thinks, a folded Thinking… row opens to about ten lines of its thinking, scrolling and following the newest text
-unless the user has scrolled up; each stretch stays where it happened (`reply_parts` places it among the text and
-calls), folded under Thinking once the reply ends and after a reload, and a specialist's stretches show among its
-calls inside the ask's row; a reply's notices show as
+unless the user has scrolled up, and never handing its scroll on to the messages; each stretch stays where it happened
+(`reply_parts` places it among the text and calls), folded under Thinking once the reply ends and after a reload, and a
+specialist's stretches show among its calls inside the ask's row. While a specialist works its ask's row opens and stays
+open, its summary says "Asking the <label> specialist…" with the time so far beside an indeterminate X-Libs
+`ProgressBar`, and its thinking and text so far stream in among its calls (`nested_parts`, the text after the
+thinking before each call); the page keeps the text in the live run's `specialists`, by the ask's id, and drops it once
+the kept answer arrives. The messages, and each Thinking box, follow new content only while the reader is at their
+bottom (`use_pinned_scroll` in `pinned_scroll.ts`): only scrolling up lets go, so content growing or the box's own
+scroll never does, and once let go nothing moves the reader until they come back to the bottom or press **Jump to
+latest**; another conversation opens at its end. A reply's notices show as
 banners above it, and an error says what happened in plain words with the raw detail under Details. Settings gains an
 Assistant category: Engine (which engine answers, whether it is local or hosted, and each engine plugin's own settings
 in its row), Action policy (each change's level, the two riskier levels badged) and Sent to hosted engines (the log).

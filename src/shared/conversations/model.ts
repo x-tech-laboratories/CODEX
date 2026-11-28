@@ -168,6 +168,11 @@ export type ConversationEvent = { conversation_id: string; run_id: string } & (
   | { type: "notice"; text: string }
   | { type: "tool_call"; call: ToolCallRecord }
   | { type: "tool_result"; call: ToolCallRecord }
+  // A specialist asked through the ask call with this id: that it started, and its thinking and text as they stream,
+  // each after how many of its calls.
+  | { type: "specialist_started"; call_id: string; label: string }
+  | { type: "specialist_reasoning"; call_id: string; text: string; calls_before: number }
+  | { type: "specialist_text"; call_id: string; text: string; calls_before: number }
   | { type: "finished"; error: string; error_detail?: string }
 );
 
