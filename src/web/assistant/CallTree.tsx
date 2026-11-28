@@ -152,7 +152,10 @@ export function CallTree({ calls: made, decisions, undo_of, specialists = {} }: 
   const shown = nodes.find((node) => node.id === shown_id) ?? null;
   const is_ask = (node: CallNode) => node.call.calls !== undefined || specialists[node.id] !== undefined;
   const label_of = (node: CallNode) => specialists[node.id]?.label || label_of_ask(node.call.name);
-  const words_of = (call: ToolCallRecord): [string, string] => (call.outcome === "proposed" && call.proposal_id && decided_words[decisions?.get(call.proposal_id) ?? "pending"]) || [outcome_words[call.outcome], outcome_tones[call.outcome]];
+  const words_of = (call: ToolCallRecord): [string, string] => {
+    const decided = call.outcome === "proposed" && call.proposal_id ? decisions?.get(call.proposal_id) : undefined;
+    return (decided && decided_words[decided]) || [outcome_words[call.outcome], outcome_tones[call.outcome]];
+  };
 
   return (
     <div className="call-tree">
