@@ -244,7 +244,8 @@ drawn but not links). The filter takes node kinds or types, link types, statuses
 and closed links; it caps the nodes at 300 (up to 5000), contexts first, then by link count, and says how many nodes
 and links were not shown. `get_node_links(node)` lists every link of a node of any status with the node at its other
 end, `list_graph_proposals(context_id?, limit?, after?)` what waits, links then entities, a page at a time when a limit
-or the id of the last one seen is given, with how many are `left`, and `list_link_counts(context_id)` each held item's
+or the id of the last one seen is given, with how many are `left` (an engine naming no limit gets one at a time,
+`engine_page_sizes` in the policy), and `list_link_counts(context_id)` each held item's
 open links.
 
 Writing: `change_graph_link`, `close_graph_link`, `remove_graph_link`, `rename_entity` and `remove_entity`, which takes
@@ -659,7 +660,8 @@ the desktop daemon serves its backups only over its socket to the window.
 A conversation keeps the assistant's task list for the job in hand (`conversations/task_list.ts`, the `task_list`
 column): its steps in order, each with its status (`todo`, `doing`, `done` or `skipped`) and a short note of what was
 decided. A run neither isolated nor kept to a few named tools is offered `set_task_list`, which replaces the list
-through `set_conversation_task_list` and gives it back; a specialist is not. A run starts with any list an earlier
+through `set_conversation_task_list` and gives it back; a specialist it asks keeps the same list, told in its
+instructions how to work through it and what it holds so far. A run starts with any list an earlier
 reply left open in its instructions, and after each of its other calls is told where the list stands, or, a few calls
 into a job with none, to write one. Every run's and specialist's instructions say to work one step at a time and to
 decide on one entry of a list before reading the next. A reply that stops short with steps open says to send "carry

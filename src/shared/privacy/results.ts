@@ -107,10 +107,10 @@ function screen_node_links(_database: SqlDatabase, screen: Screen, _args: unknow
 // What waits in the graph: each proposed link withheld when it or a node at either end carries a source that may not
 // be sent, and each proposed entity on its own sources.
 function screen_graph_proposals(_database: SqlDatabase, screen: Screen, _args: unknown[], value: unknown): Screened<unknown> {
-  const { links, entities } = value as GraphProposals;
+  const { links, entities, left } = value as GraphProposals;
   const kept_links = screen_sourced(screen, links, (link) => [...link.sources, ...link.from_node.sources, ...link.to_node.sources], (link) => `link:${link.id}`, () => "link");
   const kept_entities = screen_sourced(screen, entities, (entity) => entity.sources, (entity) => `entity:${entity.id}`, () => "entity");
-  return { value: { links: kept_links.value, entities: kept_entities.value }, sources: new Set([...kept_links.sources, ...kept_entities.sources]), ...merge_withheld([kept_links, kept_entities]) };
+  return { value: { links: kept_links.value, entities: kept_entities.value, left }, sources: new Set([...kept_links.sources, ...kept_entities.sources]), ...merge_withheld([kept_links, kept_entities]) };
 }
 
 // A blueprint written during a run carries what that run had read until the user makes it theirs; an active one is

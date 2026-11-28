@@ -198,7 +198,7 @@ export const own_specialists: readonly OwnSpecialist[] = [
     calls: ["get_node_links", "list_graph_proposals", "propose_entity", "propose_link", "propose_link_drop", "reject_graph_proposals"],
     use: "Use it to see how contexts, items and entities (people, organisations, topics, places) are linked and what waits for the user, or to propose an entity, a link, the end of a wrong link or rejecting a wrong proposal; it only proposes.",
     guidance:
-      "CODEX keeps a graph linking contexts, items and entities: people, organisations, topics and places. get_node_links shows a node's links with their ids and list_graph_proposals what waits, a page at a time: give limit for how many and after for the id of the last one seen. propose_entity, propose_link and propose_link_drop, which ends a wrong or outdated link, only propose; reject_graph_proposals proposes rejecting waiting proposals that are wrong or irrelevant, by id; the user decides each.",
+      "CODEX keeps a graph linking contexts, items and entities: people, organisations, topics and places. get_node_links shows a node's links with their ids and list_graph_proposals what waits, one at a time: decide on the one it gives and act, then call it again with after set to that one's id for the next. propose_entity, propose_link and propose_link_drop, which ends a wrong or outdated link, only propose; reject_graph_proposals proposes rejecting waiting proposals that are wrong or irrelevant, by id; the user decides each.",
   },
   {
     name: "ask_blueprints",
@@ -497,10 +497,12 @@ export async function run_specialist(host: SpecialistHost, request: EngineReques
   return { text: (final ?? text).trim(), error, rounds };
 }
 
-// The request a specialist's engine is given: its instructions, the brief, and only its plugin's tools or app's calls.
-export function specialist_request(group: SpecialistGroup, host: SpecialistHost, request: string, tools: EngineTools, tools_part: string): EngineRequest {
+// The request a specialist's engine is given: its instructions, with how to keep the conversation's task list when it
+// keeps one, the brief, and only its plugin's tools or app's calls.
+export function specialist_request(group: SpecialistGroup, host: SpecialistHost, request: string, tools: EngineTools, tools_part: string, list_part = ""): EngineRequest {
+  const instructions = specialist_instructions(group, tools_part, { max_rounds: host.max_rounds ?? specialist_limits.max_rounds, max_tool_calls: host.max_tool_calls ?? specialist_limits.max_tool_calls });
   return {
-    instructions: specialist_instructions(group, tools_part, { max_rounds: host.max_rounds ?? specialist_limits.max_rounds, max_tool_calls: host.max_tool_calls ?? specialist_limits.max_tool_calls }),
+    instructions: list_part ? `${instructions}\n\n${list_part}` : instructions,
     conversation: [{ role: "user", text: specialist_brief(host.user_message, request) }],
     tools,
     limits: { max_rounds: host.max_rounds ?? specialist_limits.max_rounds },

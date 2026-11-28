@@ -1,5 +1,5 @@
 // The assistant's task list: kept with its conversation, written by the run's set_task_list, which gives it back,
-// told to the next reply while steps are open, reminded of after each call, never a specialist's, and cleared from the
+// told to the next reply while steps are open, reminded of after each call, kept by a specialist too, and cleared from the
 // page; with the rule to work one step at a time in every run's and specialist's instructions.
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -121,7 +121,7 @@ describe("a run's task list", () => {
     expect((await tools.call("list_contexts", {})).result).not.toContain("[Task list:");
   });
 
-  it("is not a specialist's, nor a run's that does not keep one", async () => {
+  it("is not a run's that does not keep one", async () => {
     const fixture = start_fixture();
     const { tools } = await tools_of(fixture, false);
     expect(tools.definitions.map((each) => each.name)).not.toContain("set_task_list");

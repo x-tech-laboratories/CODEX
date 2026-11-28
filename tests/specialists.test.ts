@@ -193,7 +193,7 @@ describe("a specialist's run", () => {
     await wait_for_runs();
 
     const inner = fixture.requests.find(is_specialist)!;
-    expect(inner.tools.definitions.map((each) => each.name)).toEqual(["fake__lookup", "fake__post", "fake__ask_out", "read_tool_result"]);
+    expect(inner.tools.definitions.map((each) => each.name)).toEqual(["fake__lookup", "fake__post", "fake__ask_out", "set_task_list", "read_tool_result"]);
     expect(inner.tools.core).toBeUndefined();
     expect(inner.tools.specialists).toBeUndefined();
     expect(inner.conversation).toEqual([{ role: "user", text: `${user_request_label}:\nWhere are my tiles?\n\nThe assistant's request to you:\nFind the tiles.` }]);
@@ -546,7 +546,7 @@ describe("a source app's ask_ tool", () => {
     await wait_for_runs();
 
     const inner = fixture.requests.find(is_specialist)!;
-    expect(inner.tools.definitions.map((each) => each.name)).toEqual(["search_collector", "get_source_item", "list_collector_feeds", "read_tool_result"]);
+    expect(inner.tools.definitions.map((each) => each.name)).toEqual(["search_collector", "get_source_item", "list_collector_feeds", "set_task_list", "read_tool_result"]);
     for (const definition of inner.tools.definitions.slice(0, 3)) expect(Object.keys((definition.parameters.properties ?? {}) as object)).not.toContain("collector");
     expect(inner.instructions).toContain("You are the Notes specialist");
     expect(inner.instructions).toContain("How Notes works, from its author: Notes are kept by room.");
@@ -808,6 +808,35 @@ describe("CODEX's own specialists", () => {
     await wait_for_runs();
     expect(fixture.requests.at(-1)!.instructions_with_specialists).toBeUndefined();
   });
+
+  it("keeps the conversation's task list in a specialist, which reads waiting proposals one at a time", async () => {
+    const { fixture } = two_plugins();
+    const seen: string[] = [];
+    asks_own(fixture, "ask_graph", async function* (request) {
+      yield* call_tool(request, "s1", "propose_entity", { kind: "person", name: "Ada" }, seen);
+      yield* call_tool(request, "s2", "propose_entity", { kind: "person", name: "Bob" }, seen);
+      yield* call_tool(request, "s3", "list_graph_proposals", {}, seen);
+      yield* call_tool(request, "s4", "set_task_list", { steps: [{ step: "Decide on Ada", status: "done", note: "kept" }, { step: "Decide on Bob" }] }, seen);
+      yield* call_tool(request, "s5", "list_graph_proposals", { limit: 5 }, seen);
+      yield { type: "done", text: "Kept Ada." };
+    });
+    const { conversation_id } = await fixture.calls.send_message(null, "Review the proposed links");
+    await wait_for_runs();
+
+    const inner = fixture.requests.find(is_specialist)!;
+    expect(inner.tools.definitions.map((each) => each.name)).toContain("set_task_list");
+    expect(inner.instructions).toContain("Work one step at a time: for a job of several steps, list them with set_task_list");
+    // An engine naming no limit is given one proposal and how many are left; a limit it names is kept.
+    const first = JSON.parse(seen[2]!.split("\n[")[0]!) as { entities: { name: string }[]; left: number };
+    expect(first.entities.map((each) => each.name)).toEqual(["Ada"]);
+    expect(first.left).toBe(1);
+    expect(seen[4]).toMatch(/\n\[Task list: 1 of 2 steps closed; now step 2: “Decide on Bob”\./);
+    expect((JSON.parse(seen[4]!.split("\n[")[0]!) as { entities: unknown[] }).entities).toHaveLength(2);
+    expect(fixture.calls.get_conversation(conversation_id).task_list).toEqual([
+      { step: "Decide on Ada", status: "done", note: "kept" },
+      { step: "Decide on Bob", status: "todo", note: "" },
+    ]);
+  });
 });
 
 describe("paging a specialist's results", () => {
@@ -837,7 +866,7 @@ describe("paging a specialist's results", () => {
 
     expect(seen[0]).toContain("lookup answered.");
     expect(seen[0]).toContain('of fake__lookup call "s1". That is the end.]');
-    expect(seen[1]).toBe('Tool error: there is no result with call_id "o1" in this run. The calls kept in this run are: s1.');
+    expect(seen[1]!.split("\n")[0]).toBe('Tool error: there is no result with call_id "o1" in this run. The calls kept in this run are: s1.');
     // The run reads its specialist's answer back, fenced as it was.
     expect(seen[2]).toContain("<untrusted-data>");
     expect(seen[2]).toContain('of ask_fake_tools call "o2". That is the end.]');
@@ -932,6 +961,7 @@ describe("a source app with its MCP server linked", () => {
       "list_collector_feeds",
       "mcp_cfg-notes-mcp__get_note",
       "mcp_cfg-notes-mcp__edit_note",
+      "set_task_list",
       "read_tool_result",
     ]);
     expect(inner.instructions).toContain("every tool of Notes's MCP server Notes server");
