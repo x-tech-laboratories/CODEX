@@ -97,6 +97,110 @@ A project uses domains rather than being one: in a fitness project, "research a 
 
 **Not built.** First version: projects as plain records the user creates by hand, worked by the scheduler; model-proposed tasks only once that loop works. See doc 3, "Projects".
 
+## How does it plan a job?
+
+Designed 2026-11-28, not built (doc 3, "Planning"). Today the orchestrator plans in its head and keeps a flat task list (`conversations/task_list.ts`): steps as prose with a status and a note, which the model works through itself. Two planning tests with inkling-2-mini showed what prose plans get wrong: a tool named wrongly mid-plan, a loop written as a re-read, a duplicate check whose result fed nothing, and "once" or "for each" fields that disagreed with the briefs. The plan schema below lets the harness, not the model, drive the calls: the model writes the plan once, the harness checks it, runs it step by step, and shows it as the task list.
+
+### Decided shape
+
+- **JSON, as the arguments of a `set_plan` tool.** Native tool calls already work on these models (93 of 93 calls native, [tool-calling review](done/research-tool-calling-and-delegation-review.md), F1), and grammar-constrained decoding can force the shape. A DSL or pseudocode would need its own parser and grammar, in a language the model has never seen. The pane and the answer may still show a plan as one line per step.
+- **A flat list of steps with ids.** Nesting comes only from `for_each` over one step and from `plan` steps, so a small model never writes a tree.
+- **Typed outputs.** Each step declares what it gives. Without them the harness cannot check a reference, loop over a list or test a condition; the outside example reviewed on 2026-11-28 read `s1.premium` in its prose and `s1.monthly_premium` in its condition, and nothing could say which was right.
+- **The harness owns retries, order and read-or-change.** The model never chooses attempt counts, never declares whether a step changes something (the tool's own `changes` flag says, as for the action policy), and order follows from the references.
+
+### Steps
+
+Each step has an `id` (letters, digits and `_`, unique in the plan) and exactly one of these keys:
+
+| Key | What the harness does |
+| --- | --- |
+| `agent` | Calls the specialist with that label (`car` for `ask_car`) with `task`, its references filled in. A label not offered is an error. |
+| `call` | Calls an offered tool directly with `args`, for a run that holds direct tools. |
+| `think` | Makes one model call with fresh context: the instruction and only the values named in `from` or referenced in it. For extracting, comparing or judging text already in hand; no tools. |
+| `compute` | Works out a value in code with no model (below). |
+| `ask_user` | Asks the user the question, pauses the plan, and gives the answer as its output. |
+| `plan` | When reached, plans the rest of a goal from the values in `from` and puts the new steps in its place (lazy planning). |
+| `answer` | Writes the reply to the user from the values in `from`. The last step of a plan; at most one. |
+
+Any step may also carry:
+
+- `gives`: the output's shape, written as an example (below). `answer` and `ask_user` give text and need none.
+- `from`: values the step reads that are not referenced in its text, such as the inputs of a `think` or `answer`.
+- `depends_on`: optional ids to wait for. The harness adds every step a step references and rejects a dependency on itself or a later step; `depends_on` is needed only for order with no data between, such as one change that must follow another.
+- `for_each`: a reference to a list. The step runs once per item, with `{{item.field}}` for the item's values; its output is the list of each run's output.
+- `parallel`: at most this many runs of a `for_each` at once. Defaults: reads 4, changes 1.
+- `when`: a condition (below). When it is false the step is skipped.
+- `stop_if_empty`: a field of the step's own output; when it is empty, the plan stops there and the answer says why.
+- `on_fail`: `stop` (the default), `skip`, `ask_user` or `replan`.
+
+**Output shapes.** `gives` is an object whose values are `text`, `number`, `date`, `yes/no`, or a one-item list such as `[{ "id": "text", "title": "text" }]` for a list of that shape. The harness turns it into a JSON Schema and has a specialist or `think` step give its final answer in that shape, through structured output where the engine has it and a checked parse with one repair turn where it does not. Values from a specialist stay outside data: a value filled into a later brief goes inside the untrusted fence.
+
+**References.** `{{step.field}}` or `{{step.field.sub}}` inside `task`, `think`, `args` values and `answer`; `{{item.field}}` inside a `for_each` step; `{{request}}` for the user's message. Inside `from` and `when` a reference is written bare (`s1.monthly_premium`).
+
+**Batch or per item.** A `for_each` step runs per item. A step whose text references the whole list (`{{found.tasks}}`) runs once with the list, so a plan cannot say "for each" while its brief sends the batch.
+
+**Conditions.** `when` is `{ "field": <reference>, "op": <op>, "value": <value> }`, or `{ "all": [...] }` or `{ "any": [...] }` of them. Ops: `eq`, `ne`, `gt`, `gte`, `lt`, `lte` (numbers and dates), `contains` (text or list), `empty` and `not_empty` (no value). The checker rejects a field that is not a declared output and an op that does not fit its type. A threshold lives only in `when`, never also in the step's prose.
+
+**Skipped and failed steps.** A skipped step counts as finished with no output: a step that depends on it still runs, a reference to its output reads as empty (an empty list, empty text, no number), and a `when` on it sees `empty`. A failed step with `on_fail: skip` is treated the same; with `stop` the plan ends and the answer says what was done, what failed and why; `ask_user` asks how to go on; `replan` hands the plan so far, with the failure, back to the planner once.
+
+**Retries.** Set by the harness by step kind, never by the plan: a tool or specialist call is not repeated unchanged (`give_up_line`); a `think` step whose answer fails its shape gets one repair turn, and may later be sampled several times with a vote (MAKER, [task-decomposition research](done/done-research-task-decomposition-harnesses.md)).
+
+**Compute ops.** `{ "compute": "<op>", "args": [...] }`, each argument a reference or a literal: `add`, `subtract`, `multiply`, `divide`, `round`, `sum` (a number field over a list), `count`, `min`, `max`, `days_between`, `filter` (a list's items where `{ field, op, value }` holds of each), and `difference` (items of a list whose `key` field matches no item of another). Arithmetic and comparisons cost no model call and cannot be wrong. Matching by exact field value is brittle for text such as titles; a fuzzy match stays a `think` step.
+
+### Checks before it runs
+
+The plan is checked whole before any step runs, and refused in plain words, as `clean_steps` refuses a task list, with one repair turn: ids unique; each `agent` a label offered and each `call` a tool offered; every reference to an earlier step and a field its `gives` declares; `for_each` on a list; `when` fields declared and ops fitting their types; no cycles; at most 40 steps (`most_steps`); `plan` steps nested at most 3 deep (EffGen's cap, same research); at most one `answer`, and last.
+
+### Running it
+
+Steps run in dependency order. Steps that do not depend on each other may run at once on an engine that allows it; with one local model behind one lock they run one after another in any order, so "parallel" means independent, not simultaneous. A change waits for approval as any change does, and its step shows `waiting`; a step that depends on it waits too. Each step's output is kept with the plan, so a reply that stops short carries on from the open step, as the task list does now.
+
+The task list becomes the plan's rendering: each step a `TaskStep` whose text is its task or instruction and whose note is a short form of its output, with `waiting` and `failed` added to the statuses. The pane and the reminders keep working.
+
+A blueprint can carry a plan whose references include `{{request.<slot>}}`; one `think` step fills the slots from the request, so a known shape runs as a fixed pipeline with no planning (open question 1 in SmartHarness's doc 2). A plan that ran well can be offered as a blueprint.
+
+The code goes in `conversations/plan.ts` beside `task_list.ts`, since the orchestrator holding the `ask_` tools is CODEX's `run.ts`; SmartHarness's `decompose` is separate. Its prompt text goes in `prompts/prompts.json`.
+
+### Examples
+
+The Trilium note to X-Tasks request from the tests:
+
+```json
+{ "steps": [
+  { "id": "note", "agent": "trilium", "task": "Read the Trilium note with id 12345. Give its title and full content.",
+    "gives": { "title": "text", "content": "text" } },
+  { "id": "existing", "agent": "x_tasks", "task": "List every open task with its id and title.",
+    "gives": { "tasks": [{ "id": "text", "title": "text" }] } },
+  { "id": "found", "think": "List each task in the note that is not already in X-Tasks.",
+    "from": ["note.content", "existing.tasks"],
+    "gives": { "tasks": [{ "title": "text", "details": "text" }] }, "stop_if_empty": "tasks" },
+  { "id": "save", "agent": "x_tasks", "for_each": "found.tasks",
+    "task": "Add this task to X-Tasks: {{item.title}}. Details: {{item.details}}", "gives": { "id": "text" } },
+  { "id": "reply", "answer": "Say which tasks were added and which were already there.", "from": ["save", "existing.tasks"] }
+] }
+```
+
+The insurance example reviewed on 2026-11-28, rewritten:
+
+```json
+{ "steps": [
+  { "id": "s1", "agent": "car", "task": "Give the auto insurance renewal date and monthly premium.",
+    "gives": { "renewal_date": "date", "monthly_premium": "number" } },
+  { "id": "s2", "agent": "finances", "task": "Give this month's discretionary budget headroom.",
+    "gives": { "headroom": "number" } },
+  { "id": "s3", "compute": "subtract", "args": ["s2.headroom", "s1.monthly_premium"],
+    "when": { "field": "s1.monthly_premium", "op": "gt", "value": 150 }, "gives": { "left": "number" } },
+  { "id": "s4", "answer": "Say when the insurance renews and whether action is needed.",
+    "from": ["s1.renewal_date", "s1.monthly_premium", "s3.left"] }
+] }
+```
+
+### Open
+
+- **Can a 4B model write it?** The schema is larger than the task list. Measure first whether inkling-2-mini and the 4B model write valid plans for the test requests, how many need the repair turn, and how many tokens the tool's schema costs in a 6,144-token window.
+- **References in text or as objects.** `{{s1.field}}` inside prose is easy to write; `{ "ref": "s1.field" }` is easier to check but harder for a small model. Start with text and count reference errors.
+- **When to plan at all.** A request answered with one call needs no plan; whether the harness or the model decides (a gate in code, `decide`, or the model choosing to call `set_plan`) is open.
+
 ## How should it talk to the user?
 
 Open for debate; nothing here is decided. Codex is meant to be a long-running personal assistant (doc 0), not only a request-in, answer-out tool, which argues for a stable voice and for remembering the conversation it is in.

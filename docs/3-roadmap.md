@@ -6,6 +6,43 @@ Order and status of the assistant's work. The harness's own roadmap, including t
 
 X-Context was a separate application whose code became CODEX's skeleton on 2026-11-26; its repository no longer exists. Doc 4, "Order of work", comes first from 2026-11-26. The mail work below is frozen: mail moves to an application of its own (doc 4, decision 9).
 
+## Planning
+
+Found 2026-11-28 from two planning tests in conversations with inkling-2-mini (the Trilium note to X-Tasks request,
+asked once plainly and once with draft planning rules in the message). Asked plainly, the model's whole thinking was
+"Answer plainly", it named a wrong tool mid-answer, it looped by re-reading instead of once per task, and its
+answer stopped mid-sentence. Given the rules, it kept to the step lines and used only offered tools, but its
+duplicate check fed nothing and its `runs` fields disagreed with its briefs. Two runs, one request: weak evidence.
+
+### Prompt changes (not built)
+
+1. **Brevity covers answers, not plans.** The identity line "Answer plainly and briefly" (`conversation.identity` in `prompts/prompts.json`) is
+   echoed in the model's thinking as a reason not to plan. Proposed: "Answer plainly in Markdown. Keep answers brief,
+   but when a request needs several steps, plan them fully before acting."
+2. **"Add it to contexts" said once.** Every read-only source app's `ask_` description ends with "ask ask_contexts to
+   add what it reports to contexts" (`collector_description` in `specialists.ts`), and `sources.connected_with_specialists` says it again,
+   so it reads as the default next step. Say it once, as an option for when the user wants to keep what was found.
+3. **Planning rules as their own block**, offered only to a run with more than one `ask_` tool: one line per step
+   (tool, action, inputs from earlier steps, named output, read or change, once or for each item, what it waits for),
+   then STOP, ASK USER and DONE WHEN lines. Rules: only offered tools, and a step no offered tool can do goes under
+   ASK USER and ends the plan; each brief carries every value it needs; "for each item" is the only loop, never a
+   re-read; a read that needs only the request starts at once; changes to one app batch when its tool takes a list;
+   a step that filters by an earlier output names it in its inputs; DONE WHEN is a check, not a recap. Draft text is
+   in the 2026-11-28 conversations.
+4. **One copy of the `ask_` rule.** `conversation.with_specialists` and `plugins.asks` both explain `ask_` tools;
+   drop the second when the first is present.
+
+**How to test:** put 1 and 3 behind a setting each and run the same requests several rounds per combination, with
+requests of different shapes (one step, parallel reads, a loop over items, a step that must ask the user). Measure
+how much of the instructions each part takes, since the 4B model's window is 6,144 tokens.
+
+### Plan schema (designed, not built)
+
+A plan the harness parses into tasks and calls, so the harness rather than the model drives specialist calls, loops
+over items and parallel steps, and the task list (`task_list.ts`) becomes its rendering. Design in doc 2, "How does it
+plan a job?". Order: the parser and checker with tests first, then run the 2026-11-28 test plans through the checker
+to see which mistakes it catches, then the executor.
+
 ## Reactive assistant
 
 ### Status
