@@ -353,10 +353,9 @@ Graph page at that entity.
 
 ## The Thunderbird add-on
 
-`thunderbird/` is a WebExtension built by `vite.thunderbird.config.ts`. Its popup reads the email shown, lists the
-contexts from the server with the ones already holding it ticked, and calls `add_item` with collector `email`. It talks
-to the server's API with a token like any other program; `thunderbird/capture.ts` holds everything that does not need
-Thunderbird, and is tested.
+The add-on is in X-Mail (`../X-Mail`, `src/thunderbird/`). Its popup reads the email shown, lists the contexts from the
+server with the ones already holding it ticked, and calls `add_item` with collector `email`. It talks to the server's
+API with a token like any other program, so CODEX holds nothing of it but the `email` collector.
 
 ## Declared configuration
 

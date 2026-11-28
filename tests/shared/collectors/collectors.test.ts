@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { create_plugin_host, type Plugin, type SettingValues } from "@x-tech-laboratories/x-libs/plugins";
 
-import { bare_message_id, email_plugin, email_uri, forget_x_tasks_paths, html_text, shorten, trilium_plugin, web_address, x_tasks_feeds, x_tasks_in_feed, x_tasks_plugin } from "../../../src/shared/collectors/bundled.ts";
+import { email_plugin, forget_x_tasks_paths, html_text, trilium_plugin, web_address, x_tasks_feeds, x_tasks_in_feed, x_tasks_plugin } from "../../../src/shared/collectors/bundled.ts";
 import { app_info, type Collector } from "../../../src/shared/collectors/collector.ts";
 import type { ContextPluginApi } from "../../../src/shared/collectors/host.ts";
 import { files_plugin, find_files, folders_of, look_up_files, most_content_bytes, read_text_files } from "../../../src/server/collectors/files.ts";
@@ -186,17 +186,10 @@ describe("web links and email", () => {
     expect(() => web_address("ftp://example.org")).toThrow("http");
   });
 
-  it("key an email on its Message-ID without the brackets, opening it as a mid: link", async () => {
-    expect(bare_message_id(" <abc@example.org> ")).toBe("abc@example.org");
-    expect(email_uri("<abc@example.org>")).toBe("mid:abc@example.org");
+  it("takes emails only as X-Mail's Thunderbird add-on pushes them", async () => {
     const collector = await collector_of(email_plugin);
     expect(collector.search).toBeUndefined();
-    expect(collector.pushed_from).toContain("Thunderbird");
-  });
-
-  it("shortens a long snippet to one line", () => {
-    expect(shorten("a\n  b")).toBe("a b");
-    expect(shorten("x".repeat(300))).toHaveLength(200);
+    expect(collector.pushed_from).toContain("X-Mail");
   });
 });
 

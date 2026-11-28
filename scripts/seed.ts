@@ -7,8 +7,8 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
+import { email_uri } from "@x-tech-laboratories/x-libs/email_links";
 
-import { email_uri } from "../src/shared/collectors/bundled.ts";
 import type { FoundItem } from "../src/shared/collectors/collector.ts";
 import { bind_methods, open_store } from "../src/shared/store.ts";
 

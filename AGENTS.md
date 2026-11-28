@@ -15,7 +15,7 @@
 
 CODEX gathers tasks, notes, files, emails and links from other apps into contexts, keeping only pointers to them, and is
 growing back into a personal assistant. It is a React page that runs in a browser against its own server and in
-Electron with its own daemon and database, syncing through the server, plus a Thunderbird add-on in `thunderbird/`.
+Electron with its own daemon and database, syncing through the server. Its Thunderbird add-on lives in X-Mail.
 Read `README.md` first, then `docs/1-architecture.md`, then `docs/4-merge-with-x-context.md` for where it is going.
 
 - **Skeleton:** the code in `src/` came from X-Context, and 0.3.0 is the first CODEX built on it. It follows the Application Standard: one SQLite

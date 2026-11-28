@@ -1,4 +1,4 @@
-// Draws every icon size from resources/icon.svg: the desktop icon, the web page's icons and the Thunderbird add-on's.
+// Draws every icon size from resources/icon.svg: the desktop icon, and the web page's icons.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -17,6 +17,5 @@ function draw(size: number, file: string): void {
 draw(512, "resources/icon.png");
 draw(192, "src/web/public/icon-192.png");
 draw(512, "src/web/public/icon-512.png");
-draw(64, "thunderbird/public/icon-64.png");
 copyFileSync("resources/icon.svg", "src/web/public/icon.svg");
 console.log("Drew the icons from resources/icon.svg");

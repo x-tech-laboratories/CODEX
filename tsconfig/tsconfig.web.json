@@ -2,8 +2,7 @@
   "extends": "./tsconfig.base.json",
   "include": [
     "../src/web",
-    "../src/shared",
-    "../thunderbird"
+    "../src/shared"
   ],
   "compilerOptions": {
     "composite": true,

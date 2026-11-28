@@ -2,8 +2,7 @@
   "extends": "./tsconfig.base.json",
   "include": [
     "../tests",
-    "../src",
-    "../thunderbird"
+    "../src"
   ],
   "compilerOptions": {
     "composite": true,

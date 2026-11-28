@@ -4,14 +4,13 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { define_plugin, type SettingValues } from "@x-tech-laboratories/x-libs/plugins";
+import { shorten } from "@x-tech-laboratories/x-libs/snippets";
 
 import type { Feed, FoundItem, ItemAttribute, ReadItem } from "./collector.ts";
 import type { ContextPlugin, ContextPluginApi } from "./host.ts";
 import { email_manifest, links_manifest, trilium_manifest, x_tasks_manifest } from "./manifests.ts";
 
 // ── Requests ─────────────────────────────────────────────────────────────────
-
-const snippet_length = 200;
 
 // The address without a slash at its end, or a plain refusal while it is not set.
 function server_of(settings: SettingValues, service: string): string {
@@ -24,11 +23,6 @@ async function read_json(response: Response, service: string): Promise<unknown> 
   if (response.status === 401 || response.status === 403) throw new Error(`${service} refused the token; check it under Settings → Plugins.`);
   if (!response.ok) throw new Error(`${service} answered ${response.status} ${response.statusText}.`);
   return response.json();
-}
-
-export function shorten(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > snippet_length ? `${flat.slice(0, snippet_length - 1)}…` : flat;
 }
 
 function matches(query: string, ...texts: string[]): boolean {
@@ -399,22 +393,13 @@ export const links_plugin = define_plugin<ContextPluginApi>({
 // ── Email ────────────────────────────────────────────────────────────────────
 
 // A Message-ID without the angle brackets mail headers put round it.
-export function bare_message_id(text: string): string {
-  return text.trim().replace(/^<|>$/g, "");
-}
-
-// Where an email opens: Thunderbird answers mid: links with the message, wherever it was filed.
-export function email_uri(message_id: string): string {
-  return `mid:${bare_message_id(message_id)}`;
-}
-
 export const email_plugin = define_plugin<ContextPluginApi>({
   ...email_manifest,
   start: (context) =>
     context.provide("collector", "email", {
       label: "Email",
       kinds: ["email"],
-      pushed_from: "In Thunderbird, install the CODEX add-on from the app's thunderbird folder, give it this server's address and a token, then use Add to context on any email.",
+      pushed_from: "In Thunderbird, install the CODEX add-on from X-Mail (github.com/x-tech-laboratories/X-Mail), give it this server's address and a token, then use Add to context on any email.",
     }),
 });
 

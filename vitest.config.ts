@@ -14,7 +14,7 @@ export default defineConfig({
     server: { deps: { inline: [/x-libs\/dist\/web\/react\/graph/] } },
     coverage: {
       provider: "v8",
-      include: ["src/**/*.{ts,tsx}", "thunderbird/**/*.{ts,tsx}"],
+      include: ["src/**/*.{ts,tsx}"],
       exclude: ["legacy/**"],
       thresholds: {
         // A point under the measure, so run-to-run noise cannot fail a run, and never below the floor already set.
