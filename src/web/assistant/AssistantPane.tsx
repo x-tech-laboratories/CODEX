@@ -20,7 +20,7 @@ import { use_watch } from "@x-tech-laboratories/x-libs/web/react/watch";
 import { Send, Square } from "lucide-react";
 
 import { global_context_id } from "../../shared/contexts/model.ts";
-import { conversation_item_id, reply_parts, type AssistantStatus, type ConversationMessage, type ConversationSummary, type ToolCallRecord } from "../../shared/conversations/model.ts";
+import { call_path_mark, conversation_item_id, reply_parts, type AssistantStatus, type ConversationMessage, type ConversationSummary, type ToolCallRecord } from "../../shared/conversations/model.ts";
 import type { Proposal } from "../../shared/policy/model.ts";
 import type { ChangeUndoState } from "../../shared/policy/undo.ts";
 import { attempt, calls, page, succeeds, use_data } from "../api.ts";
@@ -77,8 +77,20 @@ function UndoLine({ undo }: { undo: ChangeUndoState }) {
 
 // One call the engine made, folded to its name and outcome; open, its arguments and what came back. A proposed call
 // reads as the user decided it, when they have; an applied change offers its undo underneath. An ask_ tool's call lists
-// its specialist's calls inside it, each read the same way.
-export function ToolCallRow({ call, decided, undo, decisions }: { call: ToolCallRecord; decided?: Proposal["status"] | undefined; undo?: ChangeUndoState | undefined; decisions?: Map<string, Proposal["status"]> }) {
+// its specialist's calls inside it, each read the same way, their undos found by id path.
+export function ToolCallRow({
+  call,
+  decided,
+  undo,
+  decisions,
+  undo_of,
+}: {
+  call: ToolCallRecord;
+  decided?: Proposal["status"] | undefined;
+  undo?: ChangeUndoState | undefined;
+  decisions?: Map<string, Proposal["status"]>;
+  undo_of?: (call_id: string) => ChangeUndoState | undefined;
+}) {
   const made_by = call.applied_by === "user_approval" ? "approved by you" : call.applied_by === "engine_auto" ? "made by the assistant" : "";
   const [words, tone] = (call.outcome === "proposed" && decided && decided_words[decided]) || [outcome_words[call.outcome], outcome_tones[call.outcome]];
   const row = (
@@ -100,7 +112,7 @@ export function ToolCallRow({ call, decided, undo, decisions }: { call: ToolCall
           <div className="tool-call-nested">
             {reply_parts("", call.calls ?? [], call.thinking).map((part, at) =>
               "call" in part ? (
-                <ToolCallRow key={part.call.id} call={part.call} decided={part.call.proposal_id ? decisions?.get(part.call.proposal_id) : undefined} />
+                <ToolCallRow key={part.call.id} call={part.call} decided={part.call.proposal_id ? decisions?.get(part.call.proposal_id) : undefined} undo={undo_of?.(`${call.id}${call_path_mark}${part.call.id}`)} />
               ) : (
                 "thinking" in part && <Thinking key={`thinking-${at}`} text={part.thinking} active={call.outcome === "pending"} />
               ),
@@ -190,7 +202,14 @@ function Message({ message, decided, undos }: { message: ConversationMessage; de
       <Notices notices={message.notices} />
       {reply_parts(message.text, message.tool_calls, message.thinking).map((part, at) =>
         "call" in part ? (
-          <ToolCallRow key={part.call.id} call={part.call} decided={part.call.proposal_id ? decided.get(part.call.proposal_id) : undefined} undo={undos.get(`${message.id}:${part.call.id}`)} decisions={decided} />
+          <ToolCallRow
+            key={part.call.id}
+            call={part.call}
+            decided={part.call.proposal_id ? decided.get(part.call.proposal_id) : undefined}
+            undo={undos.get(`${message.id}:${part.call.id}`)}
+            decisions={decided}
+            undo_of={(call_id) => undos.get(`${message.id}:${call_id}`)}
+          />
         ) : "thinking" in part ? (
           <Thinking key={`thinking-${at}`} text={part.thinking} active={false} />
         ) : (

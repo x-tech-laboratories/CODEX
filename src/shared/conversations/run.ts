@@ -44,6 +44,7 @@ import {
   collector_read_calls,
   guidance_part,
   note_nested,
+  own_groups,
   run_specialist,
   specialist_groups,
   specialist_limits,
@@ -224,15 +225,19 @@ export function engine_tools(context: ToolContext): EngineTools {
     ...(context.own_tools ?? []).map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
     ...[...plugin_tools.values()].map((tool) => ({ name: tool.name, description: plugin_description(tool, longest_tool_description), parameters: tool.tool.parameters })),
   ];
-  // Each plugin's tools behind one ask_ tool, and each source app's read calls behind another, which the engine offers
-  // in their place when its Specialists setting says; a hosted engine gets none for a source it may not be sent.
+  // Each part of CODEX's own calls behind one ask_ tool, each plugin's tools behind another and each source app's read
+  // calls behind a third kind, which the engine offers in their place when its Specialists setting says; a hosted
+  // engine gets none for a source it may not be sent. A run offered few calls keeps CODEX's own as they are.
   const taken = new Set<string>();
   const plugin_groups = context.specialists ? specialist_groups([...plugin_tools.values()], taken) : [];
   const source_groups = context.specialists ? collector_groups((context.collectors ?? []).filter((source) => may_send(screen, source.id)), offered, taken) : [];
-  const groups = [...plugin_groups, ...source_groups];
+  const codex_groups = context.specialists && !only ? own_groups(offered, source_groups.length > 0 ? collector_read_calls : new Set()) : [];
+  const groups = [...codex_groups, ...plugin_groups, ...source_groups];
   const asks = new Map(groups.map((group) => [group.name, group]));
-  // What the ask_ tools stand for: the plugin tools, and the collector read calls once any source app has a specialist.
-  const moved = (name: string) => plugin_tools.has(name) || (source_groups.length > 0 && collector_read_calls.has(name));
+  const own_moved = new Set(codex_groups.flatMap((group) => group.own!.calls));
+  // What the ask_ tools stand for: CODEX's own calls, the plugin tools, and the collector read calls once any source app
+  // has a specialist.
+  const moved = (name: string) => own_moved.has(name) || plugin_tools.has(name) || (source_groups.length > 0 && collector_read_calls.has(name));
   // A run offered few calls gets them fully described, which the core set would not shorten much.
   const core = only
     ? undefined
@@ -245,11 +250,14 @@ export function engine_tools(context: ToolContext): EngineTools {
           .filter((tool) => tool.small)
           .map((tool) => ({ name: tool.name, description: plugin_description(tool, longest_brief_description), parameters: brief_schema(tool.tool.parameters) })),
       ];
+  // A source app's ask says to have what it finds added by the contexts' specialist when that has add_item.
+  const adder = codex_groups.find((group) => group.own!.calls.includes("add_item"))?.name ?? "";
+  const ask_definitions = groups.map((group) => ask_definition(group, adder));
   const specialists =
     groups.length > 0
       ? {
-          definitions: [...definitions.filter((definition) => !moved(definition.name)), ...groups.map(ask_definition)],
-          ...(core ? { core: [...core.filter((definition) => !moved(definition.name)), ...groups.map(ask_definition)] } : {}),
+          definitions: [...definitions.filter((definition) => !moved(definition.name)), ...ask_definitions],
+          ...(core ? { core: [...core.filter((definition) => !moved(definition.name)), ...ask_definitions] } : {}),
           delegated: definitions.filter((definition) => moved(definition.name)),
         }
       : undefined;
@@ -359,9 +367,9 @@ export function engine_tools(context: ToolContext): EngineTools {
     }
   };
   let asked = 0;
-  // A specialist runs the same engine with only its plugin's tools, or its source app's read calls, through this same
-  // wrapper with the run's screen, reads and limits; its answer is that plugin's or app's outside data, fenced and
-  // lowering the run unless it is trusted.
+  // A specialist runs the same engine with only its part of CODEX's calls, its plugin's tools or its source app's read
+  // calls, through this same wrapper with the run's screen, reads and limits; its answer is fenced as outside data, and
+  // a plugin's or app's lowers the run unless it is trusted.
   const ask_specialist = async (group: SpecialistGroup, given: Record<string, unknown>): Promise<ToolOutcome> => {
     const host = context.specialists!;
     const name = group.name;
@@ -370,7 +378,7 @@ export function engine_tools(context: ToolContext): EngineTools {
     const nest: Nest = host.nest?.(name) ?? { calls: [], thought: () => undefined, changed: () => undefined };
     const child: ToolContext = {
       ...context,
-      only: new Set(group.collector ? group.collector.calls : group.tools.map((tool) => tool.name)),
+      only: new Set(group.own ? group.own.calls : group.collector ? group.collector.calls : group.tools.map((tool) => tool.name)),
       plugin_tools: group.tools,
       own_tools: [],
       collectors: [],
@@ -381,12 +389,15 @@ export function engine_tools(context: ToolContext): EngineTools {
     if (group.collector) child.bound_collector = group.collector.id;
     const tools = engine_tools(child);
     const signal = context.signal ?? new AbortController().signal;
-    const answer = await run_specialist(host, specialist_request(group, host, request, tools, group.collector ? "" : plugin_tools_part(group.tools)), signal, nest);
-    // What the specialist read lowers this run as it lowered the specialist's, and its answer counts as its plugin's or app's.
+    const answer = await run_specialist(host, specialist_request(group, host, request, tools, group.tools.length > 0 ? plugin_tools_part(group.tools) : ""), signal, nest);
+    // What the specialist read lowers this run as it lowered the specialist's, and a plugin's or app's answer counts as
+    // that plugin's or app's; CODEX's own specialists' reads are already noted by their sources.
     if (child.has_outside_content) context.has_outside_content = true;
     asked += 1;
-    note_source(screen.included, group.collector ? group.collector.id : tool_source_of(group.key), `${name}#${asked}`);
-    if (!(group.collector ? is_trusted(screen, group.collector.id) : group.tools[0]!.marks.trusted)) context.has_outside_content = true;
+    if (!group.own) {
+      note_source(screen.included, group.collector ? group.collector.id : tool_source_of(group.key), `${name}#${asked}`);
+      if (!(group.collector ? is_trusted(screen, group.collector.id) : group.tools[0]!.marks.trusted)) context.has_outside_content = true;
+    }
     if (answer.error) {
       const partial = answer.text ? `\nWhat it wrote before stopping:\n${untrusted_block(as_text(answer.text))}` : "";
       return decided(name, { outcome: "failed" }, { result: `The ${group.label} specialist could not finish: ${answer.error}${partial}`, is_error: true });
@@ -671,26 +682,23 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   // An isolated run is told only what its task gives it: no identity, date, context, blueprint or mood.
   const instructions: Screened<string> = isolated ? { value: "", sources: new Set(), withheld: new Map() } : screened_instructions(database, context_id, conversation_id, new Date().toISOString().slice(0, 10), screen);
   const extra = options.instructions?.(screen);
-  if (extra) {
-    instructions.value = instructions.value ? `${instructions.value}\n\n${extra.value}` : extra.value;
-    for (const source of extra.sources) instructions.sources.add(source);
-  }
+  for (const source of extra?.sources ?? []) instructions.sources.add(source);
+  const summaries = isolated ? [] : await contexts_feature.methods.list_collectors(database);
   // The user's own approved blueprints that match the message, put in by CODEX itself; not fenced, and tainting nothing.
-  if (!isolated) instructions.value = `${instructions.value}\n\n${sources_part(await contexts_feature.methods.list_collectors(database))}`;
   const recalled = isolated ? [] : await recall_blueprints(database, context_id, text);
-  if (recalled.length > 0) instructions.value = `${instructions.value}\n\n${recalled_part(recalled)}`;
   const plugin_part = plugin_tools_part(plugin_tools, true);
-  if (plugin_part) instructions.value = `${instructions.value}\n\n${plugin_part}`;
   // A hosted engine is told of no source app it may not be sent.
   const collectors = (await open_collector_sources(database)).filter((source) => may_send(screen, source.id));
   const guidance = run_guidance_part(plugin_tools, isolated ? [] : collectors);
-  if (guidance) instructions.value = `${instructions.value}\n\n${guidance}`;
   // The mood colours tone only; its reason carries the sources of the reply that set it.
   const mood = !isolated && (!options.tools || options.tools.includes(set_mood_tool.name)) ? mood_part(database, screen, Date.now()) : null;
-  if (mood?.value) {
-    instructions.value = `${instructions.value}\n\n${mood.value}`;
-    for (const source of mood.sources) instructions.sources.add(source);
-  }
+  for (const source of mood?.sources ?? []) instructions.sources.add(source);
+  // With specialists the plugin tools and their guidance are theirs, so the run's instructions leave them out.
+  const told = (head: string, with_specialists: boolean) =>
+    [head, extra?.value ?? "", isolated ? "" : sources_part(summaries, with_specialists), recalled.length > 0 ? recalled_part(recalled) : "", with_specialists ? "" : plugin_part, with_specialists ? "" : guidance, mood?.value ?? ""].filter(Boolean).join("\n\n");
+  // A conversation's run, whose CODEX calls may go to specialists, has instructions for that too, which say less of them.
+  const with_specialists = options.tools ? undefined : told(screened_instructions(database, context_id, conversation_id, new Date().toISOString().slice(0, 10), screen, true).value, true);
+  instructions.value = told(instructions.value, false);
   if (runs.has(conversation_id)) throw new Error("A reply is still being written here; stop it or wait for it first.");
   const question = add_message(database, { conversation_id, role: "user", text: text.trim(), sources: [] });
   const notices = recalled.map(({ row }) => `Recalled the blueprint “${row.title}” for this message.`);
@@ -732,7 +740,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
     },
     on_decided: (name, record) => note_decision(run, name, record),
   });
-  const request = { instructions: instructions.value, conversation: replayed.turns, tools, ...(options.limits ? { limits: { max_rounds: options.limits.max_rounds } } : {}) };
+  const request = { instructions: instructions.value, ...(with_specialists ? { instructions_with_specialists: with_specialists } : {}), conversation: replayed.turns, tools, ...(options.limits ? { limits: { max_rounds: options.limits.max_rounds } } : {}) };
   run.done = drive(run, found.running.run(request, run.abort.signal), host);
   host.emit({ conversation_id, run_id: state.run_id, type: "started", engine: state.engine, model: state.model });
   for (const notice of notices) host.emit({ conversation_id, run_id: state.run_id, type: "notice", text: notice });

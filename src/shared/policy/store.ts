@@ -11,7 +11,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { id_of, text } from "../api_schemas.ts";
 import { contexts_feature } from "../contexts/store.ts";
 import { assistant_host } from "../conversations/host.ts";
-import { add_message, list_messages, message_of, update_tool_call, type NewMessage } from "../conversations/messages.ts";
+import { add_message, call_at, list_messages, message_of, update_tool_call, type NewMessage } from "../conversations/messages.ts";
 import { has_conversation } from "../conversations/records.ts";
 import { define_feature } from "../feature.ts";
 import { record_tool_send } from "../privacy/store.ts";
@@ -131,7 +131,8 @@ function list_change_undos(database: SqlDatabase, conversation_id: string): Chan
 // Undoes one applied change through History, records the undo in its conversation and marks the change undone.
 function undo_change(database: SqlDatabase, message_id: string, call_id: string): ChangeUndoState {
   const message = message_of(database, message_id);
-  const call = message?.tool_calls.find((each) => each.id === call_id && each.applied_by && each.outcome === "ran");
+  const found = message ? call_at(message.tool_calls, call_id) : undefined;
+  const call = found?.applied_by && found.outcome === "ran" ? found : undefined;
   if (!message || !call) throw new Error("There is no applied change by that message and call.");
   const { state, reason } = undo_state(database, call);
   if (state === "undone") throw new Error("That change was already undone.");
@@ -186,7 +187,7 @@ export const policy_feature = define_feature({
         "Undoes one change the assistant applied, through History: the contexts it touched go back to how they were before it, and the undo is recorded in the conversation. Refused once those contexts have changed since. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         { name: "message_id", schema: id_of("message") },
-        { name: "call_id", schema: text("The tool call's id on that message, from list_change_undos.") },
+        { name: "call_id", schema: text("The tool call's id on that message, or for a specialist's call its ask's id and its own joined by /, from list_change_undos.") },
       ],
     },
     resolve_proposal: {

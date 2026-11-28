@@ -8,6 +8,7 @@
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import type { ChangeUndo, ConversationMessage, ToolCallRecord } from "../conversations/model.ts";
+import { calls_with_paths } from "../conversations/messages.ts";
 import { history_of, type Snapshot } from "../history/store.ts";
 
 // ── Noting ───────────────────────────────────────────────────────────────────
@@ -84,10 +85,13 @@ export function undo_state(database: SqlDatabase, call: ToolCallRecord): { state
   return { state: "possible", reason: "" };
 }
 
-// Every applied change in a conversation's messages with whether it can still be undone.
+// Every applied change in a conversation's messages, a specialist's by its id path under its ask, with whether it can
+// still be undone.
 export function undo_states(database: SqlDatabase, messages: ConversationMessage[]): ChangeUndoState[] {
   return messages.flatMap((message) =>
-    message.tool_calls.filter((call) => call.applied_by && call.outcome === "ran").map((call) => ({ message_id: message.id, call_id: call.id, ...undo_state(database, call) })),
+    calls_with_paths(message.tool_calls)
+      .filter(({ call }) => call.applied_by && call.outcome === "ran")
+      .map(({ path, call }) => ({ message_id: message.id, call_id: path, ...undo_state(database, call) })),
   );
 }
 

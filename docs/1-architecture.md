@@ -778,8 +778,9 @@ variables before `move_mcp_server_here` runs.
 
 ### Specialists
 
-Built 2026-11-27 as the first two slices of doc 4's step 10: tool plugins (MCP servers among them) and then the source
-apps' collectors as specialists, each told how its app works; CODEX's own calls stay with the orchestrator. **Why:** with the owner's MCP servers connected, every tool described is about
+Built 2026-11-27 and 2026-11-28 as doc 4's step 10: tool plugins (MCP servers among them), the source apps' collectors
+and then CODEX's own calls as specialists, each told how its part or app works, so with specialists in use the
+orchestrator holds only `ask_` tools and `set_mood`. **Why:** with the owner's MCP servers connected, every tool described is about
 92,000 tokens, so a gpt-oss-20b at 32,768 tokens got only the core set and could not use those apps at all;
 SmartHarness measured the same split on a 4B model at 0/66 tasks with one flat list of 116 tools against 54/66 with
 specialists (its doc 1, "Agents").
@@ -794,6 +795,26 @@ specialists (its doc 1, "Agents").
   answers, gives the plugin's own `description` fenced unless `own_words`, lists up to 30 of its tools by name, says
   whether some change something or send outside, and that the specialist sees nothing of the conversation but the
   user's latest message. The run's instructions say what `ask_` tools are.
+- **CODEX's own calls.** In a run offered every call (no `only`), `engine_tools` also groups the offered calls by feature
+  (`own_groups`, from `own_specialists` in `specialists.ts`): `ask_contexts` (every contexts call, `add_item` and the
+  feeds included, and `search_index`), `ask_graph` (`get_node_links`, `list_graph_proposals`, `propose_entity`,
+  `propose_link`, `propose_link_drop`), `ask_blueprints`, `ask_interests` and `ask_jobs`. Every offered call is in
+  exactly one; once any source app has an ask, its three read calls are that app's specialist's and not the contexts'.
+  These five names are reserved, so a plugin labelled Contexts gets a hashed name. Each ask's description lists its
+  calls by name and says when to use it, which is where the identity lines on proposing an entity, a blueprint or an
+  interest went; its specialist's instructions say how its part works (proposals wait for the user, interests carry
+  nothing personal, Global is the root). All their calls leave the `specialists` view and join `delegated`, so the view
+  holds only the asks and `set_mood`, which stays with the orchestrator since the mood is its own reply's. A source
+  app's ask then says to have `ask_contexts` add what it found. A run offered few calls, such as Suggest links or a
+  research run, keeps CODEX's calls as they are and only its plugin and app asks.
+- **Instructions with specialists.** `start_run` writes a second set of instructions for a conversation's run
+  (`instructions_with_specialists` on the `EngineRequest`), which the engine uses when it chooses the specialists view
+  (`chosen_request` in `direct.ts`, used by the direct loop and SmartHarness). It keeps who CODEX is, the rules, the
+  date, Global's and the open context's notes and items, the source apps by id, recalled blueprints and the mood, and
+  says once that each `ask_` tool hands one request to a specialist that sees only the user's latest message and the
+  request; it leaves out the lines on the graph, blueprint and interest calls, the plugin tools' line and the plugins'
+  and apps' shortened guidance, which their specialists are given whole. The `ask_` descriptions no longer repeat that
+  a specialist sees nothing else, and every ask's `request` has one short description.
 - **Source apps.** Each collector running that can search, resolve or list feeds, other than CODEX's own conversations,
   blueprints and findings (`open_collector_sources` in `run.ts`, passed as the `ToolContext`'s `collectors`), gets an
   `ask_<label>` tool too (`collector_groups`), named after the plugins' asks so a plugin of the same label keeps its name
@@ -822,8 +843,13 @@ specialists (its doc 1, "Agents").
   that choice is made inside the engine; the `ask_` descriptions add none.
 - **Choosing.** `with_specialists` (`direct.ts`) gives the engine the `specialists` view or the plain one, by the
   engine's **Specialists** setting (`specialists`: `auto`, `on`, `off`, default `auto`, in all three engine manifests,
-  so it can be declared like `tool_set`): `on` always, `off` never, `auto` when `delegated`'s definitions and the
-  instructions, estimated as for **Tools offered**, take half the context or more. **Tools offered** then picks the full
+  so it can be declared like `tool_set`): `on` always, `off` never, `auto` for a context of 32,768 tokens or less
+  (`small_context`), and above that when `delegated`'s definitions, CODEX's own calls among them, and the instructions,
+  estimated as for **Tools offered**, take half the context or more. A small local model reads every prompt slowly
+  (about 10 tokens a second on Odin), so it always gets the shorter request; a large hosted one keeps CODEX's calls
+  unless the plugins crowd it. On the Odin-like setup in `tests/orchestrator_size.test.ts` (32,768 tokens, core set,
+  three servers of 23 to 130 tools, X-Tasks, Trilium and Web) the instructions and tool definitions come to about
+  3,900 tokens against 7,000 when CODEX's calls went to the model directly. **Tools offered** then picks the full
   or core set of the view chosen. The direct loop and the SmartHarness engine both call it before `offered_tools`; the
   `call` is the same either way.
 - **The specialist's run.** Calling `ask_<label>` (`ask_specialist` in `run.ts`) runs the same engine afresh
@@ -831,9 +857,10 @@ specialists (its doc 1, "Agents").
   with what it found or did and plainly what it could not do, and asks no questions; one user turn holding the user's
   own latest message unchanged under `user_request_label` (SmartHarness's `USER_REQUEST_LABEL`) and then the request; no
   history, context, blueprint or mood; and tools from `engine_tools` on a child of the run's `ToolContext` whose `only`
-  names that plugin's tools, whose `plugin_tools` are that plugin's, with no own tools and no specialist host. So
-  CODEX's calls, `set_mood`, other plugins' tools and every `ask_` tool answer "There is no tool named …", and a
-  specialist never asks another (depth 1). Its final text comes back fenced as outside data; a failure or a stop
+  names that plugin's tools (or that part's calls of CODEX's, fully described), whose `plugin_tools` are that plugin's,
+  with no own tools and no specialist host. So any other call, `set_mood`, other plugins' tools and every `ask_` tool
+  answer "There is no tool named …", and a specialist never asks another (depth 1). A specialist of CODEX's own is told
+  it serves another assistant with CODEX's calls for its part, then how that part works. Its final text comes back fenced as outside data; a failure or a stop
   comes back as an error saying the specialist could not finish, with what it wrote before, fenced.
 - **Safeguards inside.** The child shares the run's screen, its list of reads, the user's message id and run id
   (proposal evidence), presence and signal, so every call goes through the same wrapper: the action policy (a change
@@ -841,8 +868,10 @@ specialists (its doc 1, "Agents").
   front of the run, the hosted log's tool rows and the hosted screening. The run starts lowered when the run asking was,
   and what it read lowers the run asking it; the answer is noted on the screen as the plugin's source (`tool:<key>`), so
   the reply's `sources`, the hosted log's counts and later replays carry it, and it lowers the run unless the plugin is
-  marked trusted. A hosted engine is offered no `ask_` tool for a plugin it is not offered. Its model's thinking is kept
-  on the ask's call, as under "Conversations and runs".
+  marked trusted. A specialist of CODEX's own adds no source of its own: what it read was noted by its sources as it
+  read it and lowers the run asking it the same way, and its answer comes back fenced. A hosted engine is offered no
+  `ask_` tool for a plugin it is not offered. Its model's thinking is kept on the ask's call, as under "Conversations
+  and runs".
 - **Limits.** A specialist takes at most 8 model rounds (fewer when a background job allows fewer) and 12 tool calls,
   plugin tools or an app's reads (`specialist_limits`, `max_calls_here`); its calls count toward the run's `max_plugin_calls` (`used`), and its
   usage events add to the run's rounds and tokens, so a background job's limits stop the whole run. The run's abort
@@ -850,7 +879,9 @@ specialists (its doc 1, "Agents").
 - **The record.** The ask's `ToolCallRecord` holds its specialist's calls in `calls`, each with its outcome, proposal
   and result as for the run's own; open pages hear each change as a `tool_result` event for the ask. The pane lists
   them under "The specialist's calls" inside the ask's row (`ToolCallRow`), a proposal shown as the user decided it.
-  Undo is offered for the run's own calls only; a plugin tool's change cannot be undone anyway.
+  A change a specialist of CODEX's own made is undone like the run's own: `list_change_undos` names it by its id path,
+  the ask's call id and its own joined by `/` (`o1/specialist_6`), which `undo_change` takes, and its row offers Undo; a
+  plugin tool's change cannot be undone anyway.
 - **SmartHarness** gets the `ask_` tools as ordinary tools through its bridge. Native delegation would need SmartHarness
   to take agents and their tools from the caller instead of its own folders: CODEX would pass one agent per plugin
   (description and tool list as above) with that plugin's tools served on its own bridge, and SmartHarness's routing,
@@ -1132,9 +1163,9 @@ to), Pause and Drop, then Add an interest… and Most accepted at once.
 
 ### Still to come
 
-The rest of doc 4's step 10: collectors as specialists, a measured comparison on a real model (the owner's
-gpt-oss-20b with the X-Fitness, X-Budget and X-Media-Tracker servers), guidance text per plugin, an MCP server's own
-`instructions` as its description, and SmartHarness's native delegation.
+The rest of doc 4's step 10: a measured comparison on a real model (the owner's local model with the X-Fitness,
+X-Budget and X-Media-Tracker servers), previewing a feed's items without following it, and SmartHarness's native
+delegation.
 
 The eval of doc 4's step 9: recorded assistant jobs replayed against SmartHarness with a hosted engine as the
 baseline. Nothing records jobs yet.

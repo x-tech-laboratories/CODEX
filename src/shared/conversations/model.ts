@@ -79,6 +79,9 @@ export function reply_parts(text: string, calls: ToolCallRecord[], thinking: Thi
 // The setting that keeps a reasoning model's thinking with each reply; off, it still shows while it streams.
 export const keep_thinking_setting = "keep_thinking";
 
+// What joins an ask's call id and its specialist's call's into the id path that names the latter, such as o1/specialist_2.
+export const call_path_mark = "/";
+
 // What undoing an applied change puts back: each context it touched, by the version it made and the version before it
 // (null for a context it made), with the change in plain words and when it was undone.
 export interface ChangeUndo {
