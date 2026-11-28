@@ -317,7 +317,7 @@ export function harness_engine(settings: () => SettingValues, options: HarnessEn
             tool_calls += 1;
             const id = `smartharness_${tool_calls}`;
             await queue.handed({ type: "tool_call", id, name, arguments: args });
-            const outcome = await request.tools.call(name, args);
+            const outcome = await request.tools.call(name, args, id);
             queue.push({ type: "tool_result", id, result: outcome.result, is_error: outcome.is_error });
             return outcome;
           });

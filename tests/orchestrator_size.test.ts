@@ -51,7 +51,7 @@ function server_like(id: string, label: string, count: number): ContextPlugin {
 // ── Size ─────────────────────────────────────────────────────────────────────
 
 describe("the orchestrator's request", () => {
-  it("holds only ask_ tools and set_mood, and is well under its size with CODEX's own calls offered directly", async () => {
+  it("holds only ask_ tools, set_mood and read_tool_result, and is well under its size with CODEX's own calls offered directly", async () => {
     const fixture = start_fixture({ plugins: [web_plugin({}), server_like("fitness", "X-Fitness", 90), server_like("budget", "X-Budget", 23), server_like("media", "X-Media-Tracker", 130)] });
     fixture.calls.set_setting("plugins", { "codex.web": { enabled: true, settings: { search_endpoint: "https://search.example.org" } } });
     await fixture.calls.send_message(null, "What did I eat today, and what is left in my budget?");
@@ -61,7 +61,7 @@ describe("the orchestrator's request", () => {
     const chosen = chosen_request(request, odin.specialists, odin.context_size);
     const offered = offered_tools(chosen.tools, odin.tool_set, odin.context_size, chosen.instructions);
     const names = offered.map((tool) => tool.name);
-    expect(names.filter((name) => !name.startsWith("ask_"))).toEqual(["set_mood"]);
+    expect(names.filter((name) => !name.startsWith("ask_"))).toEqual(["set_mood", "read_tool_result"]);
     expect(names).toEqual(expect.arrayContaining(["ask_contexts", "ask_graph", "ask_blueprints", "ask_interests", "ask_jobs", "ask_web", "ask_x_fitness", "ask_x_tasks", "ask_trilium"]));
 
     // What the orchestrator no longer has is not described to it.
@@ -78,7 +78,7 @@ describe("the orchestrator's request", () => {
     await wait_for_runs();
     const request = fixture.requests[0]!;
     const names = (context_size: number) => chosen_request(request, "auto", context_size).tools.definitions.map((tool) => tool.name);
-    expect(names(32_768).filter((name) => !name.startsWith("ask_"))).toEqual(["set_mood"]);
+    expect(names(32_768).filter((name) => !name.startsWith("ask_"))).toEqual(["set_mood", "read_tool_result"]);
     expect(names(200_000)).toContain("add_item");
     expect(chosen_request(request, "off", 32_768).instructions).toBe(request.instructions);
   });

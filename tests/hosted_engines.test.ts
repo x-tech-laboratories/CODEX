@@ -286,7 +286,7 @@ describe("the bundled engines", () => {
     expect(events.at(-1)).toEqual({ type: "done", text: "Let me look.\n\nYou have Kitchen." });
     expect(events).toContainEqual({ type: "tool_call", id: "call_1_0", name: "list_contexts", arguments: {} });
     expect(events).toContainEqual({ type: "usage", input_tokens: 42, output_tokens: 7 });
-    expect(call).toHaveBeenCalledWith("list_contexts", {});
+    expect(call).toHaveBeenCalledWith("list_contexts", {}, "call_1_0");
     expect(server.requests.map((each) => each.authorization)).toEqual(["Bearer made-up-key", "Bearer made-up-key"]);
     expect(server.requests[0]!.body).toMatchObject({ model: "fake-model", stream: true, tools: [{ type: "function", function: { name: "list_contexts" } }] });
     expect(server.requests[1]!.body.messages).toContainEqual({ role: "tool", tool_call_id: "call_1_0", content: '[{"name":"Kitchen"}]' });

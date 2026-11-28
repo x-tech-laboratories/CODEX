@@ -79,7 +79,11 @@ export function tools_chars(tools: ToolDefinition[] | undefined): number {
 
 // ── Fitting ──────────────────────────────────────────────────────────────────
 
-export const dropped_result = "[An earlier tool result was dropped to fit the context.]";
+// What stands for a tool result dropped to fit: which call it was, and how to read it again when that tool is offered.
+export function dropped_result(tool: string, call_id: string, readable: boolean): string {
+  const again = readable ? ` To read it again call read_tool_result with call_id "${call_id}".` : ` Call ${tool} again if you need it.`;
+  return `[The result of ${tool} call "${call_id}" was dropped to fit the context.${again}]`;
+}
 
 export const left_out_note = "[Earlier messages of this conversation were left out to fit this model's context.]";
 
@@ -161,13 +165,18 @@ export function fit_request(given: ChatMessage[], tools: ToolDefinition[] | unde
   const room = (options.context_size - margin - fixed_tokens - reserve) * ratio;
   if (room <= 0) return too_small;
   let total = body.reduce((sum, message) => sum + message_chars(message), 0);
+  const tool_names = new Map(body.flatMap((message) => (message.role === "assistant" ? (message.tool_calls ?? []).map((call) => [call.id, call.name] as const) : [])));
+  const readable = tools?.some((tool) => tool.name === "read_tool_result") === true;
+  const blanked = new Set<ChatMessage>();
   // Tool results are blanked oldest first: those of earlier rounds, and the latest round's only when nothing else is left.
   const blank = (until: number) => {
     for (const message of body.slice(0, until)) {
       if (total <= room) break;
-      if (message.role === "tool" && message.content !== dropped_result) {
-        total -= message.content.length - dropped_result.length;
-        message.content = dropped_result;
+      if (message.role === "tool" && !blanked.has(message)) {
+        const marker = dropped_result(tool_names.get(message.tool_call_id) ?? "the tool", message.tool_call_id, readable);
+        total -= message.content.length - marker.length;
+        message.content = marker;
+        blanked.add(message);
       }
     }
   };

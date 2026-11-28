@@ -8,6 +8,7 @@ import { define_plugin } from "@x-tech-laboratories/x-libs/plugins";
 
 import type { ContextPlugin, ContextPluginApi } from "../src/shared/collectors/host.ts";
 import { use_assistant_host } from "../src/shared/conversations/host.ts";
+import { give_up_line } from "../src/shared/conversations/instructions.ts";
 import { keep_thinking_setting } from "../src/shared/conversations/model.ts";
 import { add_conversation_record, has_conversation } from "../src/shared/conversations/records.ts";
 import { engine_tools, open_collector_sources, run_guidance_part, wait_for_runs, type ToolContext } from "../src/shared/conversations/run.ts";
@@ -187,7 +188,7 @@ describe("a specialist's run", () => {
     await wait_for_runs();
 
     const inner = fixture.requests.find(is_specialist)!;
-    expect(inner.tools.definitions.map((each) => each.name)).toEqual(["fake__lookup", "fake__post", "fake__ask_out"]);
+    expect(inner.tools.definitions.map((each) => each.name)).toEqual(["fake__lookup", "fake__post", "fake__ask_out", "read_tool_result"]);
     expect(inner.tools.core).toBeUndefined();
     expect(inner.tools.specialists).toBeUndefined();
     expect(inner.conversation).toEqual([{ role: "user", text: `${user_request_label}:\nWhere are my tiles?\n\nThe assistant's request to you:\nFind the tiles.` }]);
@@ -328,6 +329,41 @@ describe("a specialist's limits", () => {
     expect(seen.at(-1)).toContain("a specialist may use its tools at most");
   });
 
+  it("hands back what it did when it runs out of calls, for the run to ask again for the rest", async () => {
+    const { fixture } = two_plugins();
+    const results = asks(fixture, async function* (request) {
+      for (let at = 0; at <= specialist_limits.max_tool_calls; at += 1) yield* call_tool(request, `s${at}`, "fake__lookup", { q: `word ${at}` });
+      yield { type: "done", text: "Looked up the first words." };
+    });
+    await fixture.calls.send_message(null, "Look a lot");
+    await wait_for_runs();
+
+    const partial = results[0]!;
+    expect(partial).not.toContain("could not finish");
+    expect(partial.startsWith(`The Fake tools specialist stopped at its limit of ${specialist_limits.max_tool_calls} tool calls before finishing.`)).toBe(true);
+    expect(partial).toContain("Ask it again for the remainder, naming what is already done, or split the rest into smaller requests.");
+    expect(partial).toContain('- fake__lookup {"q":"word 0"}: ran');
+    expect(partial).toContain(`- fake__lookup {"q":"word ${specialist_limits.max_tool_calls - 1}"}: ran`);
+    expect(partial).not.toContain(`"word ${specialist_limits.max_tool_calls}"`);
+    expect(partial).toContain("What it wrote:\nLooked up the first words.");
+    expect(partial).toContain("<untrusted-data>");
+  });
+
+  it("hands back what it did when it runs out of rounds", async () => {
+    const { fixture } = two_plugins();
+    const results = asks(fixture, async function* (request) {
+      for (let at = 0; at < specialist_limits.max_rounds; at += 1) {
+        yield { type: "usage", input_tokens: 10, output_tokens: 2 };
+        yield* call_tool(request, `s${at}`, "fake__lookup", { q: `word ${at}` });
+      }
+      yield { type: "error", message: "The model was still calling tools after 8 rounds." };
+    });
+    await fixture.calls.send_message(null, "Look a lot");
+    await wait_for_runs();
+    expect(results[0]).toContain(`stopped at its limit of ${specialist_limits.max_rounds} model rounds before finishing.`);
+    expect(results[0]).toContain("It wrote nothing before stopping.");
+  });
+
   it("stops with the run, and fails the ask with why", async () => {
     const { fixture } = two_plugins();
     let release: () => void = () => undefined;
@@ -466,8 +502,8 @@ describe("a source app's ask_ tool", () => {
     await wait_for_runs();
 
     const inner = fixture.requests.find(is_specialist)!;
-    expect(inner.tools.definitions.map((each) => each.name)).toEqual(["search_collector", "get_source_item", "list_collector_feeds"]);
-    for (const definition of inner.tools.definitions) expect(Object.keys((definition.parameters.properties ?? {}) as object)).not.toContain("collector");
+    expect(inner.tools.definitions.map((each) => each.name)).toEqual(["search_collector", "get_source_item", "list_collector_feeds", "read_tool_result"]);
+    for (const definition of inner.tools.definitions.slice(0, 3)) expect(Object.keys((definition.parameters.properties ?? {}) as object)).not.toContain("collector");
     expect(inner.instructions).toContain("You are the Notes specialist");
     expect(inner.instructions).toContain("How Notes works, from its author: Notes are kept by room.");
     expect(asked).toEqual(["search tiles", "resolve n1", "feeds"]);
@@ -622,7 +658,7 @@ describe("CODEX's own specialists", () => {
     expect(ask_name_of("Contexts", "tests.contexts/contexts", new Set())).toMatch(/^ask_contexts_[0-9a-f]{8}$/);
 
     const tools = await tools_of(fixture, { collectors: await open_collector_sources(fixture.database) });
-    for (const view of [tools.specialists!.definitions, tools.specialists!.core!]) expect(view.map((each) => each.name).filter((name) => !name.startsWith("ask_"))).toEqual(["set_mood"]);
+    for (const view of [tools.specialists!.definitions, tools.specialists!.core!]) expect(view.map((each) => each.name).filter((name) => !name.startsWith("ask_"))).toEqual(["set_mood", "read_tool_result"]);
     expect(tools.specialists!.delegated.map((each) => each.name)).toEqual(expect.arrayContaining(["add_item", "propose_entity", "fake__lookup"]));
     const graph = tools.specialists!.definitions.find((each) => each.name === "ask_graph")!;
     expect(graph.description).toContain("get_node_links, list_graph_proposals, propose_entity, propose_link, propose_link_drop.");
@@ -630,7 +666,7 @@ describe("CODEX's own specialists", () => {
 
     // A run offered few calls keeps them as they are.
     const few = await tools_of(fixture, { only: new Set(["get_node_links", "propose_link"]) });
-    expect(few.definitions.map((each) => each.name)).toEqual(["get_node_links", "propose_link"]);
+    expect(few.definitions.map((each) => each.name)).toEqual(["get_node_links", "propose_link", "read_tool_result"]);
     expect(few.specialists).toBeUndefined();
   });
 
@@ -727,5 +763,59 @@ describe("CODEX's own specialists", () => {
     await start_run(fixture.database, null, "Suggest links", null, { tools: ["get_node_links"] });
     await wait_for_runs();
     expect(fixture.requests.at(-1)!.instructions_with_specialists).toBeUndefined();
+  });
+});
+
+describe("paging a specialist's results", () => {
+  it("lets a specialist read back its own calls' results but not the run's that asked it", async () => {
+    const { fixture } = two_plugins();
+    const seen: string[] = [];
+    fixture.set_script(async function* (request) {
+      if (is_specialist(request)) {
+        yield { type: "tool_call", id: "s1", name: "fake__lookup", arguments: { q: "tiles" } };
+        yield { type: "tool_result", id: "s1", ...(await request.tools.call("fake__lookup", { q: "tiles" }, "s1")) };
+        for (const call_id of ["s1", "o1"]) {
+          const outcome = await request.tools.call("read_tool_result", { call_id }, `read_${call_id}`);
+          seen.push(outcome.result);
+        }
+        yield { type: "done", text: "Found." };
+        return;
+      }
+      yield { type: "tool_call", id: "o1", name: "list_contexts", arguments: {} };
+      yield { type: "tool_result", id: "o1", ...(await request.tools.call("list_contexts", {}, "o1")) };
+      yield { type: "tool_call", id: "o2", name: "ask_fake_tools", arguments: { request: "Find the tiles." } };
+      yield { type: "tool_result", id: "o2", ...(await request.tools.call("ask_fake_tools", { request: "Find the tiles." }, "o2")) };
+      seen.push((await request.tools.call("read_tool_result", { call_id: "o2" })).result);
+      yield { type: "done", text: "Asked." };
+    });
+    await fixture.calls.send_message(null, "Where are my tiles?");
+    await wait_for_runs();
+
+    expect(seen[0]).toContain("lookup answered.");
+    expect(seen[0]).toContain('of fake__lookup call "s1". That is the end.]');
+    expect(seen[1]).toBe('Tool error: there is no result with call_id "o1" in this run. The calls kept in this run are: s1.');
+    // The run reads its specialist's answer back, fenced as it was.
+    expect(seen[2]).toContain("<untrusted-data>");
+    expect(seen[2]).toContain('of ask_fake_tools call "o2". That is the end.]');
+  });
+});
+
+describe("what the run and its specialists are told", () => {
+  it("tells the run to split a large request and both to stop after one other approach", async () => {
+    const { fixture } = two_plugins();
+    asks(fixture, async function* (_request) {
+      yield { type: "done", text: "Found." };
+    });
+    await fixture.calls.send_message(null, "Where are my tiles?");
+    await wait_for_runs();
+
+    const run = fixture.requests.find((request) => !is_specialist(request))!;
+    expect(run.instructions_with_specialists).toContain("split it into several ask_ calls of one bounded piece each");
+    for (const told of [run.instructions, run.instructions_with_specialists!]) expect(told).toContain(give_up_line);
+    const inner = fixture.requests.find(is_specialist)!;
+    expect(inner.instructions).toContain(give_up_line);
+    expect(inner.instructions).toContain(`You have at most ${specialist_limits.max_rounds} model rounds and ${specialist_limits.max_tool_calls} tool calls.`);
+    expect(inner.instructions).toContain("what is left, as a follow-up request ready to send");
+    for (const group of own_groups(() => true)) expect(specialist_instructions(group, "")).toContain(give_up_line);
   });
 });

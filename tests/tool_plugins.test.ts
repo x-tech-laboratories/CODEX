@@ -116,7 +116,7 @@ describe("which plugin tools are offered", () => {
 
     // A run offered only some calls gets only the plugin tools it names.
     ({ tools } = await tools_of(fixture, { only: new Set(["get_item", "fake__ask_out"]) }));
-    expect(tools.definitions.map((tool) => tool.name)).toEqual(["get_item", "fake__ask_out"]);
+    expect(tools.definitions.map((tool) => tool.name)).toEqual(["get_item", "fake__ask_out", "read_tool_result"]);
   });
 
   it("describe a tool in its plugin's words, fenced when its author did not write them, with what it does", async () => {

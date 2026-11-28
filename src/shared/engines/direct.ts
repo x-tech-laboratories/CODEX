@@ -226,6 +226,8 @@ export async function* run_direct(model: ChatModel, request: EngineRequest, sign
   const tools = offered_tools(chosen, options.tool_set, options.context_size, instructions, ratio);
   const could_use_core = chosen.core !== undefined && tools !== chosen.core;
   const told = new Set<string>();
+  // The call ids given so far, so a server that numbers each round's calls afresh still names every result apart.
+  const call_ids = new Set<string>();
   let said = "";
   // A background job may allow fewer rounds than the engine's own limit.
   const max_rounds = Math.max(1, Math.min(options.max_rounds, request.limits?.max_rounds ?? options.max_rounds));
@@ -287,12 +289,18 @@ export async function* run_direct(model: ChatModel, request: EngineRequest, sign
         yield { type: "done", text: said.trim() };
         return;
       }
-      messages.push({ role: "assistant", content: completion.content, tool_calls: completion.tool_calls });
-      for (const call of completion.tool_calls) {
+      const calls = completion.tool_calls.map((call) => {
+        let id = call.id;
+        for (let count = 2; call_ids.has(id); count += 1) id = `${call.id}_${count}`;
+        call_ids.add(id);
+        return { ...call, id };
+      });
+      messages.push({ role: "assistant", content: completion.content, tool_calls: calls });
+      for (const call of calls) {
         if (signal.aborted) throw new Error(stopped_message);
         const given = parse_arguments(call.arguments);
         yield { type: "tool_call", id: call.id, name: call.name, arguments: given ?? {} };
-        const outcome = given === null ? { result: "Tool error: arguments must be a JSON object.", is_error: true } : await request.tools.call(call.name, given);
+        const outcome = given === null ? { result: "Tool error: arguments must be a JSON object.", is_error: true } : await request.tools.call(call.name, given, call.id);
         yield { type: "tool_result", id: call.id, result: outcome.result, is_error: outcome.is_error };
         messages.push({ role: "tool", tool_call_id: call.id, content: outcome.result });
       }

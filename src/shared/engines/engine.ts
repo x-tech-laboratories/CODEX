@@ -32,7 +32,8 @@ export interface EngineTools {
   definitions: ToolDefinition[];
   // The smaller set for a model with a small context: the reads and the most-used changes, briefly described.
   core?: ToolDefinition[];
-  call(name: string, args: Record<string, unknown>): Promise<ToolOutcome>;
+  // The engine's own id for the call, when it has one, names its result for read_tool_result.
+  call(name: string, args: Record<string, unknown>, call_id?: string): Promise<ToolOutcome>;
   // The same tools with each part of CODEX's own calls, each tool plugin's tools and each source app's reads behind one
   // ask_ tool of its specialist; `delegated` is the full definitions they stand for, which the Automatic rule weighs.
   specialists?: { definitions: ToolDefinition[]; core?: ToolDefinition[]; delegated: ToolDefinition[] };

@@ -354,7 +354,7 @@ describe("the SmartHarness engine in CODEX", () => {
     const own = { name: "save_finding", description: "Saves.", parameters: { type: "object", properties: {} }, run: async () => "Saved." };
     await start_run(fixture.database, null, "Research cold greenhouses.", null, { presence: "background", isolated: true, tools: ["save_finding"], own_tools: [own as never] });
     await wait_for_runs();
-    expect([...offered_names(scripted.requests)]).toEqual(["mcp__codex__save_finding"]);
+    expect([...offered_names(scripted.requests)]).toEqual(["mcp__codex__save_finding", "mcp__codex__read_tool_result"]);
     const instructions = scripted.requests.map((request) => request.messages.map((message) => message.content).join("\n")).join("\n");
     expect(instructions).not.toContain("The conversation so far");
   });
