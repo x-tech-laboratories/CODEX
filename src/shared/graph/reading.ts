@@ -10,7 +10,7 @@ import { scope_of as context_scope } from "../contexts/model.ts";
 import { context_items, contexts } from "../contexts/schema.ts";
 import { drizzle_of } from "../feature.ts";
 import { context_tree, subtree } from "../search/documents.ts";
-import { node_key, parse_node_key, type GraphFilter, type GraphLink, type GraphNode, type GraphProposals, type GraphStatus, type GraphView, type NodeLinks, type ProposedLink } from "./model.ts";
+import { node_key, parse_node_key, type GraphEntity, type GraphFilter, type GraphLink, type GraphNode, type GraphProposals, type GraphStatus, type GraphView, type NodeLinks, type ProposedLink } from "./model.ts";
 import { as_entity, as_link, canonical, evidence_labels, from_key, held_item_ids, is_open, links_touching, read_joins, read_nodes, resolve_node, to_key, type Joins, type LinkRow } from "./records.ts";
 import { graph_entities, graph_links } from "./schema.ts";
 
@@ -151,8 +151,9 @@ export function get_node_links(database: SqlDatabase, node: string): NodeLinks {
 // ── Proposals ────────────────────────────────────────────────────────────────
 
 // The links and entities waiting for the user, in one context and those inside it with the entities linked there, or
-// everywhere for Global or null; oldest first.
-export function list_graph_proposals(database: SqlDatabase, given_context: string | null = null): GraphProposals {
+// everywhere for Global or null; links then entities, each oldest first, a page at a time when a limit or the id of the
+// last one seen is given.
+export function list_graph_proposals(database: SqlDatabase, given_context: string | null = null, limit?: number | null, after?: string | null): GraphProposals {
   const context_id = context_scope(given_context);
   const joins = read_joins(database);
   const db = drizzle_of(database);
@@ -179,9 +180,23 @@ export function list_graph_proposals(database: SqlDatabase, given_context: strin
     const [from_node, to_node] = [nodes.get(link.from), nodes.get(link.to)];
     return from_node && to_node && link.from !== link.to ? [{ ...link, from_node, to_node }] : [];
   });
+  const links_waiting = proposed.sort((first, second) => first.recorded_at.localeCompare(second.recorded_at) || first.id.localeCompare(second.id));
+  const entities_waiting = entity_rows.map((row) => as_entity(row, labels)).sort((first, second) => first.created_at.localeCompare(second.created_at) || first.id.localeCompare(second.id));
+  return page_of_proposals(links_waiting, entities_waiting, limit, after);
+}
+
+// One page of the proposals, links then entities: those after the id given, or from the start when it is not among
+// them, at most limit of them.
+export function page_of_proposals(links: ProposedLink[], entities: GraphEntity[], limit?: number | null, after?: string | null): GraphProposals {
+  const all: ({ link: ProposedLink } | { entity: GraphEntity })[] = [...links.map((link) => ({ link })), ...entities.map((entity) => ({ entity }))];
+  const at = after ? all.findIndex((each) => ("link" in each ? each.link.id : each.entity.id) === after) : -1;
+  const rest = all.slice(at + 1);
+  const most = typeof limit === "number" && Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : rest.length;
+  const page = rest.slice(0, most);
   return {
-    links: proposed.sort((first, second) => first.recorded_at.localeCompare(second.recorded_at) || first.id.localeCompare(second.id)),
-    entities: entity_rows.map((row) => as_entity(row, labels)).sort((first, second) => first.created_at.localeCompare(second.created_at) || first.id.localeCompare(second.id)),
+    links: page.flatMap((each) => ("link" in each ? [each.link] : [])),
+    entities: page.flatMap((each) => ("entity" in each ? [each.entity] : [])),
+    left: rest.length - page.length,
   };
 }
 

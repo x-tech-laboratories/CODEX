@@ -224,8 +224,9 @@ so is what a rule makes. The same calls from a token on the server's API or from
 call came through MCP), and a program's link or entity is kept as proposed with `made_by` `program`, one already
 waiting is given back, and one the user rejected is refused; a `propose_*` call from a program with no engine behind it
 is a program's too. What an engine or similarity makes is proposed, and only the user at the page accepts or rejects it:
-`accept_graph_proposals` and `reject_graph_proposals` are page-only like `resolve_proposal`, and never offered to an
-engine. A rejected proposal stays as a rejected row, so the same two nodes are never proposed the same type of link
+`accept_graph_proposals` and `reject_graph_proposals` are page-only like `resolve_proposal`. An engine is never offered
+the first, and is offered the second only as a proposal (`approval_only_calls` in `policy.ts`): each call it makes waits
+for the user whatever any level says, has no level of its own, and approving it rejects as the user. A rejected proposal stays as a rejected row, so the same two nodes are never proposed the same type of link
 again; removing a link a rule, similarity or an engine made keeps it as rejected for the same reason, while the user's
 own link goes. Accepting a link accepts a proposed entity at its end; rejecting an entity rejects the links proposed
 to it.
@@ -242,7 +243,9 @@ context and every entity), with the links among them and the `structure` (each c
 drawn but not links). The filter takes node kinds or types, link types, statuses (accepted and proposed by default)
 and closed links; it caps the nodes at 300 (up to 5000), contexts first, then by link count, and says how many nodes
 and links were not shown. `get_node_links(node)` lists every link of a node of any status with the node at its other
-end, `list_graph_proposals(context_id?)` what waits, `list_link_counts(context_id)` each held item's open links.
+end, `list_graph_proposals(context_id?, limit?, after?)` what waits, links then entities, a page at a time when a limit
+or the id of the last one seen is given, with how many are `left`, and `list_link_counts(context_id)` each held item's
+open links.
 
 Writing: `change_graph_link`, `close_graph_link`, `remove_graph_link`, `rename_entity` and `remove_entity`, which takes
 its links along. After every write the feature removes any link whose end no longer exists: a removed context or
@@ -277,8 +280,8 @@ A job that made or closed links tells the maintenance host (`on_change`), which 
 
 ### Engines and the graph
 
-Engines are offered `get_node_links`, `list_graph_proposals` and the three proposing calls, `propose_entity`,
-`propose_link` and `propose_link_drop`; the core set takes all five. The proposing
+Engines are offered `get_node_links`, `list_graph_proposals`, the three proposing calls, `propose_entity`,
+`propose_link` and `propose_link_drop`, and `reject_graph_proposals` as a proposal; the core set takes all six. The proposing
 calls only make proposals, so they run without approval and are not changes under the action policy
 (`proposing_calls` in `policy.ts`); the run passes them the engine, the model and the sources it has read, which the
 proposal carries. Evidence names an item or a message; its excerpt is kept only when every source it carries is marked
@@ -653,6 +656,15 @@ crafted backup over the settings above, delete backups or schedule fewer kept. L
 schedule stay open to an admin's token. No backup call is in the api spec, so neither MCP endpoint offers one, and
 the desktop daemon serves its backups only over its socket to the window.
 
+A conversation keeps the assistant's task list for the job in hand (`conversations/task_list.ts`, the `task_list`
+column): its steps in order, each with its status (`todo`, `doing`, `done` or `skipped`) and a short note of what was
+decided. A run neither isolated nor kept to a few named tools is offered `set_task_list`, which replaces the list
+through `set_conversation_task_list` and gives it back; a specialist is not. A run starts with any list an earlier
+reply left open in its instructions, and after each of its other calls is told where the list stands, or, a few calls
+into a job with none, to write one. Every run's and specialist's instructions say to work one step at a time and to
+decide on one entry of a list before reading the next. A reply that stops short with steps open says to send "carry
+on". The pane shows the list above the message box, with Clear.
+
 ### Tools and the action policy
 
 The tools are the contexts feature's calls (contexts, items, collectors and feeds, `move_item` and
@@ -815,7 +827,7 @@ variables before `move_mcp_server_here` runs.
 
 Built 2026-11-27 and 2026-11-28 as doc 4's step 10: tool plugins (MCP servers among them), the source apps' collectors
 and then CODEX's own calls as specialists, each told how its part or app works, so with specialists in use the
-orchestrator holds only `ask_` tools and `set_mood`. **Why:** with the owner's MCP servers connected, every tool described is about
+orchestrator holds only `ask_` tools, `set_mood` and `set_task_list`. **Why:** with the owner's MCP servers connected, every tool described is about
 92,000 tokens, so a gpt-oss-20b at 32,768 tokens got only the core set and could not use those apps at all;
 SmartHarness measured the same split on a 4B model at 0/66 tasks with one flat list of 116 tools against 54/66 with
 specialists (its doc 1, "Agents").

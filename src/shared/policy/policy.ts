@@ -28,8 +28,12 @@ const not_offered = new Set(["export_contexts", "import_contexts", "set_context_
 // run without approval and are not changes under the policy.
 export const proposing_calls: ReadonlySet<string> = new Set(["propose_entity", "propose_link", "propose_link_drop", "propose_blueprint", "propose_blueprint_change", "propose_interest"]);
 
+// Calls only the user may make, at CODEX's own page, offered to an engine as proposals alone: each call it makes waits
+// for the user's approval whatever any level says, and approving it runs it as the user's. They have no level.
+export const approval_only_calls: ReadonlySet<string> = new Set(["reject_graph_proposals"]);
+
 // Only the contexts, items, collectors and feeds calls, the search, what a node is linked to and what waits in the graph,
-// the blueprints' reads, the six proposing calls, listing the interests, and listing, adding, changing and removing the assistant's own jobs; never accounts, settings, plugins, sync, backups, History, the conversations, this policy,
+// the blueprints' reads, the six proposing calls, rejecting the graph's proposals as a proposal, listing the interests, and listing, adding, changing and removing the assistant's own jobs; never accounts, settings, plugins, sync, backups, History, the conversations, this policy,
 // any other change to the graph or to a blueprint.
 export const offered_api: Record<string, MethodSpec> = {
   ...Object.fromEntries(Object.entries(contexts_feature.api as Record<string, MethodSpec>).filter(([name]) => !not_offered.has(name))),
@@ -39,6 +43,7 @@ export const offered_api: Record<string, MethodSpec> = {
   propose_entity: graph_feature.api.propose_entity as MethodSpec,
   propose_link: graph_feature.api.propose_link as MethodSpec,
   propose_link_drop: graph_feature.api.propose_link_drop as MethodSpec,
+  reject_graph_proposals: graph_feature.api.reject_graph_proposals as MethodSpec,
   list_blueprints: blueprints_feature.api.list_blueprints as MethodSpec,
   get_blueprint: blueprints_feature.api.get_blueprint as MethodSpec,
   propose_blueprint: blueprints_feature.api.propose_blueprint as MethodSpec,
@@ -57,16 +62,10 @@ export const maintenance_api: Record<string, MethodSpec> = {
   close_graph_link: graph_feature.api.close_graph_link as MethodSpec,
 };
 
-// Changes only a proposed drop of a link asks for, with no level, never offered to an engine: rejecting a link still
-// proposed. Closing an accepted one is close_graph_link, above.
-export const drop_api: Record<string, MethodSpec> = {
-  reject_graph_proposals: graph_feature.api.reject_graph_proposals as MethodSpec,
-};
-
-// The spec of a call a proposal may be for: one an engine is offered, one background maintenance proposes, or one a
-// proposed drop of a link runs.
+// The spec of a call a proposal may be for: one an engine is offered, rejecting a proposed link among them, which a
+// proposed drop of one asks for, or one background maintenance proposes.
 export function proposable_spec(method: string): MethodSpec | undefined {
-  return offered_api[method] ?? maintenance_api[method] ?? drop_api[method];
+  return offered_api[method] ?? maintenance_api[method];
 }
 
 // The core set offered to a model with a small context, each briefly described: the reads, searching and reading the
@@ -91,7 +90,8 @@ export const core_tools: Record<string, string> = {
   propose_link: "Proposes a typed link between two contexts, items or entities.",
   propose_link_drop: "Proposes ending a wrong link, by id, with why.",
   get_node_links: "Gets a node's links, with their ids.",
-  list_graph_proposals: "Lists the links and entities waiting.",
+  list_graph_proposals: "Lists waiting links and entities, a page at a time (limit, after).",
+  reject_graph_proposals: "Proposes rejecting waiting links or entities by id; the user decides.",
   get_blueprint: "Gets one blueprint whole.",
   propose_blueprint: "Proposes a blueprint: the rules and steps of a task the user taught you.",
   propose_blueprint_change: "Proposes a new version of a blueprint, with why.",
@@ -104,7 +104,7 @@ export function is_offered(method: string): boolean {
 
 // The offered calls that change something, each of which has a level.
 export function changing_calls(): string[] {
-  return Object.keys(offered_api).filter((method) => !is_read_only(method) && !proposing_calls.has(method));
+  return Object.keys(offered_api).filter((method) => !is_read_only(method) && !proposing_calls.has(method) && !approval_only_calls.has(method));
 }
 
 // Every call with a level: those an engine is offered, then those only background maintenance makes.

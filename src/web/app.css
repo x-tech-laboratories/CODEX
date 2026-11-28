@@ -262,6 +262,20 @@
   align-self: center;
 }
 
+/* The task list stays above the message box, its steps scrolling once they pass about a third of the pane. */
+.assistant-tasks {
+  flex: none;
+}
+
+.assistant-task-steps {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  max-height: 30vh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
 .chat-message {
   display: flex;
   flex-direction: column;

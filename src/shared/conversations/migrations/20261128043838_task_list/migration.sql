@@ -1,0 +1,1 @@
+ALTER TABLE `conversations` ADD `task_list` text DEFAULT '[]' NOT NULL;

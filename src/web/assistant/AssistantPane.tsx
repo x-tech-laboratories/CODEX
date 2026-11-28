@@ -1,6 +1,6 @@
 // The assistant's pane on the right: its face and the engine answering, a switcher between the open context's
 // conversations (those in no context when none is open), the one shown with the reply streaming in, the changes
-// waiting for the user, and the message box.
+// waiting for the user, its task list for the job in hand, and the message box.
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
@@ -31,6 +31,7 @@ import { Mascot } from "./Mascot.tsx";
 import { lasting_mood, moment_after, mood_summary, type MascotMood } from "./mascot.ts";
 import { use_conversation, type LiveRun, type LiveSpecialist } from "./use_conversation.ts";
 import { use_pinned_scroll } from "./pinned_scroll.ts";
+import { TaskList } from "./TaskList.tsx";
 import { PaneModel } from "../engines/ModelPicker.tsx";
 
 // ── Tool calls ───────────────────────────────────────────────────────────────
@@ -618,6 +619,7 @@ export function AssistantPane({ context_id }: { context_id: string | null }) {
           <ArrowDown size={14} /> Jump to latest
         </button>
       )}
+      {shown_id && data && <TaskList conversation_id={shown_id} steps={data.task_list} is_running={is_running} />}
       {engine && <Composer key={shown_id ?? "new"} context_id={context_id} conversation_id={shown_id} is_running={is_running} on_sent={(sent) => (pick(sent.conversation_id), on_sent_run(sent.run_id))} />}
     </div>
   );

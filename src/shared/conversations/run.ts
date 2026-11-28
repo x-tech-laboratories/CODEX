@@ -18,7 +18,7 @@ import { recall_blueprints, recalled_part } from "../blueprints/recall.ts";
 import { record_uses } from "../blueprints/records.ts";
 import { new_id } from "../feature.ts";
 import { is_read_only } from "../page_api.ts";
-import { brings_outside_content, core_tools, decide, is_offered, level_of, offered_api, proposing_calls, type Presence } from "../policy/policy.ts";
+import { approval_only_calls, brings_outside_content, core_tools, decide, is_offered, level_of, offered_api, proposing_calls, type Decision, type Presence } from "../policy/policy.ts";
 import { clip_excerpt } from "../graph/writing.ts";
 import { engine_set_mood, mood_part, set_mood_brief, set_mood_tool, settle_reply_mood } from "../mood/mood.ts";
 import type { ProposalRead } from "../policy/model.ts";
@@ -59,6 +59,18 @@ import {
 } from "./specialists.ts";
 import { read_kept, read_result_name, read_result_tool, result_id, shown_result, type KeptResult, type KeptResults } from "./results.ts";
 import { add_conversation_record, conversation_ids_in, conversation_row, has_conversation, summaries_of } from "./records.ts";
+import {
+  calls_before_nudge,
+  engine_set_answer,
+  is_open as is_open_step,
+  no_list_reminder,
+  read_task_list,
+  set_task_list_brief,
+  set_task_list_tool,
+  task_list_part,
+  task_list_reminder,
+  type TaskStep,
+} from "./task_list.ts";
 
 // ── Engines ──────────────────────────────────────────────────────────────────
 
@@ -132,6 +144,9 @@ export interface ToolContext {
   results?: KeptResults;
   // Set once a specialist's call was refused for its limit of tool calls.
   hit_call_limit?: boolean;
+  // Set for a run that keeps the conversation's task list, offered set_task_list and reminded of the list
+  // after each call; a specialist's leaves it out.
+  task_list?: boolean;
 }
 
 // A tool of a run's own: what the engine is shown, and what it does, answering in words.
@@ -228,6 +243,7 @@ export function engine_tools(context: ToolContext): EngineTools {
     ...(!only || only.has(set_mood_tool.name) ? [{ name: set_mood_tool.name, description: set_mood_tool.description, parameters: set_mood_tool.parameters as JsonSchema }] : []),
     ...(context.own_tools ?? []).map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
     ...[...plugin_tools.values()].map((tool) => ({ name: tool.name, description: plugin_description(tool, longest_tool_description), parameters: tool.tool.parameters })),
+    ...(context.task_list ? [{ name: set_task_list_tool.name, description: set_task_list_tool.description, parameters: set_task_list_tool.parameters as JsonSchema }] : []),
     read_result_tool,
   ];
   // Each part of CODEX's own calls behind one ask_ tool, each plugin's tools behind another and each source app's read
@@ -254,6 +270,7 @@ export function engine_tools(context: ToolContext): EngineTools {
           .filter(([name]) => is_offered(name))
           .map(([name, description]) => ({ name, description, parameters: brief_schema(input_schema(offered_api[name]!)) })),
         { name: set_mood_tool.name, description: set_mood_brief, parameters: brief_schema(set_mood_tool.parameters as JsonSchema) },
+        ...(context.task_list ? [{ name: set_task_list_tool.name, description: set_task_list_brief, parameters: brief_schema(set_task_list_tool.parameters as JsonSchema) }] : []),
         read_result_tool,
         ...[...plugin_tools.values()]
           .filter((tool) => tool.small)
@@ -403,6 +420,7 @@ export function engine_tools(context: ToolContext): EngineTools {
       on_decided: (called, record) => note_nested(nest, called, record),
       results: new Map(),
       hit_call_limit: false,
+      task_list: false,
     };
     delete child.specialists;
     if (group.collector) child.bound_collector = group.collector.id;
@@ -457,6 +475,15 @@ export function engine_tools(context: ToolContext): EngineTools {
         return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}.`, is_error: true });
       }
     }
+    // The task list changes nothing of the user's, so it is kept at once, through the store so open pages show it.
+    if (context.task_list && name === set_task_list_tool.name) {
+      try {
+        const kept = (await context.call("set_conversation_task_list", [context.conversation_id, given && typeof given === "object" ? (given as Record<string, unknown>).steps : undefined], "engine")) as TaskStep[];
+        return decided(name, { outcome: "ran" }, { result: engine_set_answer(kept), is_error: false });
+      } catch (error) {
+        return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}`, is_error: true });
+      }
+    }
     // The mood changes nothing of the user's, so it is kept at once, with the call recorded in the reply.
     if (name === set_mood_tool.name && (!only || only.has(name))) {
       const set = engine_set_mood(context.database(), given && typeof given === "object" ? given : {}, { conversation_id: context.conversation_id, run_id: context.run_id ?? "", sources: read_sources(screen) }, Date.now());
@@ -492,7 +519,8 @@ export function engine_tools(context: ToolContext): EngineTools {
         return decided(name, { outcome: "ran" }, { result: (await run(id, name, [...padded, maker])).text, is_error: false });
       }
       const database = context.database();
-      const decision = decide(level_of(database, name), context.presence, context.has_outside_content);
+      // A call only the user may make is always a proposal, whatever its level would say.
+      const decision: Decision = approval_only_calls.has(name) ? { action: "propose", reason: "level" } : decide(level_of(database, name), context.presence, context.has_outside_content);
       if (decision.action === "refuse") return decided(name, { outcome: "refused" }, { result: `The user does not permit ${name}, so it was not run.`, is_error: true });
       if (decision.action === "propose") {
         const sources = [...new Set([...read_sources(screen), ...sources_named(database, given)])].sort();
@@ -515,17 +543,26 @@ export function engine_tools(context: ToolContext): EngineTools {
       return decided(name, { outcome: "failed" }, { result: `Tool error: ${(error as Error).message}`, is_error: true });
     }
   };
+  let calls_made = 0;
+  // After each call, a run keeping a task list is told where it is in it, or, a few calls into a job with none, to write one.
+  const with_reminder = (name: string, outcome: ToolOutcome): ToolOutcome => {
+    if (!context.task_list || name === set_task_list_tool.name) return outcome;
+    calls_made += 1;
+    const steps = read_task_list(context.database(), context.conversation_id);
+    const line = steps.length > 0 ? task_list_reminder(steps) : calls_made === calls_before_nudge ? no_list_reminder : "";
+    return line ? { ...outcome, result: `${outcome.result}\n${line}` } : outcome;
+  };
   return {
     definitions,
     ...(core ? { core } : {}),
     ...(specialists ? { specialists } : {}),
     call: async (name, given, engine_call_id) => {
-      if (name === read_result_name) return read_result(given && typeof given === "object" && !Array.isArray(given) ? given : {});
+      if (name === read_result_name) return with_reminder(name, await read_result(given && typeof given === "object" && !Array.isArray(given) ? given : {}));
       const id = result_id(results, engine_call_id);
       const outcome = await call_tool(id, name, given);
       // Every other result is kept too, as given, so a dropped one can be read again.
       if (!results.has(id)) results.set(id, { name, text: outcome.result, fenced: false, sources: new Set(), taints: false });
-      return outcome;
+      return with_reminder(name, outcome);
     },
   };
 }
@@ -745,9 +782,13 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   // The mood colours tone only; its reason carries the sources of the reply that set it.
   const mood = !isolated && (!options.tools || options.tools.includes(set_mood_tool.name)) ? mood_part(database, screen, Date.now()) : null;
   for (const source of mood?.sources ?? []) instructions.sources.add(source);
+  // A run neither isolated nor kept to a few named tools keeps the conversation's task list, and is told what an earlier
+  // reply left open in it.
+  const keeps_task_list = !isolated && !options.tools;
+  const open_list = keeps_task_list ? task_list_part(read_task_list(database, conversation_id)) : "";
   // With specialists the plugin tools and their guidance are theirs, so the run's instructions leave them out.
   const told = (head: string, with_specialists: boolean) =>
-    [head, extra?.value ?? "", isolated ? "" : sources_part(summaries, with_specialists), recalled.length > 0 ? recalled_part(recalled) : "", with_specialists ? "" : plugin_part, with_specialists ? "" : guidance, mood?.value ?? ""].filter(Boolean).join("\n\n");
+    [head, extra?.value ?? "", isolated ? "" : sources_part(summaries, with_specialists), recalled.length > 0 ? recalled_part(recalled) : "", with_specialists ? "" : plugin_part, with_specialists ? "" : guidance, mood?.value ?? "", open_list].filter(Boolean).join("\n\n");
   // A conversation's run, whose CODEX calls may go to specialists, has instructions for that too, which say less of them.
   const with_specialists = options.tools ? undefined : told(screened_instructions(database, context_id, conversation_id, new Date().toISOString().slice(0, 10), screen, true).value, true);
   instructions.value = told(instructions.value, false);
@@ -782,6 +823,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
     ...(options.own_tools ? { own_tools: options.own_tools } : {}),
     ...(options.max_plugin_calls !== undefined ? { max_plugin_calls: options.max_plugin_calls } : {}),
     ...(isolated ? { reads_nothing_private: true } : {}),
+    task_list: keeps_task_list,
     specialists: {
       engine: found.running,
       user_message: text.trim(),
@@ -931,6 +973,10 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
   };
   if (run.abort.signal.aborted || run.stopped_by) [error, error_detail] = [stops[run.stopped_by], ""];
   else if (final_text === null && !error) error = "The engine stopped without an answer.";
+  // A reply cut short with steps still open says how to go on from where its task list stands.
+  if (error && error !== "Stopped." && run.presence === "conversation" && !run.options.isolated && has_conversation(host.database(), conversation_id) && read_task_list(host.database(), conversation_id).some(is_open_step)) {
+    error = `${error} Its task list keeps where it got to: send “carry on” to go on from there.`;
+  }
   for (const call of state.tool_calls) if (call.outcome === "pending") call.outcome = "failed";
   // Gone before the pages hear of the end, so a page loading the conversation then finds the message and no run.
   runs.delete(conversation_id);

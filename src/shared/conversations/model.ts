@@ -6,6 +6,7 @@
 import { item_link } from "@x-tech-laboratories/x-libs/items";
 
 import type { Proposal } from "../policy/model.ts";
+import type { TaskStep } from "./task_list.ts";
 
 // ── Messages ─────────────────────────────────────────────────────────────────
 
@@ -158,6 +159,8 @@ export interface Conversation extends ConversationSummary {
   messages: ConversationMessage[];
   proposals: Proposal[];
   run: RunState | null;
+  // The assistant's task list for the job in hand: its steps in order, each with its status and note.
+  task_list: TaskStep[];
 }
 
 // What a run tells open pages as it goes; the page lays them over the conversation it loaded.
