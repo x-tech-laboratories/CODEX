@@ -52,7 +52,7 @@ export interface EngineRequest {
 
 export type EngineEvent =
   | { type: "text"; text: string }
-  // What a reasoning model thinks before it answers; shown while it streams, never kept or sent back.
+  // What a reasoning model thinks as it answers; shown while it streams, kept with the reply unless the user turns that off, never sent back.
   | { type: "reasoning"; text: string }
   // Something the user should know about this reply, such as their message being shortened to fit the model.
   | { type: "notice"; text: string }

@@ -94,13 +94,17 @@ export function ToolCallRow({ call, decided, undo, decisions }: { call: ToolCall
     >
       <p className="muted small">Arguments</p>
       <pre className="output">{JSON.stringify(call.arguments, null, 2)}</pre>
-      {call.calls && call.calls.length > 0 && (
+      {((call.calls && call.calls.length > 0) || (call.thinking && call.thinking.length > 0)) && (
         <>
           <p className="muted small">The specialist's calls</p>
           <div className="tool-call-nested">
-            {call.calls.map((nested) => (
-              <ToolCallRow key={nested.id} call={nested} decided={nested.proposal_id ? decisions?.get(nested.proposal_id) : undefined} />
-            ))}
+            {reply_parts("", call.calls ?? [], call.thinking).map((part, at) =>
+              "call" in part ? (
+                <ToolCallRow key={part.call.id} call={part.call} decided={part.call.proposal_id ? decisions?.get(part.call.proposal_id) : undefined} />
+              ) : (
+                "thinking" in part && <Thinking key={`thinking-${at}`} text={part.thinking} active={call.outcome === "pending"} />
+              ),
+            )}
           </div>
         </>
       )}
@@ -146,12 +150,12 @@ export function ReplyError({ error, detail }: { error: string; detail: string })
   );
 }
 
-// What a reasoning model is thinking, folded under a Thinking row that opens to about ten lines, following the newest
-// text as it streams unless the reader has scrolled up.
+// What a reasoning model is thinking, or thought, folded under a Thinking row that opens to about ten lines, following
+// the newest text as it streams unless the reader has scrolled up.
 export function Thinking({ text, active = true }: { text: string; active?: boolean }) {
   const tail = use_follow_tail<HTMLParagraphElement>(text, active);
   return (
-    <FormGroup class_name="reply-thinking" summary={<span className="muted small">Thinking…</span>}>
+    <FormGroup class_name="reply-thinking" summary={<span className="muted small">{active ? "Thinking…" : "Thinking"}</span>}>
       <p ref={tail.ref} className="muted small reply-thinking-text" onScroll={tail.on_scroll}>
         {text}
       </p>
@@ -184,9 +188,11 @@ function Message({ message, decided, undos }: { message: ConversationMessage; de
   return (
     <div className="chat-message from-assistant">
       <Notices notices={message.notices} />
-      {reply_parts(message.text, message.tool_calls).map((part, at) =>
+      {reply_parts(message.text, message.tool_calls, message.thinking).map((part, at) =>
         "call" in part ? (
           <ToolCallRow key={part.call.id} call={part.call} decided={part.call.proposal_id ? decided.get(part.call.proposal_id) : undefined} undo={undos.get(`${message.id}:${part.call.id}`)} decisions={decided} />
+        ) : "thinking" in part ? (
+          <Thinking key={`thinking-${at}`} text={part.thinking} active={false} />
         ) : (
           <Markdown key={`text-${at}`} text={part.text} />
         ),
@@ -198,13 +204,20 @@ function Message({ message, decided, undos }: { message: ConversationMessage; de
 }
 
 function Reply({ run }: { run: LiveRun }) {
+  const parts = reply_parts(run.text, run.tool_calls, run.thinking);
   return (
     <div className="chat-message from-assistant" aria-live="polite" aria-busy={!run.finished}>
       <Notices notices={run.notices} />
-      {reply_parts(run.text, run.tool_calls).map((part, at, parts) =>
-        "call" in part ? <ToolCallRow key={part.call.id} call={part.call} /> : <Markdown key={`text-${at}`} text={part.text} follow={at === parts.length - 1} />,
+      {parts.map((part, at) =>
+        "call" in part ? (
+          <ToolCallRow key={part.call.id} call={part.call} />
+        ) : "thinking" in part ? (
+          <Thinking key={`thinking-${at}`} text={part.thinking} active={!run.finished && at === parts.length - 1} />
+        ) : (
+          <Markdown key={`text-${at}`} text={part.text} follow={at === parts.length - 1} />
+        ),
       )}
-      {run.reasoning ? <Thinking text={run.reasoning} active={!run.finished} /> : !run.text && <p className="muted small">Thinking…</p>}
+      {!run.text && !parts.some((part) => "thinking" in part) && <p className="muted small">Thinking…</p>}
     </div>
   );
 }

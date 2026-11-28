@@ -34,23 +34,50 @@ export interface ToolCallRecord {
   text_at?: number;
   // Set on an ask_ tool's call: the calls its specialist made, in order.
   calls?: ToolCallRecord[];
+  // Set on an ask_ tool's call: what its specialist's model thought, each piece placed among its calls.
+  thinking?: ThinkingPiece[];
 }
 
-// A reply as it reads: its text cut where each call was made, each call between the text before it and after it.
-export type ReplyPart = { text: string } | { call: ToolCallRecord };
+// One stretch of a reasoning model's thinking, placed where it happened: how far into the reply's text, in characters,
+// and after how many of its tool calls.
+export interface ThinkingPiece {
+  text: string;
+  text_at: number;
+  calls_before: number;
+}
 
-export function reply_parts(text: string, calls: ToolCallRecord[]): ReplyPart[] {
-  const placed = calls.map((call, order) => ({ call, at: Math.max(0, Math.min(text.length, call.text_at ?? 0)), order })).sort((first, second) => first.at - second.at || first.order - second.order);
+// The thinking after one more streamed piece: added to the last stretch while nothing was written or called since,
+// else a new stretch where the reply stands now.
+export function add_thinking(thinking: ThinkingPiece[], text: string, text_at: number, calls_before: number): ThinkingPiece[] {
+  const last = thinking.at(-1);
+  if (last && last.text_at === text_at && last.calls_before === calls_before) return [...thinking.slice(0, -1), { ...last, text: last.text + text }];
+  return [...thinking, { text, text_at, calls_before }];
+}
+
+// A reply as it reads: its text cut where each call was made and each stretch of thinking happened, each between the
+// text before it and after it.
+export type ReplyPart = { text: string } | { call: ToolCallRecord } | { thinking: string };
+
+export function reply_parts(text: string, calls: ToolCallRecord[], thinking: ThinkingPiece[] = []): ReplyPart[] {
+  const clamp = (at: number | undefined) => Math.max(0, Math.min(text.length, at ?? 0));
+  // A stretch of thinking goes before the call made after it, so ties sort by calls made, then thinking first.
+  const placed = [
+    ...calls.map((call, order) => ({ part: { call } as ReplyPart, at: clamp(call.text_at), order: order + 1, kind: 1 })),
+    ...thinking.filter((piece) => piece.text.trim()).map((piece) => ({ part: { thinking: piece.text } as ReplyPart, at: clamp(piece.text_at), order: piece.calls_before + 1, kind: 0 })),
+  ].sort((first, second) => first.at - second.at || first.order - second.order || first.kind - second.kind);
   const parts: ReplyPart[] = [];
   let from = 0;
-  for (const { call, at } of placed) {
+  for (const { part, at } of placed) {
     if (text.slice(from, at).trim()) parts.push({ text: text.slice(from, at) });
-    parts.push({ call });
+    parts.push(part);
     from = at;
   }
   if (text.slice(from).trim()) parts.push({ text: text.slice(from) });
   return parts;
 }
+
+// The setting that keeps a reasoning model's thinking with each reply; off, it still shows while it streams.
+export const keep_thinking_setting = "keep_thinking";
 
 // What undoing an applied change puts back: each context it touched, by the version it made and the version before it
 // (null for a context it made), with the change in plain words and when it was undone.
@@ -78,6 +105,8 @@ export interface ConversationMessage {
   notices: string[];
   // The sources whose content the run that wrote it had read, by collector id; "*" when not recorded.
   sources: string[];
+  // What a reasoning model thought while writing it, each stretch where it happened; never sent back to an engine.
+  thinking: ThinkingPiece[];
   input_tokens: number;
   output_tokens: number;
   created_at: string;
@@ -92,8 +121,9 @@ export interface RunState {
   model: string;
   started_at: string;
   text: string;
-  // What a reasoning model thought so far, shown while it writes; never kept with the answer or sent back to it.
-  reasoning: string;
+  // What a reasoning model thought so far, each stretch where it happened; kept with the answer while the Keep thinking
+  // setting is on, and never sent back to it.
+  thinking: ThinkingPiece[];
   tool_calls: ToolCallRecord[];
   notices: string[];
 }

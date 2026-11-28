@@ -412,7 +412,7 @@ an engine plugin that reaches CODEX's data only through CODEX's own calls, under
 
 An engine is an X-Libs plugin providing an `engine` (`src/shared/engines/engine.ts`), beside the collectors in the
 same plugin host. It has a label and a `model()`, and `run(request, signal)` gives back an async iterable of events:
-text, reasoning (a reasoning model's thinking, shown while it streams), a notice for the user (such as their message
+text, reasoning (a reasoning model's thinking, shown while it streams and kept with the reply, never sent back), a notice for the user (such as their message
 shortened to fit), a tool call started, its result, usage, done with the final text, or an error with a plain message
 and the raw `detail` behind it. The request holds CODEX's instructions, the conversation so far as user and assistant
 turns, and the tools: their definitions, a `core` set of the same calls for a small context, and a
@@ -535,9 +535,22 @@ conversation is an item (`records.ts`): `items` holds `conversation:<id>` from t
 when it was last used in its detail, rewritten whenever a message is kept or it is renamed; `context_items` holds its
 place in each context, with a note, so every view, History, "also in" and search take it as they take any item. One
 started with no context named is Global's. A message is the user's, an answer (with the engine, model, tool calls with their
-results, error in plain words and its raw detail, notices and token counts) or an event, such as an approved change. A
-reasoning model's thinking streams to open pages as `reasoning` events and lives in the run's state while it writes;
-it is never kept, sent back to the engine or indexed.
+results, thinking, error in plain words and its raw detail, notices and token counts) or an event, such as an approved change.
+
+A reasoning model's thinking streams to open pages as `reasoning` events and gathers in the run's state as `thinking`,
+a list of stretches `{ text, text_at, calls_before }` (`ThinkingPiece` in `model.ts`): a new stretch begins whenever
+text or a tool call came since the last one (`add_thinking`, which the page's `next_run` uses too), so each keeps how far
+into the reply's text it came, as a call's `text_at` does, and how many of the reply's calls came before it, which
+orders it among calls made at the same place. When the run ends the stretches are kept on the answer's `thinking`
+column (a JSON list, migration `20261127230412_thinking`), moved back by the spaces the kept text lost at its start
+(`thinking_placed_in`), whole and with no size cap, so they sync with the message and go wherever it goes. The synced
+setting `keep_thinking` (on unless set to false; Settings → Assistant → Engine → **Keep thinking**) turns that off:
+thinking still streams and stands in the run, but the answer keeps none. A specialist's thinking is kept the same way
+on its `ask_` call's own `thinking`, placed among its nested calls (its text is not kept, so `text_at` is 0), and
+reaches open pages with the nest's next change. Thinking is never sent back: `screened_turns` builds every engine's
+conversation from the messages' text alone, which a test holds for the Anthropic, OpenAI-compatible and SmartHarness
+engines. It is not indexed for search, and, being the model's own text derived from the conversation, it carries the
+answer's `sources` like the text beside it.
 
 The calls: `list_conversations(context_id?)` lists a context's conversations, Global's for null, most
 recently used first, each with whether a reply is being written in it; `get_conversation(id)` gives the messages, the
@@ -828,7 +841,8 @@ specialists (its doc 1, "Agents").
   front of the run, the hosted log's tool rows and the hosted screening. The run starts lowered when the run asking was,
   and what it read lowers the run asking it; the answer is noted on the screen as the plugin's source (`tool:<key>`), so
   the reply's `sources`, the hosted log's counts and later replays carry it, and it lowers the run unless the plugin is
-  marked trusted. A hosted engine is offered no `ask_` tool for a plugin it is not offered.
+  marked trusted. A hosted engine is offered no `ask_` tool for a plugin it is not offered. Its model's thinking is kept
+  on the ask's call, as under "Conversations and runs".
 - **Limits.** A specialist takes at most 8 model rounds (fewer when a background job allows fewer) and 12 tool calls,
   plugin tools or an app's reads (`specialist_limits`, `max_calls_here`); its calls count toward the run's `max_plugin_calls` (`used`), and its
   usage events add to the run's rounds and tokens, so a background job's limits stop the whole run. The run's abort
@@ -859,8 +873,10 @@ conversation leaves the box sending to a new one. `use_conversation` loads the o
 over it until the kept answer arrives; a reply keeps being written while the user looks at another. Tool calls are
 folded rows, each where it was made in the reply (a call keeps `text_at`, how far into the reply's text it came; one
 kept before that was recorded shows ahead of the text), a proposed one reading as the user decided it; waiting proposals are cards with Approve and Reject; the message box sends on Enter. While a reasoning model
-thinks, a folded Thinking row opens to about ten lines of its thinking, scrolling and following the newest text
-unless the user has scrolled up, and the answer replaces it; a reply's notices show as
+thinks, a folded Thinking… row opens to about ten lines of its thinking, scrolling and following the newest text
+unless the user has scrolled up; each stretch stays where it happened (`reply_parts` places it among the text and
+calls), folded under Thinking once the reply ends and after a reload, and a specialist's stretches show among its
+calls inside the ask's row; a reply's notices show as
 banners above it, and an error says what happened in plain words with the raw detail under Details. Settings gains an
 Assistant category: Engine (which engine answers, whether it is local or hosted, and each engine plugin's own settings
 in its row), Action policy (each change's level, the two riskier levels badged) and Sent to hosted engines (the log).

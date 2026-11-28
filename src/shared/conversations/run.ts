@@ -37,7 +37,7 @@ import { assistant_host, type AssistantHost } from "./host.ts";
 import { own_collectors, screened_instructions, sources_part } from "./instructions.ts";
 import { declarations } from "../declared/current.ts";
 import { add_message, list_messages } from "./messages.ts";
-import { type ConversationMessage, type AssistantStatus, type EngineSummary, type RunState, type ToolCallRecord } from "./model.ts";
+import { add_thinking, keep_thinking_setting, type ConversationMessage, type AssistantStatus, type EngineSummary, type RunState, type ThinkingPiece, type ToolCallRecord } from "./model.ts";
 import {
   ask_definition,
   collector_groups,
@@ -367,7 +367,7 @@ export function engine_tools(context: ToolContext): EngineTools {
     const name = group.name;
     const request = given && typeof given === "object" && typeof given.request === "string" ? given.request.trim() : "";
     if (!request) return decided(name, { outcome: "failed" }, { result: "Tool error: missing argument request.", is_error: true });
-    const nest: Nest = host.nest?.(name) ?? { calls: [], changed: () => undefined };
+    const nest: Nest = host.nest?.(name) ?? { calls: [], thought: () => undefined, changed: () => undefined };
     const child: ToolContext = {
       ...context,
       only: new Set(group.collector ? group.collector.calls : group.tools.map((tool) => tool.name)),
@@ -694,7 +694,7 @@ export async function start_run(database: SqlDatabase, context_id: string | null
   if (runs.has(conversation_id)) throw new Error("A reply is still being written here; stop it or wait for it first.");
   const question = add_message(database, { conversation_id, role: "user", text: text.trim(), sources: [] });
   const notices = recalled.map(({ row }) => `Recalled the blueprint “${row.title}” for this message.`);
-  const state: RunState = { run_id: new_id(), engine: found.engine.label, model: found.engine.model, started_at: new Date().toISOString(), text: "", reasoning: "", tool_calls: [], notices };
+  const state: RunState = { run_id: new_id(), engine: found.engine.label, model: found.engine.model, started_at: new Date().toISOString(), text: "", thinking: [], tool_calls: [], notices };
   record_uses(database, recalled.map(({ row }) => row.id), conversation_id, state.run_id);
   // A live conversation always goes first: a background run writing now stops and runs again later.
   if (presence === "conversation") give_way();
@@ -757,7 +757,12 @@ function nest_of(run: Run, ask_name: string, host: AssistantHost): Nest | null {
   const call = run.state.tool_calls.findLast((each) => each.name === ask_name && each.outcome === "pending");
   if (!call) return null;
   const calls = (call.calls ??= []);
-  return { calls, changed: () => host.emit({ conversation_id: run.conversation_id, run_id: run.state.run_id, type: "tool_result", call: structuredClone(call) }) };
+  return {
+    calls,
+    // A specialist's text is not kept, so its thinking is placed among its calls alone.
+    thought: (text) => void (call.thinking = add_thinking(call.thinking ?? [], text, 0, calls.length)),
+    changed: () => host.emit({ conversation_id: run.conversation_id, run_id: run.state.run_id, type: "tool_result", call: structuredClone(call) }),
+  };
 }
 
 // Counts one model round, the run's own or a specialist's, and stops the run at a background job's limits; true once stopped.
@@ -781,6 +786,22 @@ export function placed_in(streamed: string, kept: string, calls: ToolCallRecord[
   return calls.map((call) => (call.text_at === undefined ? call : { ...call, text_at: Math.max(0, Math.min(kept.length, call.text_at - lead)) }));
 }
 
+// Each stretch of thinking's place in the text as kept, as for the calls.
+export function thinking_placed_in(streamed: string, kept: string, thinking: ThinkingPiece[]): ThinkingPiece[] {
+  const lead = streamed.length - streamed.trimStart().length;
+  return thinking.map((piece) => ({ ...piece, text_at: Math.max(0, Math.min(kept.length, piece.text_at - lead)) }));
+}
+
+// The calls as kept without their specialists' thinking, for when the Keep thinking setting is off.
+function without_thinking(calls: ToolCallRecord[]): ToolCallRecord[] {
+  return calls.map(({ thinking: _thinking, ...call }) => (call.calls ? { ...call, calls: without_thinking(call.calls) } : call));
+}
+
+// Whether a reply's thinking is kept with it; on unless the user turned it off.
+export function keeps_thinking(database: SqlDatabase): boolean {
+  return settings_feature.methods.get_settings(database)[keep_thinking_setting] !== false;
+}
+
 async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: AssistantHost): Promise<void> {
   const { conversation_id, state } = run;
   const base = { conversation_id, run_id: state.run_id };
@@ -793,11 +814,10 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
       if (run.abort.signal.aborted) break;
       if (event.type === "text") {
         state.text += event.text;
-        state.reasoning = "";
         host.emit({ ...base, type: "text", text: event.text });
       } else if (event.type === "reasoning") {
-        // Shown to open pages while it streams, and dropped with the run.
-        state.reasoning += event.text;
+        // Placed where the reply stands now, so each stretch shows where it happened.
+        state.thinking = add_thinking(state.thinking, event.text, state.text.length, state.tool_calls.length);
         host.emit({ ...base, type: "reasoning", text: event.text });
       } else if (event.type === "notice") {
         state.notices.push(event.text);
@@ -860,13 +880,16 @@ async function drive(run: Run, events: AsyncIterable<EngineEvent>, host: Assista
       host.emit({ ...base, type: "notice", text: closing });
     }
     const text = (final_text ?? state.text).trim();
+    const keep = keeps_thinking(host.database());
+    const calls = placed_in(state.text, text, state.tool_calls);
     add_message(host.database(), {
       conversation_id,
       role: "assistant",
       text,
       engine: state.engine,
       model: state.model,
-      tool_calls: placed_in(state.text, text, state.tool_calls),
+      tool_calls: keep ? calls : without_thinking(calls),
+      thinking: keep ? thinking_placed_in(state.text, text, state.thinking) : [],
       error,
       error_detail,
       notices: state.notices,
