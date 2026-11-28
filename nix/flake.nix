@@ -12,11 +12,11 @@
         pkgs = import nixpkgs { inherit system; };
       in
       {
-        packages.default = pkgs.callPackage ./nix/package.nix { };
-        packages.desktop = pkgs.callPackage ./nix/desktop-package.nix { };
+        packages.default = pkgs.callPackage ./package.nix { };
+        packages.desktop = pkgs.callPackage ./desktop-package.nix { };
         devShells.default = import ./shell.nix { inherit pkgs; };
       }
     ) // {
-      nixosModules.default = import ./nix/module.nix self;
+      nixosModules.default = import ./module.nix self;
     };
 }

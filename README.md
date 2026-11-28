@@ -458,7 +458,7 @@ its Message-ID finds it wherever it was filed.
 ## Running it
 
 ```sh
-nix-shell                 # Node 24 and an Electron that runs on NixOS
+nix-shell nix/shell.nix   # Node 24 and an Electron that runs on NixOS
 npm install
 npm run hash-password -- admin password.hash  # an admin in password.hash, which the dev server reads
 npm run seed              # sample contexts in dev-data/, and sample files for the Files collector
@@ -615,7 +615,7 @@ context points to are not CODEX's items; their own apps answer for them.
 ## NixOS
 
 ```nix
-inputs.codex.url = "github:x-tech-laboratories/CODEX";
+inputs.codex.url = "github:x-tech-laboratories/CODEX?dir=nix";
 
 imports = [ codex.nixosModules.default ];
 services.codex = {
@@ -659,7 +659,8 @@ scripts/       seed.ts for sample data, icons.ts for the icons
 tests/         one *.test.ts per behaviour
 legacy/        the pre-merge assistant, kept for porting and for a future mail application; not built or tested
 docs/          the goal, the architecture, open questions, the roadmap and the merge plan
-nix/           package.nix, desktop-package.nix, module.nix
+nix/           flake.nix and flake.lock, package.nix, desktop-package.nix, module.nix and shell.nix
+tsconfig/      tsconfig.base.json and one tsconfig.<target>.json each for node, web and tests
 ```
 
 ## License

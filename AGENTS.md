@@ -29,7 +29,7 @@ Read `README.md` first, then `docs/1-architecture.md`, then `docs/4-merge-with-x
 
 ### Setup and checks
 
-- `nix-shell` (or `nix develop`) gives Node 24 and an Electron that runs on NixOS; then `npm install`.
+- `nix-shell nix/shell.nix` (or `nix develop ./nix`) gives Node 24 and an Electron that runs on NixOS; then `npm install`.
 - `npm run typecheck`, `npm test` and `npm run lint` must pass before you propose a change.
 - While working, run only the tests for what you changed (`npx vitest run tests/<file>`); CI runs the full suite.
 - The coverage floor in `vitest.config.ts` sits a point under the measure and only rises; `npm run coverage` writes a

@@ -36,4 +36,4 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
-      - run: nix build .#default .#desktop
+      - run: nix build ./nix#default ./nix#desktop
