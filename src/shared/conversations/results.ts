@@ -6,6 +6,7 @@
 
 import type { ToolDefinition } from "../engines/engine.ts";
 import { untrusted_block } from "../engines/untrusted.ts";
+import { fill, prompts } from "../prompts/prompts.ts";
 
 // ── Kept results ─────────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ export function shown_result(id: string, kept: KeptResult): string {
   if (kept.text.length <= max_result_chars) return fence(kept.text);
   const total = kept.text.length.toLocaleString("en");
   const cut = max_result_chars.toLocaleString("en");
-  const marker = `[Cut at ${cut} of ${total} characters. For the rest call ${read_result_name} with call_id "${id}" and offset ${max_result_chars}, or call ${kept.name} again with narrower arguments.]`;
+  const marker = fill(prompts.kept_results.cut, { cut, total, reader: read_result_name, id, offset: max_result_chars, tool: kept.name });
   return `${fence(kept.text.slice(0, max_result_chars))}\n${marker}`;
 }
 
@@ -64,16 +65,16 @@ export function read_kept(results: KeptResults, given: Record<string, unknown>):
   const kept = results.get(id);
   if (!kept) {
     const known = [...results.keys()];
-    const listed = known.length > 0 ? ` The calls kept in this run are: ${known.slice(-20).join(", ")}.` : " This run has kept no results yet.";
-    return { text: `Tool error: there is no result with call_id "${id}" in this run.${listed}`, is_error: true };
+    const listed = known.length > 0 ? fill(prompts.kept_results.known_calls, { ids: known.slice(-20).join(", ") }) : prompts.kept_results.none_kept;
+    return { text: `${fill(prompts.kept_results.no_such_result, { id })} ${listed}`, is_error: true };
   }
   const total = kept.text.length;
   const offset = whole_number(given.offset, 0, 0, total);
   const length = whole_number(given.length, max_result_chars, 1, max_result_chars);
-  if (offset >= total) return { text: `There is no more: the result of ${kept.name} call "${id}" has ${total.toLocaleString("en")} characters.`, is_error: false };
+  if (offset >= total) return { text: fill(prompts.kept_results.no_more, { tool: kept.name, id, total: total.toLocaleString("en") }), is_error: false };
   const slice = kept.text.slice(offset, offset + length);
   const next = offset + slice.length;
-  const where = `Characters ${offset.toLocaleString("en")} to ${next.toLocaleString("en")} of ${total.toLocaleString("en")} of ${kept.name} call "${id}".`;
-  const marker = next < total ? `[${where} For the rest call ${read_result_name} with call_id "${id}" and offset ${next}.]` : `[${where} That is the end.]`;
+  const where = fill(prompts.kept_results.where, { from: offset.toLocaleString("en"), to: next.toLocaleString("en"), total: total.toLocaleString("en"), tool: kept.name, id });
+  const marker = next < total ? fill(prompts.kept_results.rest, { where, reader: read_result_name, id, offset: next }) : fill(prompts.kept_results.end, { where });
   return { text: `${kept.fenced ? untrusted_block(slice) : slice}\n${marker}`, is_error: false, kept, slice };
 }

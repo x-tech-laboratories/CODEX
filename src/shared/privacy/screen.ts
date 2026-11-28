@@ -11,6 +11,7 @@ import { open_plugin_host } from "../collectors/host.ts";
 import { blueprint_collector } from "../blueprints/model.ts";
 import { finding_collector } from "../interests/model.ts";
 import { conversation_collector } from "../conversations/model.ts";
+import { fill, prompts } from "../prompts/prompts.ts";
 import { settings_feature } from "../settings.ts";
 import { is_tool_source, tool_source_of } from "../tools/model.ts";
 import { open_tool_plugins } from "../tools/offered.ts";
@@ -219,7 +220,8 @@ export function withheld_line(screen: Screen, withheld: Map<string, number>, kin
   if (counts.length === 0) return "";
   const total = counts.reduce((sum, [, count]) => sum + count, 0);
   const each = counts.map(([collector, count]) => `${count} from ${screen.label_of(collector)}`).join(", ");
-  return `[Withheld: ${withheld_words(total, kinds)} (${each}), because the user has not marked ${counts.length === 1 ? "that source" : "those sources"} “May be sent to a hosted engine” in CODEX's Settings. Tell the user if they would have helped.]`;
+  const words = prompts.tool_results;
+  return fill(words.withheld, { what: withheld_words(total, kinds), each, sources: counts.length === 1 ? words.withheld_that_source : words.withheld_those_sources });
 }
 
 // How many of each source's entries a run sent or withheld, for the log.

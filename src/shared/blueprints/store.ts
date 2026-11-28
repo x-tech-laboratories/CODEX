@@ -14,6 +14,7 @@ import { when_items_left } from "../contexts/store.ts";
 import { assistant_host } from "../conversations/host.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
 import { parse_sources } from "../privacy/sources.ts";
+import { prompts } from "../prompts/prompts.ts";
 import { migrations } from "./migrations/index.ts";
 import { blueprint_of_item, blueprint_statuses, type Blueprint, type BlueprintDecisions, type BlueprintOutcome, type BlueprintProposal, type BlueprintStatus, type BlueprintSummary, type BlueprintText } from "./model.ts";
 import {
@@ -197,11 +198,7 @@ function propose_blueprint_change(database: SqlDatabase, id: string, body: strin
 
 // ── Saving from a conversation ───────────────────────────────────────────────
 
-export const save_as_blueprint_message = [
-  "Write up what we did in this conversation as a blueprint, so the next time we do this task you do it the same way.",
-  "Give it a short title, when it applies (a sentence naming the task, used to recognise it next time), and a body in Markdown with the rules I gave and the steps in order, naming the tool a step uses where that helps.",
-  "Use propose_blueprint, or propose_blueprint_change if one of the blueprints you followed or list_blueprints shows already covers this task. It waits for me to read and accept it; tell me briefly what you proposed.",
-].join(" ");
+export const save_as_blueprint_message = prompts.blueprints.save_request.join(" ");
 
 // Asks the engine, in the conversation given, to propose a blueprint from what was done there.
 async function save_as_blueprint(_database: SqlDatabase, conversation_id: string): Promise<{ conversation_id: string; run_id: string }> {
