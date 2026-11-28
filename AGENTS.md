@@ -6,10 +6,10 @@
   [Design Guidelines](https://x-tech-laboratories.github.io/standards/design/), whose source is `src/content/docs/standards/`
   in [x-tech-laboratories.github.io](https://github.com/x-tech-laboratories/x-tech-laboratories.github.io). Ask before
   changing either, since a change applies to every X-app.
-- Use [X-Libs](https://github.com/x-tech-laboratories/X-Libs) and Halon ([X-Themes](https://github.com/x-tech-laboratories/X-Themes))
-  before writing your own code: check the module table in the X-Libs README first.
-- A feature another app could use belongs in X-Libs, or Halon for styling, with tests and a README row. If that is out
-  of reach, add it to the candidates in X-Libs' `docs/TODO.md`.
+- Use [X-App](https://github.com/x-tech-laboratories/X-App) and Halon ([X-Themes](https://github.com/x-tech-laboratories/X-Themes))
+  before writing your own code: check the module table in the X-App README first.
+- A feature another app could use belongs in X-App, or Halon for styling, with tests and a README row. If that is out
+  of reach, add it to the candidates in X-App's `docs/TODO.md`.
 
 ## This repository
 
@@ -22,7 +22,7 @@ Read `README.md` first, then `docs/1-architecture.md`, then `docs/4-merge-with-x
   store built from features, sync, History, backups, a server host and an Electron window and daemon, every call
   served over REST, OpenAPI and MCP.
 - **`legacy/`:** the pre-merge assistant on SmartHarness. Nothing builds, tests, lints or measures it, and its
-  dependencies are not installed. Port a feature from it onto the store and the X-Libs widgets, with tests, rather
+  dependencies are not installed. Port a feature from it onto the store and the X-App widgets, with tests, rather
   than reviving it in place; delete what has been ported. Its mail code is frozen for a separate mail application.
 - **Engines and assistant features** come back as plugins and features of this store, in the order of doc 4. A change
   to SmartHarness's task tree, agents, prompts or evals belongs in SmartHarness.
@@ -42,7 +42,7 @@ Read `README.md` first, then `docs/1-architecture.md`, then `docs/4-merge-with-x
   only lists features.
 - CODEX never keeps an item's content as its own: an item is a pointer and what its collector last said of it. What it
   derives (indexes, embeddings, links) can be rebuilt.
-- A collector is an X-Libs plugin providing a `collector`; one that needs Node goes in `src/server/collectors/`, any other
+- A collector is an X-App plugin providing a `collector`; one that needs Node goes in `src/server/collectors/`, any other
   in `src/shared/collectors/`.
 - Code in `src/shared/` runs on the server and in the desktop daemon, and its types in the page: no DOM, no `node:` imports.
 - The desktop app's work goes in `src/daemon`; `src/main` keeps only what needs Electron: the window, the tray and the login entry.
@@ -52,8 +52,8 @@ Read `README.md` first, then `docs/1-architecture.md`, then `docs/4-merge-with-x
 - Every store call has a spec in its feature's `api` saying what it does and its arguments, so the API and MCP
   offer it too; describe it for someone who has never seen the page.
 - A released migration step is never edited; add a new step after it. For a feature on Drizzle, change `schema.ts` and run `npm run db:generate`.
-- Queries go through X-Libs `drizzle` (`drizzle_of(database)`), never an import of `drizzle-orm` itself.
-- Use X-Libs widgets and Halon classes; `app.css` holds layout only and never a colour. A widget two apps could use goes into X-Libs.
+- Queries go through X-App `drizzle` (`drizzle_of(database)`), never an import of `drizzle-orm` itself.
+- Use X-App widgets and Halon classes; `app.css` holds layout only and never a colour. A widget two apps could use goes into X-App.
 - Tests use a throwaway database (`:memory:` or a temp file), never `dev-data/` or a real profile.
 - Comments are one plain line saying what the code does now; names are snake_case, components PascalCase.
 - Commit messages follow Conventional Commits and end with an `Assisted-by:` trailer naming the tool.
