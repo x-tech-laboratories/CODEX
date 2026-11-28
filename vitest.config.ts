@@ -14,6 +14,8 @@ export default defineConfig({
     server: { deps: { inline: [/x-libs\/dist\/web\/react\/graph/] } },
     coverage: {
       provider: "v8",
+      // The summary in the terminal is all the floor check needs, so no coverage/ folder is written.
+      reporter: ["text"],
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["legacy/**"],
       thresholds: {
