@@ -102,6 +102,7 @@ const allowed_tools = [
   "get_context",
   "get_item",
   "get_node_links",
+  "get_source_content",
   "get_source_item",
   "list_blueprints",
   "list_collector_feeds",

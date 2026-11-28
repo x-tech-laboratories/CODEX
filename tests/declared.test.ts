@@ -114,6 +114,7 @@ describe("reading the declarations", () => {
         token_file: "/run/secrets/budget",
         command: "",
         args: [],
+        collector: "",
       },
       {
         id: "cfg-files",
@@ -123,6 +124,7 @@ describe("reading the declarations", () => {
         token_file: "",
         command: "/bin/mcp-files",
         args: ["--root", "/srv"],
+        collector: "",
       },
     ]);
     expect(declarable_plugin_ids).toContain("codex.web");
@@ -158,6 +160,9 @@ describe("reading the declarations", () => {
         7,
         { id: "twice", command: "a" },
         { id: "twice", command: "b" },
+        { id: "tasks", address: "https://tasks.example.org/api/mcp", collector: "x-tasks" },
+        { id: "tasks-two", address: "https://tasks.example.org/api/mcp", collector: "x-tasks" },
+        { id: "odd", command: "c", collector: "Not An Id" },
       ],
     });
     expect(config.plugins[0]).toMatchObject({
@@ -173,7 +178,12 @@ describe("reading the declarations", () => {
     expect(config.plugins[1]!.problems).toEqual(["X-Tasks's token is a secret; give the file holding it as token_file."]);
     expect(config.plugins[2]!.problems).toEqual(["Trilium is not a set of settings."]);
     expect(config.engine).toBeNull();
-    expect(config.mcp_servers.map((server) => server.id)).toEqual(["cfg-twice"]);
+    expect(config.mcp_servers.map((server) => [server.id, server.collector])).toEqual([
+      ["cfg-twice", ""],
+      ["cfg-tasks", "x-tasks"],
+      ["cfg-tasks-two", ""],
+      ["cfg-odd", ""],
+    ]);
     expect(config.problems).toEqual([
       "The configuration has no part colour; it takes engines, engine, embedder, sources, web, mcp_servers.",
       "engines has no plugin codex.nope; it takes codex.anthropic, codex.openai, codex.smartharness.",
@@ -185,6 +195,8 @@ describe("reading the declarations", () => {
       "MCP server user's address must start with http:// or https:// and hold no user or password.",
       "MCP server 6 is not a set of fields.",
       "MCP server twice is declared twice; the first holds.",
+      "MCP servers tasks and tasks-two both name the collector x-tasks; the first holds.",
+      "MCP server odd's collector must be a collector's id, such as x-tasks or trilium; it is linked to none.",
     ]);
     expect(read_declarations(null).plugins).toEqual([]);
     expect(read_declarations([]).problems).toEqual(["The configuration is not a JSON object."]);

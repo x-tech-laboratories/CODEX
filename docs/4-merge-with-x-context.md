@@ -257,6 +257,13 @@ dialog showing the exact topic, never ticked with others; a mood still never mak
     - **Order:** after the local gpt-oss-20b engine is set up and a real-model run gives a baseline to measure against.
 
 **Sources to start with:** X-Tasks and Trilium, read-only until the bugs are ironed out.
+*The owner withdrew the read-only rule for sources on 2026-11-28: each source app's specialist gets the full powers of
+its app's MCP server. Built the same day (doc 1, "Specialists" and "Declared configuration"): a declared MCP server
+naming a collector (`collector: "x-tasks"`) gives that app one `ask_` tool whose specialist has the collector's read
+calls and every tool of the server, each change under the action policy (a proposal until the user sets a level) and
+every other safeguard; and every collector that can reads an item whole and live with `get_source_content`, Trilium
+with its labels and relations, X-Tasks with its full notes, tags, due date and parent, never kept. CODEX's own calls
+still never change an item in its app; decision 2 holds, since what is read is not stored.*
 
 ## Known gaps
 

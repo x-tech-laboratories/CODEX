@@ -87,13 +87,13 @@ describe("a conversation", () => {
     expect(fixture.requests[1]!.instructions).toMatch(/Connected source apps, by collector id: .+|No source apps are connected\./);
   });
 
-  it("tells the engine which source apps it can read, that they are read-only, and to say plainly what it cannot reach", () => {
+  it("tells the engine which source apps it can read, that only an app's MCP tools change them, and to say plainly what it cannot reach", () => {
     const summary = (id: string, label: string, can_search: boolean, can_refresh: boolean) => ({ id, plugin_id: id, label, kinds: [], can_search, can_refresh, can_follow: false, manual_fields: [], pushed_from: "" });
     const part = sources_part([summary("trilium", "Trilium", true, true), summary("email", "Email", false, true), summary("links", "Web links", false, false), summary("conversation", "Conversations", false, true)]);
     expect(part).toBe("Connected source apps, by collector id: Trilium (trilium), Email (email, cannot search). search_collector searches one, get_source_item reads one item by its id there, add_item puts it in contexts. When you are offered ask_ tools for them instead, ask a source app's specialist to look things up there, then add what it reports with add_item.");
     expect(sources_part([summary("blueprint", "Blueprints", false, true)])).toBe("No source apps are connected.");
     const instructions = build_instructions(start_fixture().database, null, "2026-11-27");
-    expect(instructions).toContain("you cannot create or change items in them");
+    expect(instructions).toContain("CODEX's own calls never create or change items in other apps; only the tools of an app's MCP server can");
     expect(instructions).toContain("Never name a tool you were not offered.");
   });
 

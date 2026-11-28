@@ -142,6 +142,38 @@ describe("the Trilium collector", () => {
     expect(Object.keys(found)).toEqual(["abc"]);
     expect(found.abc!.title).toBe("Renamed");
   });
+
+  it("gives a note's labels and relations in what it says of it, and reads it whole with its text and attributes", async () => {
+    const attributes = [
+      { attributeId: "a1", noteId: "abc", type: "label", name: "todo", value: "", isInheritable: false },
+      { attributeId: "a2", noteId: "abc", type: "label", name: "priority", value: "high", isInheritable: false },
+      { attributeId: "a3", noteId: "abc", type: "relation", name: "template", value: "tpl1", isInheritable: false },
+    ];
+    const fetch = vi.fn(async (url: string) => {
+      if (url.endsWith("/abc/content")) return new Response("<p>Grout &amp; tiles</p>");
+      if (url.endsWith("/abc")) return answer({ noteId: "abc", title: "Kitchen", type: "text", dateModified: "2026-11-02", attributes });
+      return answer({}, 404);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const collector = await collector_of(trilium_plugin, { address: "https://notes.example.org", token: "etapi" });
+    expect((await collector.resolve!(["abc"])).abc!.detail).toEqual({ modified: "2026-11-02", attributes: "#todo #priority=high ~template=tpl1" });
+    expect(await collector.read!("abc")).toEqual({
+      source_id: "abc",
+      kind: "note",
+      title: "Kitchen",
+      uri: "https://notes.example.org/#root/abc",
+      detail: { modified: "2026-11-02", attributes: "#todo #priority=high ~template=tpl1" },
+      content: "Grout & tiles",
+      attributes: [
+        { type: "label", name: "todo", value: "" },
+        { type: "label", name: "priority", value: "high" },
+        { type: "relation", name: "template", value: "tpl1" },
+      ],
+    });
+    expect(await collector.read!("gone")).toBeNull();
+    // Every request only reads.
+    for (const call of fetch.mock.calls as unknown as [string, RequestInit | undefined][]) expect(call[1]?.method ?? "GET").toBe("GET");
+  });
 });
 
 // ── Links and email ──────────────────────────────────────────────────────────
@@ -246,6 +278,24 @@ describe("each collector's text for the index", () => {
     } finally {
       rmSync(folder, { recursive: true, force: true });
     }
+  });
+
+  it("reads an X-Task whole: its full notes, its tags by path, its due date and its parent", async () => {
+    const long_notes = "Buy the seeds. ".repeat(40).trim();
+    const held = [
+      { id: "p1", title: "Garden", notes: "", is_done: false, due_at: null },
+      { id: "t1", title: "Order seeds", notes: long_notes, is_done: false, due_at: "2026-12-01", parent_id: "p1", tag_ids: ["g2", "gone"] },
+    ];
+    const tags = [
+      { id: "g1", name: "Home", parent_id: null },
+      { id: "g2", name: "Garden", parent_id: "g1" },
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => answer(url.endsWith("list_tags") ? tags : held)));
+    const collector = await collector_of(x_tasks_plugin, { address: "https://tasks.example.org", token: "t0k" });
+    const read = await collector.read!("t1");
+    expect(read).toMatchObject({ source_id: "t1", title: "Order seeds", content: long_notes, attributes: [{ type: "tag", name: "Home/Garden", value: "" }], detail: { due: "2026-12-01", parent: "p1", parent_title: "Garden" } });
+    expect(read!.snippet!.length).toBeLessThan(long_notes.length);
+    expect(await collector.read!("missing")).toBeNull();
   });
 
   it("gives an X-Task's notes, leaving out tasks with none and tasks gone", async () => {

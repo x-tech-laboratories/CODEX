@@ -49,7 +49,7 @@ export function shown_result(id: string, kept: KeptResult): string {
 // Brief on purpose, since it is offered to every run and specialist beside their own tools.
 export const read_result_tool: ToolDefinition = {
   name: read_result_name,
-  description: "Reads more of a tool result that was cut short or dropped, by its call_id.",
+  description: "Reads more of a cut or dropped result.",
   parameters: { type: "object", properties: { call_id: { type: "string" }, offset: { type: "integer" }, length: { type: "integer" } }, required: ["call_id"] },
 };
 

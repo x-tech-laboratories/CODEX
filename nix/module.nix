@@ -54,6 +54,7 @@ let
           address
           command
           args
+          collector
           ;
         token_file = server.tokenFile;
       }
@@ -151,6 +152,12 @@ in
                 type = types.listOf types.str;
                 default = [ ];
                 description = "The program's arguments.";
+              };
+              collector = mkOption {
+                type = types.nullOr types.str;
+                default = null;
+                example = "x-tasks";
+                description = "The id of the collector for the same app (x-tasks, trilium), whose specialist is then given every tool of this server beside its read calls, so the app has one ask_ tool; left null, the server gets a specialist of its own. Only this field links them, never the address. One server per collector.";
               };
             };
           }

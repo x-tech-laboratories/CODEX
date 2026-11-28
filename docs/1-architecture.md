@@ -73,8 +73,17 @@ remakes an empty Global).
 ## Collectors
 
 A collector is an X-Libs plugin providing a `collector` (`src/shared/collectors/collector.ts`): `search` finds items in
-its app, `resolve` says what became of the ones kept, `manual` takes an item typed in by hand, and `pushed_from` says
-how items reach it from elsewhere. The store's calls open a plugin host for each use (`src/shared/collectors/host.ts`),
+its app, `resolve` says what became of the ones kept, `read` gives one item's whole current content and attributes
+(`ReadItem`: `content` and `attributes`, each a label, relation or tag with its value), `manual` takes an item typed in
+by hand, and `pushed_from` says how items reach it from elsewhere. `content` gives items' text for the local search
+index alone. What `read` gives goes to the run that asked through `get_source_content` and is never stored, by the
+pointer rule: the item keeps only what `resolve` says of it.
+
+The bundled X-Tasks collector's `read` gives a task's full notes as content, its tags by path (such as `Home/Garden`)
+as `tag` attributes, and its due date, parent id and parent title in `detail`. Trilium's `resolve` and `read` take the
+note's labels and relations from ETAPI's note object (`attributes`): `resolve` puts them in `detail.attributes` as
+Trilium writes them (`#todo #priority=high ~template=<note id>`), and `read` adds each as an attribute, a relation's
+value being the note it points to, beside a text note's words or a code note's text. The store's calls open a plugin host for each use (`src/shared/collectors/host.ts`),
 so turning a plugin on, or giving it a key, holds at once on every device.
 
 One collector is CODEX's own: `codex.conversations` (`src/shared/conversations/collector.ts`), which
@@ -378,6 +387,13 @@ naming the file and never its content). Nothing declared is stored or synced:
 - **Choices**: the declared engine is only where the choice starts: `find_engine` takes the synced `engine` setting
   when the user has chosen one, else the declared engine (a lone declared engine when none is named), and Answering
   lists it with every other engine. `find_embedder` takes the declared embedder over the synced setting.
+- **A server linked to a collector**: a declared MCP server may name the collector for the same app by its id
+  (`collector`, such as `x-tasks` or `trilium`; the NixOS module's `mcpServers.*.collector`). That field is the only
+  link, never the address or the name: `open_collector_sources` gives the collector the server's tool key
+  (`tools_key`, `codex.mcp/mcp_cfg-<id>`), and its specialist gets the server's tools (see "Specialists"). A
+  collector named by a second server, or a value that is not a collector id, is a problem and links nothing; a
+  server's own `collector` that names no running collector links nothing either, and the server keeps a specialist of
+  its own. Servers the user adds in Settings carry no link.
 - **MCP servers**: `codex.mcp` provides each declared server's tools beside the user's, its record made at each use
   with the token read from its file (`server_record`), so a changed token reconnects. Its tools, as listed, are kept in
   memory on this device alone; `refresh_declared_mcp_server` lists them again. `change_mcp_server`,
@@ -830,12 +846,12 @@ specialists (its doc 1, "Agents").
   request; it leaves out the lines on the graph, blueprint and interest calls, the plugin tools' line and the plugins'
   and apps' shortened guidance, which their specialists are given whole. The `ask_` descriptions no longer repeat that
   a specialist sees nothing else, and every ask's `request` has one short description.
-- **Source apps.** Each collector running that can search, resolve or list feeds, other than CODEX's own conversations,
+- **Source apps.** Each collector running that can search, resolve, read or list feeds, other than CODEX's own conversations,
   blueprints and findings (`open_collector_sources` in `run.ts`, passed as the `ToolContext`'s `collectors`), gets an
   `ask_<label>` tool too (`collector_groups`), named after the plugins' asks so a plugin of the same label keeps its name
   and the app's takes the hash. Its group holds the read calls the app answers and the run is offered:
-  `search_collector`, `get_source_item` and `list_collector_feeds` (`collector_reads`; nothing lists a feed's items
-  without following it, so there is no fourth). Once any app has an ask, those three calls leave the `specialists`
+  `search_collector`, `get_source_item`, `get_source_content` and `list_collector_feeds` (`collector_reads`; nothing
+  lists a feed's items without following it). Once any app has an ask, those calls leave the `specialists`
   view's full and core sets and join `delegated`, so the Automatic rule weighs them as it weighs plugin tools; with the
   view not chosen nothing changes. The ask's description says what it can read, that it answers with each item's
   `source_id`, kind, title and details as `add_item` takes them, and that it changes nothing: `add_item`, `follow_feed`
@@ -846,6 +862,23 @@ specialists (its doc 1, "Agents").
   `brings_outside_content`, the reads kept as evidence), count toward `max_calls_here` like plugin tool calls, and its
   answer is noted as the app's source and lowers the run unless the app is marked trusted. A hosted engine gets no ask
   for an app not marked for it, and the run's instructions say to ask an app's specialist when offered one.
+- **An app with its MCP server.** When the declared configuration links an MCP server to the collector (`collector`
+  on the server, under "Declared configuration"), the app still has one ask: its group takes every tool of that server
+  turned on and offered (`tools_key`, `linked_keys`), which then get no `ask_` of their own, beside the read calls with
+  the collector bound. The ask's description lists the server's tools and says a change may wait for the user's
+  approval; the specialist's instructions say it has both sets, that a change may wait and must then be reported as
+  proposed, that it cannot add to contexts or follow feeds, and give the app's and then the server's guidance (fenced)
+  and the plugin tools' line. The server's tools run through the same wrapper as any plugin tool's: a change is a
+  proposal at the default `proposal` level and whenever the run has read outside content, refused at `restricted`; an
+  outside-sending tool is refused once the run has had a private source in front of it unless the server is marked
+  "May be used after reading private sources"; a hosted engine is offered none it may not be sent, and when the app
+  itself may not be sent to it, the server's tools keep an ask of their own. The ask's answer
+  lowers the run unless the app and the server are both marked trusted. Without that field nothing links: a server
+  whose address or name matches an app's stays a plugin with its own ask, and the app's ask stays read-only.
+- **Whole reads.** `get_source_content` (contexts feature) calls the collector's `read` for one item, live, and answers
+  with its content, attributes and the contexts holding it; nothing of it is stored. It is a read that brings outside
+  content, screened like `get_source_item` (`screen_source_item`), fenced, kept as a read for evidence, and it lowers
+  the run unless the app is marked trusted.
 - **Guidance.** Each group carries a `Guidance`: what the plugin or app says of how it works (`guidance` on a
   `ToolPlugin` or `Collector`, the author's own words when `own_words`, else fenced), then the user's. An MCP server's
   `instructions` from its initialize answer are that text, kept on its record (`instructions`, capped at 2,000
@@ -895,10 +928,10 @@ specialists (its doc 1, "Agents").
   and answer with what it did and what is left as a ready-to-send follow-up request. One that is refused a call for
   its call limit, or ends in an error after using all its rounds, comes back not as a failure but as a partial result:
   a line saying which limit it hit and to ask again for the remainder or split it, then, fenced, its calls that ran
-  with their arguments and what it wrote. The run's instructions with specialists say to split a request covering
-  many items, steps or apps into several bounded asks, and both the run's instructions and every specialist's say to
-  try at most one other approach when a tool or specialist cannot give what is needed, then answer plainly, never
-  repeating a call with the same arguments (`give_up_line`).
+  with their arguments and what it wrote. The run's instructions with specialists say each ask is one bounded piece
+  of a big job, and both the run's instructions and every specialist's say to try one other way at most when a tool
+  or specialist cannot help, then say plainly what was found, what failed and why, never repeating a call unchanged
+  (`give_up_line`).
 - **The record.** The ask's `ToolCallRecord` holds its specialist's calls in `calls`, each with its outcome, proposal
   and result as for the run's own; open pages hear each change as a `tool_result` event for the ask. The pane lists
   them under "The specialist's calls" inside the ask's row (`ToolCallRow`), a proposal shown as the user decided it.
