@@ -9,7 +9,8 @@ import type { ContextPlugin, ContextPluginApi } from "../../../src/shared/collec
 import { use_assistant_host } from "../../../src/shared/conversations/host.ts";
 import { add_conversation_record, has_conversation } from "../../../src/shared/conversations/records.ts";
 import { engine_tools, plugin_tool_summary, plugin_tools_part, wait_for_runs, type ToolContext } from "../../../src/shared/conversations/run.ts";
-import { page_only_methods, user_only_settings } from "../../../src/shared/page_api.ts";
+import { user_only_settings } from "../../../src/shared/page_api.ts";
+import { page_only_methods } from "../../../src/shared/store.ts";
 import { offered_api } from "../../../src/shared/policy/policy.ts";
 import { has_read_private, local_screen, note_source, open_screen } from "../../../src/shared/privacy/screen.ts";
 import { page_only } from "../../../src/shared/store.ts";

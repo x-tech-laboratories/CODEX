@@ -17,7 +17,8 @@ import { is_loopback_address, sends_outside, type McpServerFields } from "../../
 import { device_id_of } from "../../../src/shared/jobs/records.ts";
 import { background_devices } from "../../../src/shared/jobs/schema.ts";
 import { drizzle_of } from "../../../src/shared/feature.ts";
-import { page_only_methods, user_only_settings } from "../../../src/shared/page_api.ts";
+import { user_only_settings } from "../../../src/shared/page_api.ts";
+import { page_only_methods } from "../../../src/shared/store.ts";
 import { local_screen, note_source } from "../../../src/shared/privacy/screen.ts";
 import { page_only } from "../../../src/shared/store.ts";
 import { open_plugin_tools } from "../../../src/shared/tools/offered.ts";

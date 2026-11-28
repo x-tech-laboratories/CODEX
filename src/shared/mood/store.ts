@@ -42,6 +42,7 @@ export const mood_feature = define_feature({
       params: [],
     },
     set_mood_dates: {
+      page_only: true,
       description: "Replaces the dates the assistant remembers each year. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         {

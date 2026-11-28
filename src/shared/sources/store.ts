@@ -116,6 +116,7 @@ export const sources_feature = define_feature({
       params: [source_param],
     },
     add_item_source: {
+      page_only: true,
       description:
         "Adds an app to read through the standard item calls, read-only, after checking it answers them with the token given, and gives back its id. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
@@ -125,6 +126,7 @@ export const sources_feature = define_feature({
       ],
     },
     change_item_source: {
+      page_only: true,
       description: "Changes an app's name, address or token, after checking it answers. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         source_param,
@@ -134,6 +136,7 @@ export const sources_feature = define_feature({
       ],
     },
     remove_item_source: {
+      page_only: true,
       description: "Stops reading an app; the items it brought stay in their contexts as last seen. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [source_param],
       destructive: true,

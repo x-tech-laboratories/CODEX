@@ -164,6 +164,7 @@ export const policy_feature = define_feature({
       params: [],
     },
     set_action_level: {
+      page_only: true,
       description: "Sets how freely the assistant may make one kind of change. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         { name: "method", schema: { type: "string", description: "The call, such as rename_context, from get_action_policy." } },
@@ -183,6 +184,7 @@ export const policy_feature = define_feature({
       params: [{ name: "conversation_id", schema: id_of("conversation") }],
     },
     undo_change: {
+      page_only: true,
       description:
         "Undoes one change the assistant applied, through History: the contexts it touched go back to how they were before it, and the undo is recorded in the conversation. Refused once those contexts have changed since. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
@@ -191,6 +193,7 @@ export const policy_feature = define_feature({
       ],
     },
     resolve_proposal: {
+      page_only: true,
       description:
         "Approves a proposed change, which makes it now, or rejects it; either way it is recorded in the conversation it was proposed in. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [

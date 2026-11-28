@@ -222,14 +222,17 @@ export const jobs_feature = define_feature({
     change_job: { description: "Changes a job's title, instruction, context, schedule, condition or limits.", params: [job_param, { name: "fields", schema: fields_schema(false) }] },
     remove_job: { description: "Removes a job; its runs and its conversation stay.", params: [job_param], destructive: true },
     set_job_on: {
+      page_only: true,
       description: "Turns a job on or off. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [job_param, { name: "on", schema: { type: "boolean", description: "true to turn it on." } }],
     },
     run_job_now: {
+      page_only: true,
       description: "Runs a job now, whatever its schedule, if background work is on and today's caps allow; answers once it has started. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [job_param],
     },
     set_background_device: {
+      page_only: true,
       description:
         "Chooses the one device, a desktop app or a server, that runs background work: the assistant's jobs, the maintenance jobs and asking the apps what changed; every other device does none. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [{ name: "device_id", schema: text("The device's id, from get_background_state's devices.") }],

@@ -92,6 +92,7 @@ export const tools_feature = define_feature({
       params: [],
     },
     set_tool_plugin_mark: {
+      page_only: true,
       description: "Turns one of a tool plugin's three marks on or off. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         { name: "key", schema: key_schema },
@@ -100,6 +101,7 @@ export const tools_feature = define_feature({
       ],
     },
     set_plugin_tool_offer: {
+      page_only: true,
       description:
         "Turns one plugin tool on or off for the assistant (enabled), or offers it to models with a small context too (small). Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
@@ -110,6 +112,7 @@ export const tools_feature = define_feature({
       ],
     },
     set_plugin_tool_level: {
+      page_only: true,
       description: "Sets how freely the assistant may use one plugin tool that changes something. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [
         { name: "name", schema: text("The tool's name as the assistant sees it, such as web__web_fetch, from list_plugin_tools.") },

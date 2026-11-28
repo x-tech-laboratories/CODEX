@@ -11,7 +11,7 @@ import type { ContextPluginApi } from "../../../src/shared/collectors/host.ts";
 import { use_assistant_host } from "../../../src/shared/conversations/host.ts";
 import { add_conversation_record } from "../../../src/shared/conversations/records.ts";
 import { engine_tools, wait_for_runs, type ToolContext } from "../../../src/shared/conversations/run.ts";
-import { page_only_methods } from "../../../src/shared/page_api.ts";
+import { page_only_methods } from "../../../src/shared/store.ts";
 import { open_screen } from "../../../src/shared/privacy/screen.ts";
 import { embed_pending, open_index, sync_documents, use_search_index } from "../../../src/shared/search/indexer.ts";
 import { search } from "../../../src/shared/search/search.ts";

@@ -33,7 +33,8 @@ import { small_context, with_specialists } from "../../../src/shared/engines/dir
 import type { EngineEvent, EngineRequest, EngineTools } from "../../../src/shared/engines/engine.ts";
 import { tools_chars } from "../../../src/shared/engines/fitting.ts";
 import { guidance_setting, longest_guidance } from "../../../src/shared/guidance/model.ts";
-import { page_only_methods, user_only_settings } from "../../../src/shared/page_api.ts";
+import { user_only_settings } from "../../../src/shared/page_api.ts";
+import { page_only_methods } from "../../../src/shared/store.ts";
 import { is_offered, offered_api } from "../../../src/shared/policy/policy.ts";
 import { tool_source_of } from "../../../src/shared/tools/model.ts";
 import { list_declared_server, use_declared } from "../../../src/shared/declared/current.ts";

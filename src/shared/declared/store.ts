@@ -34,11 +34,13 @@ export const declared_feature = define_feature({
   methods: { get_declared_config, refresh_declared_mcp_server },
   api: {
     get_declared_config: {
+      page_only: true,
       description:
         "What this computer's configuration declares: its engines, embedder, collectors, Web plugin and MCP servers with their settings, which secrets are read from files (never what the files hold), the tools each declared MCP server listed and what is wrong with any entry. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [],
     },
     refresh_declared_mcp_server: {
+      page_only: true,
       description:
         "Lists the tools of an MCP server this computer's configuration declares again. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [{ name: "id", schema: id_of("declared MCP server") }],

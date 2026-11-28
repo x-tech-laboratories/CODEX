@@ -279,10 +279,12 @@ export const blueprints_feature = define_feature({
       params: [blueprint_param],
     },
     restore_blueprint: {
+      page_only: true,
       description: "Brings a retired blueprint back, so it is recalled again. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [blueprint_param],
     },
     place_blueprint: {
+      page_only: true,
       description: "Sets where a blueprint applies: in one context and those inside it, or everywhere for null. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [blueprint_param, { name: "context_id", schema: where_schema }],
     },
@@ -292,10 +294,12 @@ export const blueprints_feature = define_feature({
       destructive: true,
     },
     accept_blueprint_proposals: {
+      page_only: true,
       description: "Accepts proposed blueprints, which become active, and proposed changes, whose text replaces the blueprint's; either way the text becomes the user's own. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [{ name: "ids", schema: ids_schema }],
     },
     reject_blueprint_proposals: {
+      page_only: true,
       description: "Rejects proposed blueprints, which are deleted, and proposed changes, which are set aside. Only the user at CODEX's own page can call this; tokens and MCP clients are refused.",
       params: [{ name: "ids", schema: ids_schema }],
     },
