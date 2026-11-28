@@ -9,6 +9,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { untrusted_block } from "../engines/untrusted.ts";
 import { may_send, note_source, type Screen, type Screened } from "../privacy/screen.ts";
+import { fill, prompts } from "../prompts/prompts.ts";
 import { settings_feature } from "../settings.ts";
 import {
   date_kinds,
@@ -172,12 +173,12 @@ export interface EngineMoodCall {
 
 // The engine's set_mood: kept at once, since it changes nothing of the user's; answers in words for the engine.
 export function engine_set_mood(database: SqlDatabase, given: Record<string, unknown>, call: EngineMoodCall, now: number): { text: string; is_error: boolean } {
-  if (!is_mood(given.mood)) return { text: `Tool error: a mood is one of ${moods.join(", ")}.`, is_error: true };
+  if (!is_mood(given.mood)) return { text: fill(prompts.mood.not_a_mood, { moods: moods.join(", ") }), is_error: true };
   const reason = clean_reason(given.reason);
-  if (!reason) return { text: "Tool error: give a short reason, such as “the user's birthday”.", is_error: true };
-  if (!mood_on(database)) return { text: "The user has turned the mood off, so it was not set. Carry on as you were.", is_error: false };
+  if (!reason) return { text: prompts.mood.no_reason, is_error: true };
+  if (!mood_on(database)) return { text: prompts.mood.turned_off, is_error: false };
   write_record(database, { mood: given.mood, strength: engine_strength, reason, set_at: new Date(now).toISOString(), by: "engine", conversation_id: call.conversation_id, run_id: call.run_id, sources: [...new Set(call.sources)].sort() });
-  return { text: `Your mood is ${mood_words[given.mood]} now. It shows on your face; let it colour your tone only.`, is_error: false };
+  return { text: fill(prompts.mood.set, { mood: mood_words[given.mood] }), is_error: false };
 }
 
 // After a reply ends: a mood it set carries the sources the whole reply read; a sad or celebrating mood an earlier
@@ -208,10 +209,7 @@ export const set_mood_tool = {
 
 export const set_mood_brief = "Sets your mood, shown on your face; only with a clear reason.";
 
-const mood_rules = [
-  "You have a small mood that the user sees on your face; set_mood sets it when the conversation gives a clear reason. It is a display, not a feeling you claim.",
-  "A mood never changes a fact or an assessment, never flatters, never asks for the user's attention, never blames the user, and is never a reason you give the user to do something.",
-];
+const mood_rules = prompts.mood.rules;
 
 // The mood's part of a reply's instructions with the sources its reason carries: the rules while the mood is on, and,
 // while it colours replies and is not neutral, one line saying what it is and why. Its reason is screened as the reply
@@ -232,7 +230,7 @@ export function mood_part(database: SqlDatabase, screen: Screen, now: number): S
         note_source(screen.included, source, "mood");
       }
       const why = record.sources.length > 0 ? `\n${untrusted_block(record.reason)}` : ` ${record.reason}`;
-      lines.push(`Your mood right now is ${mood_words[record.mood]}; let it colour your tone only. Why:${why}`);
+      lines.push(fill(prompts.mood.now, { mood: mood_words[record.mood], why }));
     }
   }
   return { value: lines.join("\n"), sources, withheld };

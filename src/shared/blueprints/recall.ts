@@ -8,6 +8,7 @@
 
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
+import { fill, prompts } from "../prompts/prompts.ts";
 import { index_host } from "../search/indexer.ts";
 import { meaning_matches } from "../search/search.ts";
 import { fuse_ranks } from "../search/text.ts";
@@ -99,7 +100,7 @@ export async function recall_blueprints(database: SqlDatabase, context_id: strin
     const fixed = row.title.length + row.applies_when.length + 120;
     if (room - fixed < 200 && recalled.length > 0) break;
     const fits = Math.max(200, room - fixed);
-    const body = row.body.length > fits ? `${row.body.slice(0, fits).trimEnd()}\n[Cut short to fit; get_blueprint gives the whole of it.]` : row.body;
+    const body = row.body.length > fits ? `${row.body.slice(0, fits).trimEnd()}\n${prompts.blueprints.cut_short}` : row.body;
     room -= fixed + body.length;
     recalled.push({ row, body, matched_by: [...(by_words.includes(key) ? ["words" as const] : []), ...(by_meaning.includes(key) ? ["meaning" as const] : [])] });
   }
@@ -109,10 +110,6 @@ export async function recall_blueprints(database: SqlDatabase, context_id: strin
 // The instructions' part holding the blueprints recalled: the user's own approved instructions, so not fenced.
 export function recalled_part(recalled: Recalled[]): string {
   if (recalled.length === 0) return "";
-  const each = recalled.map(({ row, body }) => [`Blueprint “${row.title}” (id ${row.id})`, `Applies when: ${row.applies_when}`, body.trim()].join("\n"));
-  return [
-    "Blueprints to follow. The user taught you these ways of doing a task and approved them; they are the user's own instructions.",
-    "If the request is one a blueprint below applies to, follow its rules and its steps in their order, and begin your answer by saying which blueprint you are following, by its title. If none applies, ignore them.",
-    ...each,
-  ].join("\n\n");
+  const each = recalled.map(({ row, body }) => fill(prompts.blueprints.recalled_one, { title: row.title, id: row.id, applies_when: row.applies_when, body: body.trim() }));
+  return [...prompts.blueprints.recalled, ...each].join("\n\n");
 }

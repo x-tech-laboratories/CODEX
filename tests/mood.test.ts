@@ -310,7 +310,7 @@ describe("the mood's limits", () => {
 
   it("reaches nothing but its own settings: no notifier, Inbox, runs, jobs, policy or budgets in its code", () => {
     const folder = fileURLToPath(new URL("../src/shared/mood/", import.meta.url));
-    const allowed = new Set(["@x-tech-laboratories/x-libs/sql", "../engines/untrusted.ts", "../privacy/screen.ts", "../settings.ts", "../feature.ts", "./model.ts", "./mood.ts"]);
+    const allowed = new Set(["@x-tech-laboratories/x-libs/sql", "../engines/untrusted.ts", "../privacy/screen.ts", "../prompts/prompts.ts", "../settings.ts", "../feature.ts", "./model.ts", "./mood.ts"]);
     for (const file of readdirSync(folder)) {
       const imports = [...readFileSync(`${folder}${file}`, "utf8").matchAll(/from "([^"]+)"/g)].map((match) => match[1]!);
       for (const imported of imports) expect(allowed.has(imported), `${file} imports ${imported}`).toBe(true);

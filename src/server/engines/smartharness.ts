@@ -17,6 +17,7 @@ import { chosen_request, offered_tools, stopped_message, type ChatMessage, type 
 import type { Engine, EngineEvent, EngineRequest, EngineTurn, ToolDefinition, ToolSet } from "../../shared/engines/engine.ts";
 import { is_local_endpoint } from "../../shared/engines/hosting.ts";
 import { smartharness_engine_id, smartharness_manifest } from "../../shared/engines/manifests.ts";
+import { fill, prompts } from "../../shared/prompts/prompts.ts";
 import { explain_failure, key_command_failure } from "./errors.ts";
 import { default_endpoints, list_openai_models, listed_models, make_openai, specialists_of, without_key, type ModelLister, type ModelMaker } from "./index.ts";
 import { plugin_key, read_secret, type SecretReader } from "./secret_command.ts";
@@ -33,7 +34,7 @@ export const engine_label = "SmartHarness";
 export const bridge_name = "codex";
 
 // What the run's stand-in for SmartHarness's built-in tools says when the tree tries one anyway.
-export const no_builtin_tool = "Tool error: SmartHarness's own tools are off in CODEX; only CODEX's tools, named mcp__codex__…, can be used.";
+export const no_builtin_tool = prompts.smartharness.no_builtin_tool;
 
 // ── Input ────────────────────────────────────────────────────────────────────
 
@@ -49,11 +50,11 @@ export type HarnessInput = { fits: true; prompt: string; instructions: string; l
 function shortened(text: string, most: number): string {
   if (text.length <= most) return text;
   const half = Math.floor((most - 40) / 2);
-  return `${text.slice(0, half)}\n[… ${(text.length - half * 2).toLocaleString("en")} characters left out …]\n${text.slice(-half)}`;
+  return `${text.slice(0, half)}\n${fill(prompts.smartharness.shortened, { count: (text.length - half * 2).toLocaleString("en") })}\n${text.slice(-half)}`;
 }
 
 function turn_line(turn: EngineTurn): string {
-  return `${turn.role === "user" ? "The user" : "You (the assistant)"}: ${shortened(turn.text.trim(), longest_earlier_turn)}`;
+  return fill(turn.role === "user" ? prompts.smartharness.user_turn : prompts.smartharness.assistant_turn, { text: shortened(turn.text.trim(), longest_earlier_turn) });
 }
 
 // The newest message as the tree's request, and CODEX's instructions followed by as many earlier turns as fit, newest
@@ -72,7 +73,7 @@ export function harness_input(request: Pick<EngineRequest, "instructions" | "con
   }
   const earlier = request.conversation.slice(0, -1);
   const kept: string[] = [];
-  const heading = "The conversation so far, oldest first, for what the user's new message refers to:";
+  const heading = prompts.smartharness.history_heading;
   let used = instructions.length + heading.length + 4;
   for (const turn of [...earlier].reverse()) {
     if (!turn.text.trim()) continue;

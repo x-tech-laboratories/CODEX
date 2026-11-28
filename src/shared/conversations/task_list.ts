@@ -8,6 +8,7 @@ import { eq } from "@x-tech-laboratories/x-libs/drizzle";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { drizzle_of } from "../feature.ts";
+import { fill, prompts } from "../prompts/prompts.ts";
 import { conversation_row } from "./records.ts";
 import { conversations } from "./schema.ts";
 
@@ -103,11 +104,7 @@ export function current_step(steps: TaskStep[]): { at: number; step: TaskStep } 
 // What a run's instructions say of a list kept earlier in the conversation; empty when it has none still open.
 export function task_list_part(steps: TaskStep[]): string {
   if (!steps.some(is_open)) return "";
-  return [
-    "Your task list in this conversation, from earlier replies:",
-    task_list_text(steps),
-    "Carry on from the step being worked on unless the user now asks for something else; then replace the list with set_task_list, or clear it with an empty one.",
-  ].join("\n");
+  return [prompts.task_list.heading, task_list_text(steps), prompts.task_list.carry_on].join("\n");
 }
 
 // The short line after each call while a list is open, so the run keeps its place and its list current.
@@ -115,11 +112,11 @@ export function task_list_reminder(steps: TaskStep[]): string {
   const now = current_step(steps);
   if (!now) return "";
   const done = steps.filter((each) => !is_open(each)).length;
-  return `[Task list: ${done} of ${steps.length} steps closed; now step ${now.at + 1}: “${now.step.step}”. When it is done, mark it done in set_task_list with what you decided, then start the next.]`;
+  return fill(prompts.task_list.reminder, { closed: done, total: steps.length, number: now.at + 1, step: now.step.step });
 }
 
 // The line after a few calls with no list, nudging a job of several steps to write one.
-export const no_list_reminder = "[If this job has several steps or several things to go through, write them with set_task_list first, then take them one at a time.]";
+export const no_list_reminder = prompts.task_list.no_list_reminder;
 
 // How many calls a run makes before it is nudged to write a list.
 export const calls_before_nudge = 3;
@@ -156,7 +153,8 @@ export const set_task_list_brief = "Writes your task list for this job: every st
 
 // The answer to set_task_list, in words: the list as kept and what to do next.
 export function engine_set_answer(steps: TaskStep[]): string {
-  if (steps.length === 0) return "Your task list is cleared.";
+  if (steps.length === 0) return prompts.task_list.cleared;
   const now = current_step(steps);
-  return `Kept:\n${task_list_text(steps)}\n${now ? `Now step ${now.at + 1}: “${now.step.step}”. Do it, then mark it done.` : "Every step is closed: give the user your answer."}`;
+  const next = now ? fill(prompts.task_list.next_step, { number: now.at + 1, step: now.step.step }) : prompts.task_list.all_closed;
+  return fill(prompts.task_list.kept, { list: task_list_text(steps), next });
 }

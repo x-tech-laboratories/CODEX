@@ -5,6 +5,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import type { ChatMessage } from "./direct.ts";
+import { fill, prompts } from "../prompts/prompts.ts";
 import type { ToolDefinition } from "./engine.ts";
 
 // ── Estimating ───────────────────────────────────────────────────────────────
@@ -81,11 +82,10 @@ export function tools_chars(tools: ToolDefinition[] | undefined): number {
 
 // What stands for a tool result dropped to fit: which call it was, and how to read it again when that tool is offered.
 export function dropped_result(tool: string, call_id: string, readable: boolean): string {
-  const again = readable ? ` To read it again call read_tool_result with call_id "${call_id}".` : ` Call ${tool} again if you need it.`;
-  return `[The result of ${tool} call "${call_id}" was dropped to fit the context.${again}]`;
+  return fill(readable ? prompts.fitting.dropped : prompts.fitting.dropped_call_again, { tool, id: call_id });
 }
 
-export const left_out_note = "[Earlier messages of this conversation were left out to fit this model's context.]";
+export const left_out_note = prompts.fitting.left_out;
 
 // The shortest reply an engine is asked for; below it nothing is sent.
 export const reply_floor = 512;
@@ -128,7 +128,7 @@ function shorten(text: string, keep: number): string {
   const head = Math.ceil(keep / 2);
   const tail = keep - head;
   const left = text.length - keep;
-  return `${text.slice(0, head)}\n\n[… ${left.toLocaleString("en")} characters left out here: the message was too long for this model's context …]\n\n${text.slice(text.length - tail)}`;
+  return `${text.slice(0, head)}\n\n${fill(prompts.fitting.shortened, { count: left.toLocaleString("en") })}\n\n${text.slice(text.length - tail)}`;
 }
 
 // The shortest part of an earlier message kept when over-long earlier messages are shortened.

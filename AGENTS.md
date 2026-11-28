@@ -47,6 +47,8 @@ Read `README.md` first, then `docs/1-architecture.md`, then `docs/4-merge-with-x
 - Code in `src/shared/` runs on the server and in the desktop daemon, and its types in the page: no DOM, no `node:` imports.
 - The desktop app's work goes in `src/daemon`; `src/main` keeps only what needs Electron: the window, the tray and the login entry.
 - A store call that only reads is named `list_`, `get_`, `search_`, `lookup_` or `export_`; any other name announces a change.
+- Text CODEX writes for a model to read (instructions, specialists' prompts, tool results) lives in
+  `src/shared/prompts/prompts.json`, filled in with `fill`; tool and call descriptions stay with their specs.
 - Every store call has a spec in its feature's `api` saying what it does and its arguments, so the API and MCP
   offer it too; describe it for someone who has never seen the page.
 - A released migration step is never edited; add a new step after it. For a feature on Drizzle, change `schema.ts` and run `npm run db:generate`.
