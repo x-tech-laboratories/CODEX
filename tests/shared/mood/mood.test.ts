@@ -18,10 +18,10 @@ import { budget_of } from "../../../src/shared/maintenance/records.ts";
 import { maintenance_keys } from "../../../src/shared/maintenance/model.ts";
 import { half_life_minutes, mood_settings, moods, strength_at, type Mood } from "../../../src/shared/mood/model.ts";
 import { date_mood, mood_state, note_event_mood, settle_reply_mood } from "../../../src/shared/mood/mood.ts";
-import { page_only_methods, user_only_settings } from "../../../src/shared/page_api.ts";
+import { page_only_methods } from "../../../src/shared/page_api.ts";
 import { decide, level_of } from "../../../src/shared/policy/policy.ts";
 import { local_screen, open_screen } from "../../../src/shared/privacy/screen.ts";
-import { page_only } from "../../../src/shared/store.ts";
+import { page_only, settings_store } from "../../../src/shared/store.ts";
 import { open_plugin_tools } from "../../../src/shared/tools/offered.ts";
 import type { PluginTool } from "../../../src/shared/tools/tool.ts";
 import { start_fixture, type Fixture } from "../../fixtures/assistant_fixture.ts";
@@ -319,7 +319,7 @@ describe("the mood's limits", () => {
 
   it("is the user's alone to switch, and its record is written only by CODEX's code", () => {
     for (const key of Object.values(mood_settings)) {
-      expect(user_only_settings.has(key)).toBe(true);
+      expect(settings_store.user_only.has(key)).toBe(true);
       expect(page_only.is_page_only_call("set_setting", [key, null])).toBe(true);
     }
   });

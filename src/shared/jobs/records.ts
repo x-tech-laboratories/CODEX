@@ -8,7 +8,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { contexts } from "../contexts/schema.ts";
 import { context_or_global } from "../contexts/model.ts";
 import { drizzle_of, new_id } from "../feature.ts";
-import { settings_feature } from "../settings.ts";
+import { read_setting, write_setting } from "../settings.ts";
 import { background_defaults, background_settings, default_limits, maintenance_prefix, type BackgroundDevice, type Job, type JobFields, type JobLimits, type JobMaker, type JobRun, type JobRunOutcome, type JobSchedule } from "./model.ts";
 import { checked_schedule, describe_schedule, next_due, start_of_day } from "./schedule.ts";
 import { background_devices, job_checks, job_device, job_runs, jobs } from "./schema.ts";
@@ -161,7 +161,7 @@ export function rows_with_ids(database: SqlDatabase, ids: string[]): RunRow[] {
 
 export function background_setting<Key extends keyof typeof background_settings>(database: SqlDatabase, key: Key): (typeof background_defaults)[(typeof background_settings)[Key]] {
   const name = background_settings[key];
-  const saved = settings_feature.methods.get_settings(database)[name];
+  const saved = read_setting(database, name);
   const fallback = background_defaults[name];
   if (typeof fallback === "boolean") return (typeof saved === "boolean" ? saved : fallback) as never;
   if (typeof fallback === "string") return (typeof saved === "string" ? saved : fallback) as never;
@@ -199,7 +199,7 @@ export function register_device(database: SqlDatabase, name: string, kind: Backg
   const id = device_id_of(database);
   const started_at = new Date(now).toISOString();
   drizzle_of(database).insert(background_devices).values({ id, name, kind, started_at }).onConflictDoUpdate({ target: background_devices.id, set: { name, kind, started_at } }).run();
-  if (!background_setting(database, "device")) settings_feature.methods.set_setting(database, background_settings.device, id);
+  if (!background_setting(database, "device")) write_setting(database, background_settings.device, id);
   return id;
 }
 

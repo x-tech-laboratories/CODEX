@@ -13,7 +13,7 @@ import { graph_feature } from "../graph/store.ts";
 import { interests_feature } from "../interests/store.ts";
 import { search_feature } from "../search/store.ts";
 import { is_read_only } from "../page_api.ts";
-import { settings_feature } from "../settings.ts";
+import { read_setting } from "../settings.ts";
 import { default_level, is_policy_level, type PolicyLevel } from "./model.ts";
 
 // ── Calls offered ────────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ export function brings_outside_content(method: string): boolean {
 // ── Levels ───────────────────────────────────────────────────────────────────
 
 export function stored_levels(database: SqlDatabase): Record<string, PolicyLevel> {
-  const saved = settings_feature.methods.get_settings(database)[policy_setting];
+  const saved = read_setting(database, policy_setting);
   if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
   return Object.fromEntries(Object.entries(saved as Record<string, unknown>).filter((entry): entry is [string, PolicyLevel] => is_policy_level(entry[1])));
 }

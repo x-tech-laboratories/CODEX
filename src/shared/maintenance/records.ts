@@ -11,14 +11,14 @@ import { maintenance_prefix, type JobRun, type JobRunOutcome } from "../jobs/mod
 import { as_run, background_setting, counted_today, list_devices } from "../jobs/records.ts";
 import { start_of_day } from "../jobs/schedule.ts";
 import { job_runs } from "../jobs/schema.ts";
-import { settings_feature } from "../settings.ts";
+import { read_setting } from "../settings.ts";
 import { budget_bounds, is_maintenance_key, maintenance_jobs, maintenance_setting, type BudgetName, type MaintenanceBudget, type MaintenanceJobSetting, type MaintenanceKey, type MaintenanceUse } from "./model.ts";
 import { maintenance_checks } from "./schema.ts";
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 export function stored_job_settings(database: SqlDatabase): Partial<Record<MaintenanceKey, MaintenanceJobSetting>> {
-  const saved = settings_feature.methods.get_settings(database)[maintenance_setting];
+  const saved = read_setting(database, maintenance_setting);
   if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
   return Object.fromEntries(Object.entries(saved as Record<string, unknown>).filter(([key, value]) => is_maintenance_key(key) && value && typeof value === "object")) as Partial<Record<MaintenanceKey, MaintenanceJobSetting>>;
 }

@@ -4,6 +4,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { desc, lt, synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
+import { settings_of } from "@x-tech-laboratories/x-libs/settings";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { text } from "../api_schemas.ts";
@@ -12,7 +13,7 @@ import { blueprints_plugin_id } from "../blueprints/collector.ts";
 import { conversations_plugin_id } from "../conversations/collector.ts";
 import { findings_plugin_id } from "../interests/collector.ts";
 import { define_feature, drizzle_of, new_id } from "../feature.ts";
-import { settings_feature } from "../settings.ts";
+import { read_setting, write_setting } from "../settings.ts";
 import { migrations } from "./migrations/index.ts";
 import { mark_names, unmarked, type HostedSend, type MarkName, type SourceCount, type SourceMarkEntry } from "./model.ts";
 import { hosted_sends, privacy_tables } from "./schema.ts";
@@ -41,7 +42,7 @@ function set_source_mark(database: SqlDatabase, plugin_id: string, mark: MarkNam
   if (typeof on !== "boolean") throw new Error("Turn a mark on with true or off with false.");
   if (!plugin_id.trim()) throw new Error("Name the collector plugin, such as codex.x-tasks.");
   const stored = stored_marks(database);
-  settings_feature.methods.set_setting(database, marks_setting, { ...stored, [plugin_id]: { ...unmarked, ...stored[plugin_id], [mark]: on } });
+  write_setting(database, marks_setting, { ...stored, [plugin_id]: { ...unmarked, ...stored[plugin_id], [mark]: on } });
 }
 
 // ── Log ──────────────────────────────────────────────────────────────────────
@@ -71,7 +72,7 @@ function list_hosted_sends(database: SqlDatabase, limit = 100): HostedSend[] {
 }
 
 function keep_days(database: SqlDatabase): number {
-  const days = Number(settings_feature.methods.get_settings(database)[keep_days_setting]);
+  const days = Number(read_setting(database, keep_days_setting));
   return days >= 1 ? days : default_keep_days;
 }
 
@@ -136,5 +137,5 @@ export const privacy_feature = define_feature({
       params: [{ name: "limit", schema: { type: "integer", minimum: 1, maximum: 1000, description: "How many to list; 100 unless given." }, optional: true }],
     },
   },
-  setting_defaults: { [marks_setting]: {}, [keep_days_setting]: default_keep_days },
+  settings: settings_of({ [marks_setting]: {}, [keep_days_setting]: default_keep_days }, { user_only: true }),
 });

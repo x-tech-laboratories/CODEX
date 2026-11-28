@@ -10,7 +10,7 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { untrusted_block } from "../engines/untrusted.ts";
 import { may_send, note_source, type Screen, type Screened } from "../privacy/screen.ts";
 import { fill, prompts } from "../prompts/prompts.ts";
-import { settings_feature } from "../settings.ts";
+import { read_setting, write_setting } from "../settings.ts";
 import {
   date_kinds,
   date_strength,
@@ -36,7 +36,7 @@ import {
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 function setting_of(database: SqlDatabase, key: string): unknown {
-  return settings_feature.methods.get_settings(database)[key];
+  return read_setting(database, key);
 }
 
 export function mood_on(database: SqlDatabase): boolean {
@@ -101,7 +101,7 @@ function stored_record(database: SqlDatabase): MoodRecord | null {
 }
 
 function write_record(database: SqlDatabase, record: MoodRecord | null): void {
-  settings_feature.methods.set_setting(database, mood_settings.current, record);
+  write_setting(database, mood_settings.current, record);
 }
 
 // ── Reading ──────────────────────────────────────────────────────────────────

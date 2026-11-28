@@ -7,7 +7,7 @@ import type { JsonSchema } from "@x-tech-laboratories/x-libs/api_spec";
 import { hidden_secret } from "@x-tech-laboratories/x-libs/plugins";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
-import { settings_feature } from "../settings.ts";
+import { read_setting, write_setting } from "../settings.ts";
 import { mcp_servers_setting, type McpServerRecord, type McpToolRecord } from "./model.ts";
 
 // ── Reading ──────────────────────────────────────────────────────────────────
@@ -50,11 +50,11 @@ export function server_records(value: unknown): McpServerRecord[] {
 }
 
 export function read_servers(database: SqlDatabase): McpServerRecord[] {
-  return server_records(settings_feature.methods.get_settings(database)[mcp_servers_setting]);
+  return server_records(read_setting(database, mcp_servers_setting));
 }
 
 export function write_servers(database: SqlDatabase, servers: McpServerRecord[]): void {
-  settings_feature.methods.set_setting(database, mcp_servers_setting, servers);
+  write_setting(database, mcp_servers_setting, servers);
 }
 
 // ── Secrets ──────────────────────────────────────────────────────────────────

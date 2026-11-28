@@ -6,7 +6,7 @@
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { define_feature } from "../feature.ts";
-import { settings_feature } from "../settings.ts";
+import { settings_of, write_setting } from "../settings.ts";
 import { date_kinds, mood_defaults, mood_settings, most_dates, type DateToRemember, type MoodState } from "./model.ts";
 import { checked_dates, mood_state, stored_dates } from "./mood.ts";
 
@@ -21,7 +21,7 @@ function list_mood_dates(database: SqlDatabase): DateToRemember[] {
 }
 
 function set_mood_dates(database: SqlDatabase, dates: DateToRemember[]): void {
-  settings_feature.methods.set_setting(database, mood_settings.dates, checked_dates(dates));
+  write_setting(database, mood_settings.dates, checked_dates(dates));
 }
 
 // ── Feature ──────────────────────────────────────────────────────────────────
@@ -65,5 +65,5 @@ export const mood_feature = define_feature({
       ],
     },
   },
-  setting_defaults: mood_defaults,
+  settings: settings_of(mood_defaults, { user_only: true }),
 });

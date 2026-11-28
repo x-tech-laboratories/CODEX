@@ -5,6 +5,7 @@
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 import { synced_tables } from "@x-tech-laboratories/x-libs/drizzle";
+import { settings_of } from "@x-tech-laboratories/x-libs/settings";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { id_of, text } from "../api_schemas.ts";
@@ -124,7 +125,7 @@ export const conversations_feature = define_feature({
       params: [conversation_param, { name: "steps", schema: set_task_list_tool.parameters.properties.steps }],
     },
   },
-  setting_defaults: { [engine_setting]: "", [keep_thinking_setting]: true },
+  settings: { ...settings_of({ [engine_setting]: "" }, { user_only: true }), ...settings_of({ [keep_thinking_setting]: true }) },
   // Every conversation kept before conversations were items, and any a device still on that shape syncs in, becomes one.
   on_open: (database) => void adopt_stray_conversations(database),
   after_write: (database) => void adopt_stray_conversations(database),

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { hidden_secret } from "@x-tech-laboratories/x-libs/plugins";
 
-import { bind_methods, is_read_only, needs_upgrade, open_store, setting_defaults } from "../../src/shared/store.ts";
+import { bind_methods, is_read_only, needs_upgrade, open_store, page_only, setting_defaults, settings_store } from "../../src/shared/store.ts";
 
 function open_database(): DatabaseSync {
   const database = new DatabaseSync(":memory:");
@@ -50,6 +50,24 @@ describe("store", () => {
     bound.set_setting("plugins", { "codex.trilium": { enabled: true, settings: { address: "https://other.example.org", token: hidden_secret } } });
     const stored = JSON.parse((database.prepare("SELECT value FROM settings WHERE key = 'plugins'").get() as { value: string }).value);
     expect(stored["codex.trilium"].settings).toEqual({ address: "https://other.example.org", token: "real-token" });
+  });
+
+  it("exports the settings set and imports them elsewhere, an import holding the user's own settings being the user's alone", () => {
+    const source_database = open_database();
+    const source = bind_methods(() => source_database, () => undefined);
+    source.set_setting("refresh_minutes", 10);
+    source.set_setting("action_policy", { send_mail: "ask" });
+    const file = source.export_settings();
+
+    const target_database = open_database();
+    const result = bind_methods(() => target_database, () => undefined).import_settings(JSON.stringify(file));
+
+    expect(file).toMatchObject({ app: "codex", kind: "settings", settings: { refresh_minutes: 10, action_policy: { send_mail: "ask" } } });
+    expect(result).toEqual({ changed: 2, unchanged: 0 });
+    expect(page_only.is_page_only_call("import_settings", [file])).toBe(true);
+    expect(page_only.is_page_only_call("set_setting", ["action_policy", {}])).toBe(true);
+    expect(page_only.is_page_only_call("set_setting", ["refresh_minutes", 5])).toBe(false);
+    expect(settings_store.user_only.size).toBe(24);
   });
 
   it("announces writes and not reads", () => {

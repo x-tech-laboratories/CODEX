@@ -21,8 +21,8 @@ import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 import { context_bridge } from "../shared/bridge.ts";
 import { mcp_instructions as instructions } from "../shared/mcp.ts";
 import { stop_all_runs } from "../shared/conversations/run.ts";
-import { conversation_event, page_only_refusal, user_only_backup_calls, user_only_settings } from "../shared/page_api.ts";
-import { bind_methods, context_api, is_read_only, page_only, start_assistant, sync_engine } from "../shared/store.ts";
+import { conversation_event, page_only_refusal, user_only_backup_calls } from "../shared/page_api.ts";
+import { bind_methods, context_api, is_read_only, page_only, settings_store, start_assistant, sync_engine } from "../shared/store.ts";
 import { register_context_calls } from "./calls.ts";
 
 // ── Options ──────────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ export async function build_app(options: AppOptions): Promise<FastifyInstance> {
         back_up: async () => void (await options.backups.create_backup()),
         on_change: (request) => changes.announce_change(changes.client_id_of(request)),
         // A setting only the user may change syncs only from the user's own devices, never from a program's token.
-        device_only: (change) => change.table === "settings" && user_only_settings.has(change.key),
+        device_only: settings_store.is_device_only,
       });
     },
     { prefix: "/api" },

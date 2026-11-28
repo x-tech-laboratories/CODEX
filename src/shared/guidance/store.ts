@@ -3,17 +3,18 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
+import { settings_of } from "@x-tech-laboratories/x-libs/settings";
 import type { SqlDatabase } from "@x-tech-laboratories/x-libs/sql";
 
 import { text } from "../api_schemas.ts";
 import { define_feature } from "../feature.ts";
-import { settings_feature } from "../settings.ts";
+import { read_setting, write_setting } from "../settings.ts";
 import { guidance_in, guidance_setting, longest_guidance } from "./model.ts";
 
 // ── Reading ──────────────────────────────────────────────────────────────────
 
 export function stored_guidance(database: SqlDatabase): Record<string, string> {
-  const saved = settings_feature.methods.get_settings(database)[guidance_setting];
+  const saved = read_setting(database, guidance_setting);
   if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
   return Object.fromEntries(Object.keys(saved).map((source) => [source, guidance_in(saved, source)]).filter(([, said]) => said !== ""));
 }
@@ -33,7 +34,7 @@ function set_plugin_guidance(database: SqlDatabase, source: string, guidance: st
   const kept = stored_guidance(database);
   if (trimmed) kept[source] = trimmed;
   else delete kept[source];
-  settings_feature.methods.set_setting(database, guidance_setting, kept);
+  write_setting(database, guidance_setting, kept);
 }
 
 // ── Feature ──────────────────────────────────────────────────────────────────
@@ -53,5 +54,5 @@ export const guidance_feature = define_feature({
       ],
     },
   },
-  setting_defaults: { [guidance_setting]: {} },
+  settings: settings_of({ [guidance_setting]: {} }, { user_only: true }),
 });

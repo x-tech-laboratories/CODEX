@@ -37,7 +37,7 @@
     "@modelcontextprotocol/server": "^2.4.0",
     "@x-tech-laboratories/halon": "^0.34.0",
     "@x-tech-laboratories/smartharness": "github:x-tech-laboratories/SmartHarness#a4f380b605d1f631409dde29548a009846b47a7b",
-    "@x-tech-laboratories/x-libs": "^0.92.0",
+    "@x-tech-laboratories/x-libs": "^0.93.0",
     "fastify": "^5.12.8",
     "lucide-react": "^1.82.0",
     "node-llama-cpp": "file:./stubs/node-llama-cpp",
