@@ -656,7 +656,7 @@ src/
                search/, graph/, history/ and settings
 thunderbird/   the Thunderbird add-on: its popup, options and manifest
 scripts/       seed.ts for sample data, icons.ts for the icons
-tests/         one *.test.ts per behaviour
+tests/         one *.test.ts per behaviour, mirroring src/ (shared/, server/, web/, daemon/, thunderbird/), and fixtures/
 legacy/        the pre-merge assistant, kept for porting and for a future mail application; not built or tested
 docs/          the goal, the architecture, open questions, the roadmap and the merge plan
 nix/           flake.nix and flake.lock, package.nix, desktop-package.nix, module.nix and shell.nix
